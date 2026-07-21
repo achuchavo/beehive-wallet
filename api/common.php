@@ -120,3 +120,63 @@ function looks_like_address(string $address, string $prefix): bool
 {
     return (bool) preg_match('/^' . preg_quote($prefix, '/') . '1[a-z0-9]{20,80}$/', $address);
 }
+
+// Real client IP. Behind Cloudflare, CF-Connecting-IP is set by Cloudflare and
+// is the user's address; fall back to the socket peer otherwise.
+function client_ip(): string
+{
+    foreach (['HTTP_CF_CONNECTING_IP', 'REMOTE_ADDR'] as $key) {
+        if (!empty($_SERVER[$key])) {
+            return substr(trim($_SERVER[$key]), 0, 45);
+        }
+    }
+    return 'unknown';
+}
+
+// Rolling-window rate limit config.
+const RATE_WINDOW_MINUTES = 15;
+const RATE_MAX_PER_IP = 10;        // failed logins per IP per window
+const RATE_MAX_PER_IDENTIFIER = 5; // failed logins per account per window
+const RATE_MAX_REGISTER_PER_IP = 5; // new accounts per IP per window
+
+function record_attempt(PDO $db, string $ip, string $identifier, string $kind, bool $success): void
+{
+    $stmt = $db->prepare(
+        'INSERT INTO login_attempts (ip, identifier, kind, success, attempted_at)
+         VALUES (?, ?, ?, ?, NOW())'
+    );
+    $stmt->execute([$ip, mb_substr($identifier, 0, 190), $kind, $success ? 1 : 0]);
+
+    // Opportunistic cleanup of old rows (~1% of requests).
+    if (random_int(1, 100) === 1) {
+        $db->exec('DELETE FROM login_attempts WHERE attempted_at < NOW() - INTERVAL 1 DAY');
+    }
+}
+
+function count_recent_failures(PDO $db, string $column, string $value, string $kind): int
+{
+    $sql = "SELECT COUNT(*) FROM login_attempts
+            WHERE $column = ? AND kind = ? AND success = 0
+              AND attempted_at > NOW() - INTERVAL " . RATE_WINDOW_MINUTES . ' MINUTE';
+    $stmt = $db->prepare($sql);
+    $stmt->execute([$value, $kind]);
+    return (int) $stmt->fetchColumn();
+}
+
+// Enforce login rate limits. Call before checking the password.
+function enforce_login_rate_limit(PDO $db, string $ip, string $identifier): void
+{
+    if (count_recent_failures($db, 'ip', $ip, 'login') >= RATE_MAX_PER_IP) {
+        rate_limited();
+    }
+    if ($identifier !== '' &&
+        count_recent_failures($db, 'identifier', $identifier, 'login') >= RATE_MAX_PER_IDENTIFIER) {
+        rate_limited();
+    }
+}
+
+function rate_limited(): void
+{
+    header('Retry-After: ' . (RATE_WINDOW_MINUTES * 60));
+    json_error('Too many attempts. Please wait a few minutes and try again.', 429);
+}

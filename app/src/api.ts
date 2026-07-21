@@ -46,6 +46,7 @@ export interface AdminOverview {
     watched_addresses: number
     alerts_total: number
     alerts_24h: number
+    failed_logins_24h: number
     watcher_last_run: string | null
     watcher_age_seconds: number | null
   }

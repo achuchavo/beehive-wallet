@@ -11,6 +11,10 @@ $stats['alerts_total'] = (int) $db->query('SELECT COUNT(*) FROM wallet_alerts')-
 $stats['alerts_24h'] = (int) $db->query(
     'SELECT COUNT(*) FROM wallet_alerts WHERE detected_at > NOW() - INTERVAL 1 DAY'
 )->fetchColumn();
+$stats['failed_logins_24h'] = (int) $db->query(
+    "SELECT COUNT(*) FROM login_attempts
+     WHERE kind = 'login' AND success = 0 AND attempted_at > NOW() - INTERVAL 1 DAY"
+)->fetchColumn();
 
 // Watcher health: freshest last_checked_at across watched addresses.
 $row = $db->query(

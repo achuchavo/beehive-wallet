@@ -25,6 +25,12 @@ if ($mainAddress !== '') {
 }
 
 $db = get_db();
+$ip = client_ip();
+
+// Cap new accounts per IP to prevent mass registration.
+if (count_recent_failures($db, 'ip', $ip, 'register') >= RATE_MAX_REGISTER_PER_IP) {
+    rate_limited();
+}
 
 $stmt = $db->prepare('SELECT id FROM users WHERE email = ?');
 $stmt->execute([$email]);
@@ -45,6 +51,9 @@ $stmt = $db->prepare(
     'INSERT INTO users (email, password_hash, main_address, created_at) VALUES (?, ?, ?, NOW())'
 );
 $stmt->execute([$email, $hash, $storeAddress]);
+
+// Count this registration against the per-IP cap.
+record_attempt($db, $ip, $email, 'register', false);
 
 $_SESSION['user_id'] = (int) $db->lastInsertId();
 session_regenerate_id(true);

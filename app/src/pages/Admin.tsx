@@ -74,7 +74,7 @@ export default function Admin() {
         <StatCard label="Users" value={stats.users} />
         <StatCard label="Watched addresses" value={stats.watched_addresses} />
         <StatCard label="Alerts (24h)" value={stats.alerts_24h} />
-        <StatCard label="Alerts (total)" value={stats.alerts_total} />
+        <StatCard label="Failed logins (24h)" value={stats.failed_logins_24h} />
       </div>
 
       <div
