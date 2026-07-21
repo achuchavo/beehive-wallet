@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Coins, Gift, ShieldCheck, ExternalLink, Star } from 'lucide-react'
+import { Coins, Gift, ShieldCheck, Star, Search } from 'lucide-react'
 import { DEFAULT_CHAIN, formatAmount, toBaseUnits } from '../chains'
 import { useWallet } from '../wallet/WalletContext'
 import { delegate, undelegate, claimRewards, serviceFeeActive, isBeehive } from '../wallet/staking'
@@ -8,6 +8,7 @@ import { delegate, undelegate, claimRewards, serviceFeeActive, isBeehive } from 
 interface Validator {
   operator: string
   moniker: string
+  identity: string
   commission: number
   tokens: string
   jailed: boolean
@@ -15,12 +16,62 @@ interface Validator {
 
 interface StakeData {
   validators: Validator[]
-  delegations: Record<string, string> // operator -> staked base amount
-  rewards: Record<string, string> // operator -> reward base amount (floored)
+  delegations: Record<string, string>
+  rewards: Record<string, string>
   totalReward: string
 }
 
 const chain = DEFAULT_CHAIN
+
+function abbrev(n: number): string {
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`
+  return n.toFixed(0)
+}
+
+// Keybase avatar lookup, cached per identity across renders.
+const avatarCache = new Map<string, string | null>()
+
+function ValidatorAvatar({ identity, moniker }: { identity: string; moniker: string }) {
+  const [url, setUrl] = useState<string | null>(identity ? avatarCache.get(identity) ?? null : null)
+
+  useEffect(() => {
+    if (!identity || avatarCache.has(identity)) return
+    let cancelled = false
+    fetch(`https://keybase.io/_/api/1.0/user/lookup.json?fields=pictures&key_suffix=${identity}`)
+      .then((r) => r.json())
+      .then((d) => {
+        const pic = d.them?.[0]?.pictures?.primary?.url ?? null
+        avatarCache.set(identity, pic)
+        if (!cancelled) setUrl(pic)
+      })
+      .catch(() => avatarCache.set(identity, null))
+    return () => {
+      cancelled = true
+    }
+  }, [identity])
+
+  const palette = [
+    'bg-amber-100 text-amber-700',
+    'bg-blue-100 text-blue-700',
+    'bg-teal-100 text-teal-700',
+    'bg-purple-100 text-purple-700',
+    'bg-pink-100 text-pink-700',
+  ]
+  const color = palette[[...moniker].reduce((s, c) => s + c.charCodeAt(0), 0) % palette.length]
+
+  if (url) {
+    return <img src={url} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
+  }
+  return (
+    <div
+      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-medium ${color}`}
+    >
+      {moniker.slice(0, 1).toUpperCase()}
+    </div>
+  )
+}
 
 async function fetchStakeData(address: string): Promise<StakeData> {
   const [valsRes, delRes, rewRes] = await Promise.all([
@@ -34,13 +85,14 @@ async function fetchStakeData(address: string): Promise<StakeData> {
   const validators: Validator[] = (valsData.validators ?? []).map(
     (v: {
       operator_address: string
-      description: { moniker: string }
+      description: { moniker: string; identity: string }
       commission: { commission_rates: { rate: string } }
       tokens: string
       jailed: boolean
     }) => ({
       operator: v.operator_address,
       moniker: v.description?.moniker ?? v.operator_address,
+      identity: v.description?.identity ?? '',
       commission: Number(v.commission?.commission_rates?.rate ?? 0),
       tokens: v.tokens ?? '0',
       jailed: !!v.jailed,
@@ -76,6 +128,7 @@ export default function Staking() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [notice, setNotice] = useState('')
+  const [query, setQuery] = useState('')
 
   const load = useCallback(async () => {
     if (!active) return
@@ -110,9 +163,7 @@ export default function Staking() {
     )
   }
 
-  const staked = data
-    ? Object.values(data.delegations).reduce((s, a) => s + Number(a), 0)
-    : 0
+  const staked = data ? Object.values(data.delegations).reduce((s, a) => s + Number(a), 0) : 0
   const rewardValidators = data ? Object.keys(data.rewards) : []
 
   async function claimAll(password: string) {
@@ -125,10 +176,11 @@ export default function Staking() {
     await load()
   }
 
-  // Beehive first, then by voting power desc; jailed hidden unless delegated.
+  const q = query.trim().toLowerCase()
   const ordered = data
     ? [...data.validators]
         .filter((v) => !v.jailed || data.delegations[v.operator])
+        .filter((v) => q === '' || v.moniker.toLowerCase().includes(q))
         .sort((a, b) => {
           if (isBeehive(chain, a.operator)) return -1
           if (isBeehive(chain, b.operator)) return 1
@@ -146,23 +198,23 @@ export default function Staking() {
       {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
           <div className="flex items-center gap-1.5 text-xs text-slate-500">
             <Coins className="h-3.5 w-3.5" /> Total staked
           </div>
-          <div className="text-2xl font-semibold">
-            {data ? formatAmount(String(staked), chain) : '...'}
+          <div className="text-xl font-semibold">
+            {data ? formatAmount(String(staked), chain) : '...'}{' '}
+            <span className="text-xs font-normal text-slate-400">{chain.displayDenom}</span>
           </div>
-          <div className="text-xs text-slate-400">{chain.displayDenom}</div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
           <div className="flex items-center gap-1.5 text-xs text-slate-500">
             <Gift className="h-3.5 w-3.5" /> Claimable rewards
           </div>
-          <div className="text-2xl font-semibold">
-            {data ? formatAmount(data.totalReward, chain) : '...'}
+          <div className="text-xl font-semibold">
+            {data ? formatAmount(data.totalReward, chain) : '...'}{' '}
+            <span className="text-xs font-normal text-slate-400">{chain.displayDenom}</span>
           </div>
-          <div className="text-xs text-slate-400">{chain.displayDenom}</div>
         </div>
       </div>
 
@@ -175,17 +227,28 @@ export default function Staking() {
         />
       )}
 
-      {loading && !data && (
-        <p className="text-sm text-slate-500">Loading validators from the chain...</p>
-      )}
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+        <input
+          name="beehive-validator-search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search validators"
+          autoComplete="off"
+          className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm focus:border-amber-500 focus:outline-none"
+        />
+      </div>
 
-      <div className="space-y-2">
-        {ordered.map((v) => (
+      {loading && !data && <p className="text-sm text-slate-500">Loading validators...</p>}
+
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        {ordered.map((v, i) => (
           <ValidatorRow
             key={v.operator}
             validator={v}
             staked={data?.delegations[v.operator]}
             reward={data?.rewards[v.operator]}
+            first={i === 0}
             onDone={(msg) => {
               setNotice(msg)
               load()
@@ -193,6 +256,9 @@ export default function Staking() {
             onError={setError}
           />
         ))}
+        {data && ordered.length === 0 && (
+          <p className="px-4 py-6 text-center text-sm text-slate-500">No validators match.</p>
+        )}
       </div>
     </div>
   )
@@ -202,18 +268,21 @@ function ValidatorRow({
   validator,
   staked,
   reward,
+  first,
   onDone,
   onError,
 }: {
   validator: Validator
   staked?: string
   reward?: string
+  first: boolean
   onDone: (msg: string) => void
   onError: (msg: string) => void
 }) {
   const { active, getSigner } = useWallet()
   const [action, setAction] = useState<'none' | 'delegate' | 'undelegate'>('none')
   const beehive = isBeehive(chain, validator.operator)
+  const power = Number(validator.tokens) / 10 ** chain.decimals
 
   async function submitDelegate(password: string, amount: string) {
     if (!active) return
@@ -233,82 +302,68 @@ function ValidatorRow({
     onDone(`Undelegation started from ${validator.moniker}. ${hash.slice(0, 12)}...`)
   }
 
-  const feeNote =
-    !beehive && serviceFeeActive(chain)
-      ? `A service fee of ${formatAmount(chain.serviceFee, chain)} ${chain.displayDenom} applies.`
-      : ''
-
   return (
-    <div
-      className={`rounded-xl border bg-white p-4 ${
-        beehive ? 'border-amber-300' : 'border-slate-200'
-      }`}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5 font-medium">
-            {beehive && <Star className="h-4 w-4 fill-amber-400 text-amber-400" />}
+    <div className={`${first ? '' : 'border-t border-slate-100'} ${beehive ? 'bg-amber-50/50' : ''}`}>
+      <div className="flex items-center gap-3 px-3 py-2">
+        <ValidatorAvatar identity={validator.identity} moniker={validator.moniker} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 text-sm font-medium">
+            {beehive && <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-400" />}
             <span className="truncate">{validator.moniker}</span>
-          </div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-            <span>{(validator.commission * 100).toFixed(0)}% commission</span>
-            {beehive ? (
-              <span className="flex items-center gap-1 rounded bg-green-100 px-1.5 py-0.5 font-medium text-green-700">
-                <ShieldCheck className="h-3 w-3" /> No fee
+            {beehive && (
+              <span className="flex shrink-0 items-center gap-0.5 rounded bg-green-100 px-1 text-[11px] font-medium text-green-700">
+                <ShieldCheck className="h-2.5 w-2.5" /> Free
               </span>
-            ) : serviceFeeActive(chain) ? (
-              <span className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">
-                Service fee {formatAmount(chain.serviceFee, chain)} {chain.displayDenom}
-              </span>
-            ) : null}
-            <a
-              href={`${chain.explorerValidatorUrl}${validator.operator}`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-0.5 text-amber-700 hover:underline"
-            >
-              details <ExternalLink className="h-3 w-3" />
-            </a>
+            )}
           </div>
-          {staked && (
-            <div className="mt-1 text-xs text-slate-600">
-              Staked: <span className="font-medium">{formatAmount(staked, chain)} {chain.displayDenom}</span>
-              {reward && Number(reward) > 0 && (
-                <span className="ml-2 text-green-700">
-                  +{formatAmount(reward, chain)} reward
+          <div className="flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
+            <span>{(validator.commission * 100).toFixed(0)}% comm</span>
+            <span>·</span>
+            <span>{abbrev(power)} {chain.displayDenom}</span>
+            {staked && (
+              <>
+                <span>·</span>
+                <span className="font-medium text-slate-700">
+                  you: {formatAmount(staked, chain)}
                 </span>
-              )}
-            </div>
+                {reward && Number(reward) > 0 && (
+                  <span className="text-green-700">+{formatAmount(reward, chain)}</span>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+        <div className="flex shrink-0 gap-1">
+          <button
+            onClick={() => setAction(action === 'delegate' ? 'none' : 'delegate')}
+            className={`rounded-lg px-2.5 py-1 text-xs font-medium ${
+              beehive
+                ? 'bg-amber-500 text-white hover:bg-amber-600'
+                : 'border border-slate-300 hover:border-amber-500'
+            }`}
+          >
+            {beehive ? 'Stake' : 'Delegate'}
+          </button>
+          {staked && (
+            <button
+              onClick={() => setAction(action === 'undelegate' ? 'none' : 'undelegate')}
+              className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs hover:border-amber-500"
+            >
+              Undelegate
+            </button>
           )}
         </div>
       </div>
 
-      <div className="mt-3 flex gap-2">
-        <button
-          onClick={() => setAction(action === 'delegate' ? 'none' : 'delegate')}
-          className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-            beehive
-              ? 'bg-amber-500 text-white hover:bg-amber-600'
-              : 'border border-slate-300 hover:border-amber-500'
-          }`}
-        >
-          {beehive ? 'Stake free' : 'Delegate'}
-        </button>
-        {staked && (
-          <button
-            onClick={() => setAction(action === 'undelegate' ? 'none' : 'undelegate')}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:border-amber-500"
-          >
-            Undelegate
-          </button>
-        )}
-      </div>
-
       {action === 'delegate' && (
-        <div className="mt-3">
-          {feeNote && <p className="mb-1 text-xs text-slate-500">{feeNote}</p>}
+        <div className="px-3 pb-3">
+          {!beehive && serviceFeeActive(chain) && (
+            <p className="mb-1 text-xs text-slate-500">
+              Service fee of {formatAmount(chain.serviceFee, chain)} {chain.displayDenom} applies.
+            </p>
+          )}
           <ActionForm
-            label={`Amount to delegate to ${validator.moniker}`}
+            label={`Delegate to ${validator.moniker}`}
             submitLabel="Sign and delegate"
             withAmount
             onSubmit={submitDelegate}
@@ -317,13 +372,12 @@ function ValidatorRow({
         </div>
       )}
       {action === 'undelegate' && (
-        <div className="mt-3">
+        <div className="px-3 pb-3">
           <p className="mb-1 text-xs text-slate-500">
-            Undelegated funds are locked for the chain's unbonding period (about 21 days) before
-            they return to your balance.
+            Undelegated funds unlock after the ~21-day unbonding period.
           </p>
           <ActionForm
-            label={`Amount to undelegate from ${validator.moniker}`}
+            label={`Undelegate from ${validator.moniker}`}
             submitLabel="Sign and undelegate"
             withAmount
             onSubmit={submitUndelegate}
