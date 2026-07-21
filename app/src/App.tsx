@@ -71,10 +71,37 @@ function App() {
   return (
     <div className="min-h-screen md:flex">
       <nav className="fixed bottom-0 inset-x-0 z-10 flex justify-around border-t border-slate-200 bg-white py-1 md:static md:block md:w-56 md:shrink-0 md:border-t-0 md:border-r md:px-3 md:py-6">
-        <div className="hidden md:flex items-center gap-2 px-3 pb-6 font-semibold text-amber-600">
+        <div className="hidden md:flex items-center gap-2 px-3 pb-4 font-semibold text-amber-600">
           <img src={`${import.meta.env.BASE_URL}beehive.ico`} alt="" className="h-6 w-6" />
           Beehive Wallet
         </div>
+
+        <div className="hidden md:mb-4 md:block md:border-b md:border-slate-200 md:pb-4">
+          {auth.status === 'in' ? (
+            <div className="px-3">
+              <div className="flex items-center gap-2 text-sm">
+                <UserCircle className="h-5 w-5 shrink-0 text-slate-400" strokeWidth={1.8} />
+                <span className="truncate text-slate-700" title={auth.email ?? ''}>
+                  {auth.email}
+                </span>
+              </div>
+              <button
+                onClick={() => auth.logout()}
+                className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-500 hover:text-amber-700"
+              >
+                <LogOut className="h-3.5 w-3.5" /> Sign out
+              </button>
+            </div>
+          ) : auth.status === 'out' ? (
+            <Link
+              to="/alarms"
+              className="mx-3 flex items-center gap-1.5 text-sm text-amber-700 hover:underline"
+            >
+              <LogIn className="h-4 w-4" /> Sign in
+            </Link>
+          ) : null}
+        </div>
+
         {nav.map((item) => (
           <NavLink
             key={item.to}
@@ -92,32 +119,6 @@ function App() {
             <span className="hidden sm:inline">{item.label}</span>
           </NavLink>
         ))}
-
-        <div className="hidden md:mt-auto md:block md:border-t md:border-slate-200 md:pt-4">
-          {auth.status === 'in' ? (
-            <div className="px-3">
-              <div className="flex items-center gap-2 text-sm">
-                <UserCircle className="h-5 w-5 shrink-0 text-slate-400" strokeWidth={1.8} />
-                <span className="truncate text-slate-700" title={auth.email ?? ''}>
-                  {auth.email}
-                </span>
-              </div>
-              <button
-                onClick={() => auth.logout()}
-                className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 hover:text-amber-700"
-              >
-                <LogOut className="h-3.5 w-3.5" /> Sign out
-              </button>
-            </div>
-          ) : auth.status === 'out' ? (
-            <Link
-              to="/alarms"
-              className="mx-3 flex items-center gap-1.5 text-sm text-amber-700 hover:underline"
-            >
-              <LogIn className="h-4 w-4" /> Sign in
-            </Link>
-          ) : null}
-        </div>
       </nav>
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 pb-20 pt-6 md:pb-6">
         {banner && (

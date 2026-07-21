@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Server, Plus, Trash2 } from 'lucide-react'
+import { Server, Plus, Trash2, Settings2 } from 'lucide-react'
 import { api, type AdminChain, type AdminEndpoint } from '../api'
+import Modal from '../components/Modal'
+import HelpTip from '../components/HelpTip'
+
+const LCD_HELP =
+  'LCD (REST API, usually port 1317): the HTTP endpoint the app reads balances, staking, and history from.'
+const RPC_HELP =
+  'RPC (Tendermint, usually port 26657): the endpoint used to broadcast signed transactions.'
 
 const BLANK: AdminChain = {
   chain_key: '',
@@ -25,8 +32,9 @@ const BLANK: AdminChain = {
 export default function ChainManager({ onError }: { onError: (m: string) => void }) {
   const [chains, setChains] = useState<AdminChain[]>([])
   const [endpoints, setEndpoints] = useState<AdminEndpoint[]>([])
-  const [editingChain, setEditingChain] = useState<AdminChain | null>(null)
-  const [adding, setAdding] = useState(false)
+  // The chain open in the manage modal: an existing chain, a blank new one, or null.
+  const [managing, setManaging] = useState<AdminChain | null>(null)
+  const [isNew, setIsNew] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -46,24 +54,29 @@ export default function ChainManager({ onError }: { onError: (m: string) => void
   async function saveChain(chain: AdminChain) {
     try {
       await api.adminChainSave(chain)
-      setEditingChain(null)
-      setAdding(false)
       await load()
+      // Keep the modal open on an existing chain (so endpoints stay reachable);
+      // close it after creating a new one.
+      if (isNew) setManaging(null)
     } catch (e) {
       onError(e instanceof Error ? e.message : 'Save failed')
     }
   }
 
+  function endpointsFor(key: string) {
+    return endpoints.filter((e) => e.chain_key === key)
+  }
+
   return (
-    <section className="space-y-2">
+    <section className="space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="flex items-center gap-2 font-medium">
           <Server className="h-4 w-4 text-slate-400" /> Chains
         </h2>
         <button
           onClick={() => {
-            setAdding(true)
-            setEditingChain({ ...BLANK })
+            setManaging({ ...BLANK })
+            setIsNew(true)
           }}
           className="flex items-center gap-1 rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-600"
         >
@@ -71,23 +84,14 @@ export default function ChainManager({ onError }: { onError: (m: string) => void
         </button>
       </div>
 
-      {adding && editingChain && (
-        <ChainForm
-          chain={editingChain}
-          isNew
-          onSave={saveChain}
-          onCancel={() => {
-            setAdding(false)
-            setEditingChain(null)
-          }}
-        />
-      )}
-
-      <div className="space-y-2">
-        {chains.map((c) => (
-          <div key={c.chain_key} className="rounded-xl border border-slate-200 bg-white p-4">
-            <div className="flex items-center justify-between gap-2">
-              <div>
+      <div className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
+        {chains.map((c) => {
+          const eps = endpointsFor(c.chain_key)
+          const lcd = eps.filter((e) => e.kind === 'lcd').length
+          const rpc = eps.filter((e) => e.kind === 'rpc').length
+          return (
+            <div key={c.chain_key} className="flex items-center justify-between gap-2 px-4 py-3">
+              <div className="min-w-0">
                 <div className="flex items-center gap-2 text-sm font-medium">
                   {c.chain_name}
                   <span className="font-mono text-xs text-slate-400">{c.chain_key}</span>
@@ -98,33 +102,46 @@ export default function ChainManager({ onError }: { onError: (m: string) => void
                   )}
                 </div>
                 <div className="text-xs text-slate-500">
-                  {c.chain_id} · {c.display_denom} · fee{' '}
-                  {c.service_fee === '0' ? 'off' : `${c.service_fee} ${c.denom}`}
+                  {c.display_denom} · {lcd} LCD · {rpc} RPC ·{' '}
+                  {c.service_fee === '0' ? 'no fee' : `fee ${c.service_fee} ${c.denom}`}
                 </div>
               </div>
               <button
-                onClick={() => setEditingChain(editingChain?.chain_key === c.chain_key ? null : c)}
-                className="shrink-0 text-xs text-amber-700 hover:underline"
+                onClick={() => {
+                  setManaging(c)
+                  setIsNew(false)
+                }}
+                className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1 text-xs hover:border-amber-500"
               >
-                {editingChain?.chain_key === c.chain_key && !adding ? 'Close' : 'Edit'}
+                <Settings2 className="h-3.5 w-3.5" /> Manage
               </button>
             </div>
-
-            {editingChain?.chain_key === c.chain_key && !adding && (
-              <div className="mt-3">
-                <ChainForm chain={editingChain} onSave={saveChain} onCancel={() => setEditingChain(null)} />
-              </div>
-            )}
-
-            <EndpointList
-              chainKey={c.chain_key}
-              endpoints={endpoints.filter((e) => e.chain_key === c.chain_key)}
-              onChanged={load}
-              onError={onError}
-            />
-          </div>
-        ))}
+          )
+        })}
+        {chains.length === 0 && (
+          <p className="px-4 py-6 text-center text-sm text-slate-500">No chains yet.</p>
+        )}
       </div>
+
+      {managing && (
+        <Modal
+          title={isNew ? 'Add chain' : `Manage ${managing.chain_name}`}
+          onClose={() => setManaging(null)}
+          wide
+        >
+          <div className="space-y-5">
+            <ChainForm chain={managing} isNew={isNew} onSave={saveChain} />
+            {!isNew && (
+              <EndpointList
+                chainKey={managing.chain_key}
+                endpoints={endpointsFor(managing.chain_key)}
+                onChanged={load}
+                onError={onError}
+              />
+            )}
+          </div>
+        </Modal>
+      )}
     </section>
   )
 }
@@ -133,12 +150,10 @@ function ChainForm({
   chain,
   isNew,
   onSave,
-  onCancel,
 }: {
   chain: AdminChain
   isNew?: boolean
   onSave: (c: AdminChain) => void
-  onCancel: () => void
 }) {
   const [form, setForm] = useState<AdminChain>(chain)
   const set = (k: keyof AdminChain, v: string | number) => setForm({ ...form, [k]: v })
@@ -155,7 +170,7 @@ function ChainForm({
   )
 
   return (
-    <div className="space-y-2 rounded-lg bg-slate-50 p-3">
+    <div className="space-y-3">
       <div className="grid grid-cols-2 gap-2">
         <label className="block">
           <span className="text-xs text-slate-500">Chain key</span>
@@ -191,17 +206,12 @@ function ChainForm({
         />
         Active (visible to users)
       </label>
-      <div className="flex gap-2">
-        <button
-          onClick={() => onSave(form)}
-          className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-600"
-        >
-          Save chain
-        </button>
-        <button onClick={onCancel} className="px-3 py-1.5 text-sm text-slate-500 hover:underline">
-          Cancel
-        </button>
-      </div>
+      <button
+        onClick={() => onSave(form)}
+        className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
+      >
+        Save chain details
+      </button>
     </div>
   )
 }
@@ -246,14 +256,19 @@ function EndpointList({
   }
 
   return (
-    <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
-      <div className="text-xs font-medium text-slate-500">
-        Endpoints (tried in order; failover on outage)
+    <div className="space-y-2 border-t border-slate-200 pt-4">
+      <div className="flex items-center gap-1.5 text-sm font-medium">
+        Endpoints
+        <span className="font-normal text-slate-400">(tried in order; failover on outage)</span>
+      </div>
+      <div className="flex gap-4 text-xs text-slate-500">
+        <span className="flex items-center gap-1">LCD <HelpTip text={LCD_HELP} /></span>
+        <span className="flex items-center gap-1">RPC <HelpTip text={RPC_HELP} /></span>
       </div>
       {endpoints.length === 0 && <div className="text-xs text-slate-400">No endpoints yet.</div>}
       {endpoints.map((ep) => (
         <div key={ep.id} className="flex items-center gap-2 text-xs">
-          <span className="w-8 shrink-0 rounded bg-slate-100 px-1 py-0.5 text-center font-medium uppercase text-slate-600">
+          <span className="w-9 shrink-0 rounded bg-slate-100 px-1 py-0.5 text-center font-medium uppercase text-slate-600">
             {ep.kind}
           </span>
           <span className={`flex-1 truncate font-mono ${ep.is_active === 1 ? '' : 'text-slate-400 line-through'}`}>
@@ -262,7 +277,7 @@ function EndpointList({
           <button onClick={() => toggle(ep)} className="text-amber-700 hover:underline">
             {ep.is_active === 1 ? 'Disable' : 'Enable'}
           </button>
-          <button onClick={() => remove(ep.id)} className="text-red-600 hover:underline">
+          <button onClick={() => remove(ep.id)} aria-label="Delete endpoint" className="text-red-600 hover:underline">
             <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>

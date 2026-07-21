@@ -34,6 +34,7 @@ if ($Sub) {
 DirectoryIndex index.html index.php
 RewriteEngine On
 RewriteBase /
+RewriteCond %{REQUEST_URI} !^/\.well-known/acme-challenge/ [NC]
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule . index.html [L]
