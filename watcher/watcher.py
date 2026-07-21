@@ -20,14 +20,18 @@ from pathlib import Path
 
 import mysql.connector
 import requests
+from pywebpush import webpush, WebPushException
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_CONFIG_FILE = BASE_DIR / "db_config.json"
 CHAINS_FILE = BASE_DIR.parent / "config" / "chains.json"
+VAPID_PRIVATE_KEY = BASE_DIR / "vapid_private.pem"
+VAPID_CLAIMS = {"sub": "mailto:matanverse@gmail.com"}
 
 POLL_INTERVAL_SECONDS = 30
 ALERT_KEEP_DAYS = 90
 PAGE_LIMIT = 20
+APP_URL = "/wallet/alarms"
 
 
 def log(level: str, message: str) -> None:
@@ -104,6 +108,54 @@ def extract_transfer(tx_response: dict):
     return "", "", ""
 
 
+def send_push(cursor, db, user_id: int, title: str, body: str) -> None:
+    """Web-push a new alert to every device the user subscribed. Dead
+    subscriptions (endpoint gone: 404/410) are cleaned up."""
+    if not VAPID_PRIVATE_KEY.exists():
+        return
+
+    cursor.execute(
+        "SELECT id, endpoint, p256dh, auth_key FROM push_subscriptions WHERE user_id = %s",
+        (user_id,),
+    )
+    subs = cursor.fetchall()
+
+    for sub in subs:
+        try:
+            webpush(
+                subscription_info={
+                    "endpoint": sub["endpoint"],
+                    "keys": {"p256dh": sub["p256dh"], "auth": sub["auth_key"]},
+                },
+                data=json.dumps({"title": title, "body": body, "url": APP_URL}),
+                vapid_private_key=str(VAPID_PRIVATE_KEY),
+                vapid_claims=dict(VAPID_CLAIMS),
+                timeout=15,
+            )
+            log("SUCCESS", f"Push sent to subscription id={sub['id']}")
+        except WebPushException as e:
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status in (404, 410):
+                cursor.execute("DELETE FROM push_subscriptions WHERE id = %s", (sub["id"],))
+                db.commit()
+                log("INFO", f"Removed dead push subscription id={sub['id']}")
+            else:
+                log("ERROR", f"Push failed for subscription id={sub['id']}: {e}")
+        except Exception as e:
+            log("ERROR", f"Push error for subscription id={sub['id']}: {e}")
+
+
+def format_push_body(row: dict, tx: dict, chains: list) -> str:
+    chain = get_chain(chains, row["chain_key"]) or {}
+    label = row.get("label") or f"{row['address'][:14]}..."
+    if tx["amount"]:
+        decimals = int(chain.get("decimals", 6))
+        display = chain.get("displayDenom", tx["denom"])
+        value = int(tx["amount"]) / (10 ** decimals)
+        return f"{value:g} {display} left {label}"
+    return f"Outgoing transaction from {label}"
+
+
 def process_address(cursor, db, chains: list, row: dict) -> None:
     chain = get_chain(chains, row["chain_key"])
     if chain is None:
@@ -155,6 +207,13 @@ def process_address(cursor, db, chains: list, row: dict) -> None:
                 (row["id"], tx["hash"], tx["amount"], tx["denom"], tx["recipient"]),
             )
             log("SUCCESS", f"Alert: {row['address']} sent tx {tx['hash'][:12]}")
+            send_push(
+                cursor,
+                db,
+                int(row["user_id"]),
+                "Wallet alarm",
+                format_push_body(row, tx, chains),
+            )
 
     cursor.execute(
         "UPDATE watched_addresses SET last_seen_tx_hash = %s, last_checked_at = NOW() WHERE id = %s",

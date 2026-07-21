@@ -4,6 +4,111 @@ import { DEFAULT_CHAIN, formatAmount, CHAINS } from '../chains'
 
 const POLL_MS = 15000
 
+function urlB64ToUint8Array(base64: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64.length % 4)) % 4)
+  const b64 = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/')
+  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+}
+
+type PushState = 'unsupported' | 'denied' | 'off' | 'on' | 'busy'
+
+function PushSettings() {
+  const [state, setState] = useState<PushState>('busy')
+  const [error, setError] = useState('')
+
+  const swUrl = `${import.meta.env.BASE_URL}sw.js`
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setState('unsupported')
+      return
+    }
+    navigator.serviceWorker
+      .register(swUrl)
+      .then((reg) => reg.pushManager.getSubscription())
+      .then((sub) => setState(sub ? 'on' : Notification.permission === 'denied' ? 'denied' : 'off'))
+      .catch(() => setState('unsupported'))
+  }, [swUrl])
+
+  async function enable() {
+    setState('busy')
+    setError('')
+    try {
+      const permission = await Notification.requestPermission()
+      if (permission !== 'granted') {
+        setState('denied')
+        return
+      }
+      const reg = await navigator.serviceWorker.ready
+      const { publicKey } = await api.pushConfig()
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlB64ToUint8Array(publicKey) as BufferSource,
+      })
+      await api.pushSubscribe(sub.toJSON())
+      setState('on')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not enable push')
+      setState('off')
+    }
+  }
+
+  async function disable() {
+    setState('busy')
+    setError('')
+    try {
+      const reg = await navigator.serviceWorker.ready
+      const sub = await reg.pushManager.getSubscription()
+      if (sub) {
+        await api.pushUnsubscribe(sub.endpoint).catch(() => {})
+        await sub.unsubscribe()
+      }
+      setState('off')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not disable push')
+      setState('on')
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium">Push notifications</div>
+          <div className="text-xs text-slate-500">
+            {state === 'unsupported' && 'Not supported by this browser.'}
+            {state === 'denied' &&
+              'Blocked by the browser. Allow notifications for this site in browser settings.'}
+            {state === 'off' && 'Get alerts on this device even when the app is closed.'}
+            {state === 'on' && 'Enabled on this device.'}
+            {state === 'busy' && 'Checking...'}
+          </div>
+        </div>
+        {state === 'off' && (
+          <button
+            onClick={enable}
+            className="shrink-0 rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-600"
+          >
+            Enable
+          </button>
+        )}
+        {state === 'on' && (
+          <button
+            onClick={disable}
+            className="shrink-0 rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:border-amber-500"
+          >
+            Disable
+          </button>
+        )}
+      </div>
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+      <p className="mt-1 text-xs text-slate-400">
+        On iPhone: add this site to your home screen first (Share, then Add to Home Screen).
+      </p>
+    </div>
+  )
+}
+
 export default function Alarms() {
   const [authChecked, setAuthChecked] = useState(false)
   const [email, setEmail] = useState<string | null>(null)
@@ -162,6 +267,8 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
       </div>
 
       {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+
+      <PushSettings />
 
       <section className="space-y-3">
         <h2 className="font-medium">Watched addresses</h2>

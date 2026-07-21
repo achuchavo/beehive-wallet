@@ -89,6 +89,10 @@ export const api = {
   adminAnnouncementSet: (message: string, severity: string, expires_hours: number) =>
     call('admin_announcement_set.php', { message, severity, expires_hours }),
   adminAnnouncementClear: () => call('admin_announcement_set.php', { clear: true }),
+  pushConfig: () => call<{ publicKey: string }>('push_config.php'),
+  pushSubscribe: (subscription: PushSubscriptionJSON) =>
+    call('push_subscribe.php', subscription),
+  pushUnsubscribe: (endpoint: string) => call('push_unsubscribe.php', { endpoint }),
 }
 
 export type UserAction = 'disable' | 'enable' | 'promote' | 'demote' | 'delete'

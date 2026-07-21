@@ -6,6 +6,7 @@ db_config.php
 db_config.json
 config.json
 vapid_keys.json
+vapid_private.pem
 __pycache__/
 venv/
 *.log
