@@ -8,6 +8,8 @@
     "displayDenom": "MED",
     "decimals": 6,
     "lcd": "https://api.gopanacea.org",
-    "rpc": "https://rpc.gopanacea.org"
+    "rpc": "https://rpc.gopanacea.org",
+    "beehiveValidator": "panaceavaloper1hlpw58lg9fvwvwa3ryzgjqyw39tf2nmns4r0z5",
+    "beehiveMoniker": "MatanVerse [Official]"
   }
 ]

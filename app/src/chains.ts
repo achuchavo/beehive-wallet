@@ -15,7 +15,14 @@ export interface ChainInfo {
   rpc: string
   lcd: string
   explorerTxUrl: string
+  explorerValidatorUrl: string
   beehiveValidator: string
+  beehiveMoniker: string
+  // Service fee charged when delegating to a NON-Beehive validator, bundled as
+  // a bank send in the same signed tx. "0" = no fee (staking anywhere is free).
+  // Set feeCollector to a Beehive account address to start charging.
+  serviceFee: string
+  feeCollector: string
 }
 
 export const CHAINS: ChainInfo[] = [
@@ -40,7 +47,11 @@ export const CHAINS: ChainInfo[] = [
       ? '/lcd/medibloc'
       : `${import.meta.env.BASE_URL}api/lcd_proxy.php`,
     explorerTxUrl: 'https://www.mintscan.io/medibloc/tx/',
-    beehiveValidator: 'panaceavaloper1REPLACE_WITH_OUR_VALOPER',
+    explorerValidatorUrl: 'https://www.mintscan.io/medibloc/validators/',
+    beehiveValidator: 'panaceavaloper1hlpw58lg9fvwvwa3ryzgjqyw39tf2nmns4r0z5',
+    beehiveMoniker: 'MatanVerse [Official]',
+    serviceFee: '0',
+    feeCollector: '',
   },
 ]
 
