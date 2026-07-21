@@ -169,36 +169,44 @@ function SendForm() {
         )}
       </div>
       <input
+        name="beehive-recipient"
         value={to}
         onChange={(e) => setTo(e.target.value.trim())}
         placeholder={`Recipient (${chain.bech32Prefix}1...)`}
         required
+        autoComplete="off"
         className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
       />
       <div className="flex items-center gap-2">
         <input
+          name="beehive-amount"
           value={amount}
           onChange={(e) => setAmount(e.target.value.trim())}
           placeholder="Amount"
           required
           inputMode="decimal"
+          autoComplete="off"
           className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
         />
         <span className="text-sm text-slate-500">{chain.displayDenom}</span>
       </div>
       <input
+        name="beehive-memo"
         value={memo}
         onChange={(e) => setMemo(e.target.value)}
         placeholder="Memo (optional)"
         maxLength={256}
+        autoComplete="off"
         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
       />
       <input
         type="password"
+        name="beehive-sign-password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         placeholder="Wallet password to sign"
         required
+        autoComplete="new-password"
         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
       />
       <p className="text-xs text-slate-400">

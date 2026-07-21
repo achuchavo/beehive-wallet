@@ -128,9 +128,11 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
                       <div className="flex gap-2">
                         <input
                           type="password"
+                          name="beehive-reveal-password"
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           placeholder="Wallet password"
+                          autoComplete="new-password"
                           className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
                         />
                         <button
@@ -182,19 +184,23 @@ function PasswordFields({
     <>
       <input
         type="password"
+        name="beehive-new-password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         placeholder="Wallet password (10+ characters)"
         minLength={10}
         required
+        autoComplete="new-password"
         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
       />
       <input
         type="password"
+        name="beehive-confirm-password"
         value={confirm}
         onChange={(e) => setConfirm(e.target.value)}
         placeholder="Repeat password"
         required
+        autoComplete="new-password"
         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
       />
     </>
@@ -273,9 +279,11 @@ function CreateWallet({ onDone }: { onDone: () => void }) {
             I wrote the seed phrase down on paper
           </label>
           <input
+            name="beehive-create-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Wallet name (e.g. Main wallet)"
+            autoComplete="off"
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
           />
           <PasswordFields
@@ -378,17 +386,22 @@ function ImportWallet({ onDone }: { onDone: () => void }) {
           : 'Enter your private key as 64 hex characters (with or without 0x). It is encrypted with your password and stored only in this browser.'}
       </p>
       <textarea
+        name="beehive-import-secret"
         value={secret}
         onChange={(e) => setSecret(e.target.value)}
         placeholder={kind === 'mnemonic' ? 'word1 word2 word3 ...' : '0x... or plain hex'}
         rows={kind === 'mnemonic' ? 3 : 2}
         required
+        autoComplete="off"
+        spellCheck={false}
         className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
       />
       <input
+        name="beehive-wallet-name"
         value={name}
         onChange={(e) => setName(e.target.value)}
         placeholder="Wallet name (e.g. Main wallet)"
+        autoComplete="off"
         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
       />
       <PasswordFields
