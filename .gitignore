@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+*.local
+db_config.php
+db_config.json
+config.json
+vapid_keys.json
+__pycache__/
+venv/
+*.log
+desktop.ini
+.DS_Store

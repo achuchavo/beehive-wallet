@@ -1,0 +1,9 @@
+<?php
+// Copy to db_config.php and fill in. db_config.php is git-ignored - never commit it.
+return [
+    'host' => '127.0.0.1',
+    'port' => 3306,
+    'user' => 'beehive_wallet',
+    'password' => 'CHANGE_ME',
+    'database' => 'beehive_wallet',
+];

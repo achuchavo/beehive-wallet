@@ -1,0 +1,13 @@
+[
+  {
+    "key": "medibloc",
+    "chainId": "panacea-3",
+    "chainName": "Medibloc",
+    "bech32Prefix": "panacea",
+    "denom": "umed",
+    "displayDenom": "MED",
+    "decimals": 6,
+    "lcd": "https://api.gopanacea.org",
+    "rpc": "https://rpc.gopanacea.org"
+  }
+]
