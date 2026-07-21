@@ -1,6 +1,11 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react'
-import { DirectSecp256k1HdWallet } from '@cosmjs/proto-signing'
+import {
+  DirectSecp256k1HdWallet,
+  DirectSecp256k1Wallet,
+  type OfflineDirectSigner,
+} from '@cosmjs/proto-signing'
 import { stringToPath } from '@cosmjs/crypto'
+import { fromHex } from '@cosmjs/encoding'
 import { CHAINS, type ChainInfo } from '../chains'
 import { encryptText, decryptText } from './crypto'
 import {
@@ -33,21 +38,43 @@ export async function generateMnemonic(chain: ChainInfo): Promise<string> {
   return wallet.mnemonic
 }
 
+export type WalletKind = 'mnemonic' | 'privkey'
+
+export function normalizePrivkey(input: string): string {
+  const hex = input.trim().toLowerCase().replace(/^0x/, '')
+  if (!/^[0-9a-f]{64}$/.test(hex)) {
+    throw new Error('Private key must be 64 hex characters (32 bytes)')
+  }
+  return hex
+}
+
+async function secretToSigner(
+  secret: string,
+  kind: WalletKind,
+  chain: ChainInfo,
+): Promise<OfflineDirectSigner> {
+  if (kind === 'privkey') {
+    return DirectSecp256k1Wallet.fromKey(fromHex(normalizePrivkey(secret)), chain.bech32Prefix)
+  }
+  return mnemonicToWallet(secret, chain)
+}
+
 interface WalletContextValue {
   wallets: StoredWallet[]
   active: StoredWallet | null
   setActive: (address: string) => void
   addWallet: (
     name: string,
-    mnemonic: string,
+    secret: string,
     password: string,
     chain: ChainInfo,
+    kind?: WalletKind,
   ) => Promise<StoredWallet>
   removeWallet: (address: string) => void
-  /** Decrypts the mnemonic. Throws 'Wrong password'. Caller must not store it. */
-  revealMnemonic: (address: string, password: string) => Promise<string>
+  /** Decrypts the seed phrase or private key. Throws 'Wrong password'. Caller must not store it. */
+  revealSecret: (address: string, password: string) => Promise<{ secret: string; kind: WalletKind }>
   /** Builds a signer for one signing operation. Throws 'Wrong password'. */
-  getSigner: (address: string, password: string) => Promise<DirectSecp256k1HdWallet>
+  getSigner: (address: string, password: string) => Promise<OfflineDirectSigner>
 }
 
 const WalletContext = createContext<WalletContextValue | null>(null)
@@ -67,9 +94,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const addWallet = useCallback(
-    async (name: string, mnemonic: string, password: string, chain: ChainInfo) => {
-      const wallet = await mnemonicToWallet(mnemonic, chain)
-      const [account] = await wallet.getAccounts()
+    async (
+      name: string,
+      secret: string,
+      password: string,
+      chain: ChainInfo,
+      kind: WalletKind = 'mnemonic',
+    ) => {
+      const cleanSecret = kind === 'privkey' ? normalizePrivkey(secret) : secret.trim()
+      const signer = await secretToSigner(cleanSecret, kind, chain)
+      const [account] = await signer.getAccounts()
       const current = loadWallets()
       if (current.some((w) => w.address === account.address)) {
         throw new Error('This wallet is already added')
@@ -78,7 +112,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         name: name.trim() || 'My wallet',
         chainKey: chain.key,
         address: account.address,
-        encrypted: await encryptText(mnemonic.trim(), password),
+        kind,
+        encrypted: await encryptText(cleanSecret, password),
         createdAt: new Date().toISOString(),
       }
       const next = [...current, stored]
@@ -102,11 +137,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     [activeAddress, persist],
   )
 
-  const revealMnemonic = useCallback(
+  const revealSecret = useCallback(
     async (address: string, password: string) => {
       const stored = loadWallets().find((w) => w.address === address)
       if (!stored) throw new Error('Wallet not found')
-      return decryptText(stored.encrypted, password)
+      const secret = await decryptText(stored.encrypted, password)
+      return { secret, kind: (stored.kind ?? 'mnemonic') as WalletKind }
     },
     [],
   )
@@ -117,16 +153,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!stored) throw new Error('Wallet not found')
       const chain = CHAINS.find((c) => c.key === stored.chainKey)
       if (!chain) throw new Error('Unknown chain')
-      const mnemonic = await decryptText(stored.encrypted, password)
-      return mnemonicToWallet(mnemonic, chain)
+      const secret = await decryptText(stored.encrypted, password)
+      return secretToSigner(secret, stored.kind ?? 'mnemonic', chain)
     },
     [],
   )
 
   const value = useMemo<WalletContextValue>(() => {
     const active = wallets.find((w) => w.address === activeAddress) ?? wallets[0] ?? null
-    return { wallets, active, setActive, addWallet, removeWallet, revealMnemonic, getSigner }
-  }, [wallets, activeAddress, setActive, addWallet, removeWallet, revealMnemonic, getSigner])
+    return { wallets, active, setActive, addWallet, removeWallet, revealSecret, getSigner }
+  }, [wallets, activeAddress, setActive, addWallet, removeWallet, revealSecret, getSigner])
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>
 }

@@ -18,16 +18,17 @@ export default function Settings() {
 }
 
 function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: () => void }) {
-  const { wallets, active, setActive, removeWallet, revealMnemonic } = useWallet()
+  const { wallets, active, setActive, removeWallet, revealSecret } = useWallet()
   const [revealFor, setRevealFor] = useState<string | null>(null)
   const [password, setPassword] = useState('')
-  const [mnemonic, setMnemonic] = useState('')
+  const [secret, setSecret] = useState('')
   const [error, setError] = useState('')
 
   async function reveal(address: string) {
     setError('')
     try {
-      setMnemonic(await revealMnemonic(address, password))
+      const r = await revealSecret(address, password)
+      setSecret(r.secret)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed')
     }
@@ -36,7 +37,7 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
   function closeReveal() {
     setRevealFor(null)
     setPassword('')
-    setMnemonic('')
+    setSecret('')
     setError('')
   }
 
@@ -80,7 +81,11 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
                     onClick={() => (revealFor === w.address ? closeReveal() : setRevealFor(w.address))}
                     className="text-xs text-amber-700 hover:underline"
                   >
-                    {revealFor === w.address ? 'Close' : 'Show seed'}
+                    {revealFor === w.address
+                      ? 'Close'
+                      : w.kind === 'privkey'
+                        ? 'Show key'
+                        : 'Show seed'}
                   </button>
                   <button onClick={() => remove(w.address)} className="text-xs text-red-600 hover:underline">
                     Remove
@@ -88,12 +93,12 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
                 </div>
                 {revealFor === w.address && (
                   <div className="space-y-2 rounded-lg bg-slate-50 p-3">
-                    {mnemonic ? (
+                    {secret ? (
                       <>
                         <p className="text-xs font-medium text-red-600">
-                          Never share this. Anyone with these words controls the wallet.
+                          Never share this. Anyone with it controls the wallet.
                         </p>
-                        <p className="rounded bg-white p-2 font-mono text-sm">{mnemonic}</p>
+                        <p className="break-all rounded bg-white p-2 font-mono text-sm">{secret}</p>
                       </>
                     ) : (
                       <div className="flex gap-2">
@@ -131,7 +136,7 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
           onClick={onImport}
           className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm hover:border-amber-500"
         >
-          Import seed phrase
+          Import wallet
         </button>
       </div>
     </div>
@@ -272,8 +277,9 @@ function CreateWallet({ onDone }: { onDone: () => void }) {
 function ImportWallet({ onDone }: { onDone: () => void }) {
   const chain = DEFAULT_CHAIN
   const { addWallet } = useWallet()
+  const [kind, setKind] = useState<'mnemonic' | 'privkey'>('mnemonic')
   const [name, setName] = useState('')
-  const [mnemonic, setMnemonic] = useState('')
+  const [secret, setSecret] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
@@ -281,10 +287,14 @@ function ImportWallet({ onDone }: { onDone: () => void }) {
 
   async function finish(e: React.FormEvent) {
     e.preventDefault()
-    const words = mnemonic.trim().split(/\s+/)
-    if (words.length !== 12 && words.length !== 24) {
-      setError('Seed phrase must be 12 or 24 words')
-      return
+    let cleanSecret = secret.trim()
+    if (kind === 'mnemonic') {
+      const words = cleanSecret.split(/\s+/)
+      if (words.length !== 12 && words.length !== 24) {
+        setError('Seed phrase must be 12 or 24 words')
+        return
+      }
+      cleanSecret = words.join(' ').toLowerCase()
     }
     if (password !== confirm) {
       setError('Passwords do not match')
@@ -293,10 +303,16 @@ function ImportWallet({ onDone }: { onDone: () => void }) {
     setBusy(true)
     setError('')
     try {
-      await addWallet(name, words.join(' ').toLowerCase(), password, chain)
+      await addWallet(name, cleanSecret, password, chain, kind)
       onDone()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Invalid seed phrase')
+      setError(
+        err instanceof Error
+          ? err.message
+          : kind === 'privkey'
+            ? 'Invalid private key'
+            : 'Invalid seed phrase',
+      )
     } finally {
       setBusy(false)
     }
@@ -304,16 +320,40 @@ function ImportWallet({ onDone }: { onDone: () => void }) {
 
   return (
     <form onSubmit={finish} className="max-w-lg space-y-3">
-      <h2 className="font-medium">Import seed phrase</h2>
+      <h2 className="font-medium">Import wallet</h2>
+      <div className="flex gap-1">
+        {(
+          [
+            ['mnemonic', 'Seed phrase'],
+            ['privkey', 'Private key'],
+          ] as const
+        ).map(([k, label]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => {
+              setKind(k)
+              setSecret('')
+              setError('')
+            }}
+            className={`rounded-full px-4 py-1.5 text-sm ${
+              kind === k ? 'bg-amber-500 font-medium text-white' : 'bg-slate-100 text-slate-600'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       <p className="text-sm text-slate-500">
-        Enter your 12 or 24 word seed phrase. It is encrypted with your password and stored only
-        in this browser.
+        {kind === 'mnemonic'
+          ? 'Enter your 12 or 24 word seed phrase. It is encrypted with your password and stored only in this browser.'
+          : 'Enter your private key as 64 hex characters (with or without 0x). It is encrypted with your password and stored only in this browser.'}
       </p>
       <textarea
-        value={mnemonic}
-        onChange={(e) => setMnemonic(e.target.value)}
-        placeholder="word1 word2 word3 ..."
-        rows={3}
+        value={secret}
+        onChange={(e) => setSecret(e.target.value)}
+        placeholder={kind === 'mnemonic' ? 'word1 word2 word3 ...' : '0x... or plain hex'}
+        rows={kind === 'mnemonic' ? 3 : 2}
         required
         className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
       />

@@ -4,6 +4,8 @@ export interface StoredWallet {
   name: string
   chainKey: string
   address: string
+  /** What the encrypted payload contains. Missing = mnemonic (pre-privkey wallets). */
+  kind?: 'mnemonic' | 'privkey'
   encrypted: EncryptedPayload
   createdAt: string
 }
