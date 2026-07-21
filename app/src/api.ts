@@ -1,18 +1,23 @@
 // Thin client for the PHP API. Same-origin (/api proxied in dev), so the
 // PHP session cookie rides along automatically.
 
+export type AlarmType = 'sent' | 'received' | 'both' | 'unbond'
+export type AlertKind = 'sent' | 'received' | 'unbond'
+
 export interface WatchedAddress {
   id: number
   chain_key: string
   address: string
   label: string
   alarm_enabled: number
+  alarm_type: AlarmType
   created_at: string
 }
 
 export interface WalletAlert {
   id: number
   watched_address_id: number
+  kind: AlertKind
   chain_key: string
   address: string
   label: string
@@ -22,6 +27,53 @@ export interface WalletAlert {
   recipient: string
   detected_at: string
   is_read: number
+}
+
+export type UptimeStatus = 'pending' | 'approved' | 'denied'
+export type UptimeAlertKind = 'down' | 'recovered'
+
+export interface UptimeSubscription {
+  id: number
+  chain_key: string
+  validator_address: string
+  moniker: string
+  status: UptimeStatus
+  authorized_until: string | null
+  miss_threshold: number
+  frequency_minutes: number
+  snooze_until: string | null
+  last_missed: number
+  last_down_state: number
+  last_alert_at: string | null
+  created_at: string
+}
+
+export interface UptimeAlert {
+  id: number
+  subscription_id: number
+  kind: UptimeAlertKind
+  missed_blocks: number
+  detected_at: string
+  is_read: number
+  validator_address: string
+  moniker: string
+  chain_key: string
+}
+
+export interface AdminUptimeSub {
+  id: number
+  user_id: number
+  email: string
+  chain_key: string
+  validator_address: string
+  moniker: string
+  status: UptimeStatus
+  authorized_until: string | null
+  miss_threshold: number
+  frequency_minutes: number
+  last_missed: number
+  last_down_state: number
+  created_at: string
 }
 
 const API_BASE = `${import.meta.env.BASE_URL}api/`.replace('//', '/')
@@ -90,10 +142,17 @@ export const api = {
     call<{ main_address: string | null }>('account_set_address.php', { main_address }),
   logout: () => call('logout.php', {}),
   watchedList: () => call<{ addresses: WatchedAddress[] }>('watched_list.php'),
-  watchedAdd: (chain_key: string, address: string, label: string) =>
-    call('watched_add.php', { chain_key, address, label }),
+  watchedAdd: (chain_key: string, address: string, label: string, alarm_type: AlarmType) =>
+    call<{ id: number; duplicate: boolean }>('watched_add.php', {
+      chain_key,
+      address,
+      label,
+      alarm_type,
+    }),
   watchedRemove: (id: number) => call('watched_remove.php', { id }),
   watchedToggle: (id: number, enabled: boolean) => call('watched_toggle.php', { id, enabled }),
+  watchedSetType: (id: number, alarm_type: AlarmType) =>
+    call('watched_set_type.php', { id, alarm_type }),
   alertsList: () => call<{ unread: number; alerts: WalletAlert[] }>('alerts_list.php'),
   alertsMarkRead: () => call('alerts_mark_read.php', {}),
   adminOverview: () => call<AdminOverview & { ok: boolean }>('admin_overview.php'),
@@ -107,6 +166,8 @@ export const api = {
   ) => call('admin_role_update.php', { id, is_admin, is_super_admin, features }),
   announcementGet: () =>
     call<{ announcement: Announcement | null }>('announcement_get.php'),
+  settingsPublic: () =>
+    call<{ uptime_alerts_enabled: boolean }>('settings_public.php'),
   adminAnnouncementSet: (message: string, severity: string, expires_hours: number) =>
     call('admin_announcement_set.php', { message, severity, expires_hours }),
   adminAnnouncementClear: () => call('admin_announcement_set.php', { clear: true }),
@@ -122,6 +183,27 @@ export const api = {
   adminFreeValidatorAdd: (chain_key: string, valoper: string) =>
     call('admin_free_validator_add.php', { chain_key, valoper }),
   adminFreeValidatorRemove: (id: number) => call('admin_free_validator_remove.php', { id }),
+  uptimeStatus: () =>
+    call<{
+      enabled: boolean
+      subscriptions: UptimeSubscription[]
+      alerts: UptimeAlert[]
+      unread: number
+    }>('uptime_status.php'),
+  uptimeApply: (chain_key: string, validator_address: string, moniker: string) =>
+    call('uptime_apply.php', { chain_key, validator_address, moniker }),
+  uptimeUpdate: (
+    id: number,
+    changes: { frequency_minutes?: number; miss_threshold?: number; snooze_minutes?: number },
+  ) => call('uptime_update.php', { id, ...changes }),
+  uptimeCancel: (id: number) => call('uptime_cancel.php', { id }),
+  uptimeMarkRead: () => call('uptime_mark_read.php', {}),
+  adminUptimeList: () =>
+    call<{ enabled: boolean; subscriptions: AdminUptimeSub[] }>('admin_uptime_list.php'),
+  adminUptimeDecide: (id: number, action: 'approve' | 'deny', days: number) =>
+    call('admin_uptime_decide.php', { id, action, days }),
+  adminSettingSet: (key: string, value: boolean) =>
+    call<{ key: string; value: string }>('admin_setting_set.php', { key, value: value ? 1 : 0 }),
   pushConfig: () => call<{ publicKey: string }>('push_config.php'),
   pushSubscribe: (subscription: PushSubscriptionJSON) =>
     call('push_subscribe.php', subscription),
@@ -130,7 +212,7 @@ export const api = {
 
 export type UserAction = 'disable' | 'enable' | 'delete'
 
-export const ADMIN_FEATURES = ['users', 'chains', 'announcements'] as const
+export const ADMIN_FEATURES = ['users', 'chains', 'announcements', 'uptime'] as const
 export type AdminFeature = (typeof ADMIN_FEATURES)[number]
 
 export interface AdminChain {

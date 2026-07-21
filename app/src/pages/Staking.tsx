@@ -1,9 +1,22 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Coins, Gift, ShieldCheck, Star, Search, Plus, Import, Wallet } from 'lucide-react'
-import { DEFAULT_CHAIN, formatAmount, toBaseUnits } from '../chains'
+import { findChain, formatAmount, toBaseUnits, feeReserve, type ChainInfo } from '../chains'
+import { sumBase, compareBase, addBase, floorBaseUnits, isPositiveBase } from '../wallet/amount'
 import { useWallet } from '../wallet/WalletContext'
-import { delegate, undelegate, claimRewards, serviceFeeActive, isFree } from '../wallet/staking'
+import {
+  buildDelegate,
+  buildUndelegate,
+  buildClaim,
+  serviceFeeActive,
+  isFree,
+  delegationHasServiceFee,
+} from '../wallet/staking'
+import { useTxReview, type Prepare } from '../wallet/useTxReview'
+import type { ReviewRow } from '../components/TxReview'
 import EmptyState from '../components/EmptyState'
+import PercentButtons from '../components/PercentButtons'
+import CopyAddress from '../components/CopyAddress'
+import { useT } from '../i18n/I18nContext'
 
 interface Validator {
   operator: string
@@ -25,9 +38,8 @@ interface StakeData {
   delegations: Record<string, string>
   rewards: Record<string, string>
   totalReward: string
+  available: string
 }
-
-const chain = DEFAULT_CHAIN
 
 function abbrev(n: number): string {
   if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`
@@ -79,11 +91,12 @@ function ValidatorAvatar({ identity, moniker }: { identity: string; moniker: str
   )
 }
 
-async function fetchStakeData(address: string): Promise<StakeData> {
-  const [valsRes, delRes, rewRes] = await Promise.all([
+async function fetchStakeData(chain: ChainInfo, address: string): Promise<StakeData> {
+  const [valsRes, delRes, rewRes, balRes] = await Promise.all([
     fetch(`${chain.lcd}/cosmos/staking/v1beta1/validators?pagination.limit=500`),
     fetch(`${chain.lcd}/cosmos/staking/v1beta1/delegations/${address}`),
     fetch(`${chain.lcd}/cosmos/distribution/v1beta1/delegators/${address}/rewards`),
+    fetch(`${chain.lcd}/cosmos/bank/v1beta1/balances/${address}`),
   ])
   if (!valsRes.ok) throw new Error(`Validator list failed (${valsRes.status})`)
 
@@ -121,36 +134,47 @@ async function fetchStakeData(address: string): Promise<StakeData> {
     const rewData = await rewRes.json()
     for (const r of rewData.rewards ?? []) {
       const coin = (r.reward ?? []).find((c: { denom: string }) => c.denom === chain.denom)
-      if (coin) rewards[r.validator_address] = String(Math.floor(Number(coin.amount)))
+      if (coin) rewards[r.validator_address] = floorBaseUnits(coin.amount)
     }
     const totalCoin = (rewData.total ?? []).find((c: { denom: string }) => c.denom === chain.denom)
-    if (totalCoin) totalReward = String(Math.floor(Number(totalCoin.amount)))
+    if (totalCoin) totalReward = floorBaseUnits(totalCoin.amount)
   }
 
-  return { validators, delegations, rewards, totalReward }
+  let available = '0'
+  if (balRes.ok) {
+    const balData = await balRes.json()
+    const coin = (balData.balances ?? []).find((c: { denom: string }) => c.denom === chain.denom)
+    if (coin) available = String(coin.amount)
+  }
+
+  return { validators, delegations, rewards, totalReward, available }
 }
 
 export default function Staking() {
+  const { t } = useT()
   const { active, wallets, setActive, getSigner } = useWallet()
+  // Chain resolved from the active wallet, never a global default.
+  const chain = active ? findChain(active.chainKey) : undefined
   const [data, setData] = useState<StakeData | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [notice, setNotice] = useState('')
   const [query, setQuery] = useState('')
   const [showInactive, setShowInactive] = useState(false)
+  const { prepare, modal } = useTxReview()
 
   const load = useCallback(async () => {
-    if (!active) return
+    if (!active || !chain) return
     setLoading(true)
     setError('')
     try {
-      setData(await fetchStakeData(active.address))
+      setData(await fetchStakeData(chain, active.address))
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load staking data')
+      setError(e instanceof Error ? e.message : t('staking.errLoad'))
     } finally {
       setLoading(false)
     }
-  }, [active])
+  }, [active, chain, t])
 
   useEffect(() => {
     setData(null)
@@ -160,31 +184,60 @@ export default function Staking() {
   if (!active) {
     return (
       <div>
-        <h1 className="text-xl font-semibold">Staking</h1>
+        <h1 className="text-xl font-semibold">{t('staking.title')}</h1>
         <EmptyState
           icon={Coins}
-          title="No wallet yet"
-          description="Add a wallet to stake to Beehive for free and earn rewards."
+          title={t('send.noWallet')}
+          description={t('staking.noWalletDesc')}
           actions={[
-            { label: 'Create wallet', to: '/settings?action=create', icon: Plus },
-            { label: 'Import wallet', to: '/settings?action=import', icon: Import, variant: 'secondary' },
+            { label: t('dash.createWallet'), to: '/settings?action=create', icon: Plus },
+            { label: t('dash.importWallet'), to: '/settings?action=import', icon: Import, variant: 'secondary' },
           ]}
         />
       </div>
     )
   }
+  if (!chain) {
+    return (
+      <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        {t('send.errUnknownChain', { chain: active.chainKey })}
+      </div>
+    )
+  }
 
-  const staked = data ? Object.values(data.delegations).reduce((s, a) => s + Number(a), 0) : 0
+  const staked = data ? sumBase(Object.values(data.delegations)) : '0'
   const rewardValidators = data ? Object.keys(data.rewards) : []
 
   async function claimAll(password: string) {
-    if (!active || rewardValidators.length === 0) return
+    if (!active || !chain || rewardValidators.length === 0) return
     setNotice('')
     setError('')
     const signer = await getSigner(active.address, password)
-    const hash = await claimRewards(chain, signer, active.address, rewardValidators)
-    setNotice(`Rewards claimed. ${hash.slice(0, 12)}...`)
-    await load()
+    const { messages, memo } = buildClaim(active.address, rewardValidators, null)
+    const claimChain = chain
+    await prepare({
+      chain: claimChain,
+      signer,
+      sender: active.address,
+      messages,
+      memo,
+      confirmLabel: t('review.confirmClaim'),
+      onDone: (hash) => {
+        setNotice(t('staking.rewardsClaimed', { hash: hash.slice(0, 12) }))
+        load()
+      },
+      onError: setError,
+      buildRows: (est) => [
+        { label: t('review.network'), value: `${claimChain.chainName} (${claimChain.chainId})` },
+        { label: t('review.from'), value: `${active.name} · ${active.address}`, mono: true },
+        {
+          label: t('review.claimAmount'),
+          value: `${formatAmount(data?.totalReward ?? '0', claimChain)} ${claimChain.displayDenom}`,
+        },
+        { label: t('review.fee'), value: `${formatAmount(est.amount, claimChain)} ${claimChain.displayDenom}` },
+        { label: t('review.action'), value: t('review.actionClaim') },
+      ],
+    })
   }
 
   const q = query.trim().toLowerCase()
@@ -199,23 +252,25 @@ export default function Staking() {
           const bf = isFree(chain, b.operator)
           if (af && !bf) return -1
           if (bf && !af) return 1
-          return Number(b.tokens) - Number(a.tokens)
+          return compareBase(b.tokens, a.tokens)
         })
     : []
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Staking / Validators</h1>
+      <h1 className="text-xl font-semibold">{t('staking.title')}</h1>
 
       <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
           <Wallet className="h-4.5 w-4.5" strokeWidth={1.8} />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-xs text-slate-500">Staking from</div>
-          <div className="truncate font-mono text-xs text-slate-400">
-            {active.address.slice(0, 18)}...{active.address.slice(-6)}
-          </div>
+          <div className="text-xs text-slate-500">{t('staking.stakingFrom')}</div>
+          <CopyAddress
+            address={active.address}
+            display={`${active.address.slice(0, 18)}...${active.address.slice(-6)}`}
+            className="max-w-full text-xs text-slate-400"
+          />
         </div>
         {wallets.length > 1 ? (
           <select
@@ -242,16 +297,16 @@ export default function Staking() {
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-xl border border-slate-200 bg-white p-3">
           <div className="flex items-center gap-1.5 text-xs text-slate-500">
-            <Coins className="h-3.5 w-3.5" /> Total staked
+            <Coins className="h-3.5 w-3.5" /> {t('staking.totalStaked')}
           </div>
           <div className="text-xl font-semibold">
-            {data ? formatAmount(String(staked), chain) : '...'}{' '}
+            {data ? formatAmount(staked, chain) : '...'}{' '}
             <span className="text-xs font-normal text-slate-400">{chain.displayDenom}</span>
           </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-3">
           <div className="flex items-center gap-1.5 text-xs text-slate-500">
-            <Gift className="h-3.5 w-3.5" /> Claimable rewards
+            <Gift className="h-3.5 w-3.5" /> {t('rewards.claimableRewards')}
           </div>
           <div className="text-xl font-semibold">
             {data ? formatAmount(data.totalReward, chain) : '...'}{' '}
@@ -260,10 +315,11 @@ export default function Staking() {
         </div>
       </div>
 
-      {data && Number(data.totalReward) > 0 && (
+      {data && isPositiveBase(data.totalReward) && (
         <ActionForm
-          label={`Claim all rewards (${rewardValidators.length} validator${rewardValidators.length > 1 ? 's' : ''})`}
-          submitLabel="Claim"
+          chain={chain}
+          label={t('staking.claimAll', { count: rewardValidators.length })}
+          submitLabel={t('rewards.claim')}
           onSubmit={claimAll}
           onError={setError}
         />
@@ -276,7 +332,7 @@ export default function Staking() {
             name="beehive-validator-search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search validators"
+            placeholder={t('staking.search')}
             autoComplete="off"
             className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm focus:border-amber-500 focus:outline-none"
           />
@@ -288,29 +344,32 @@ export default function Staking() {
               checked={showInactive}
               onChange={(e) => setShowInactive(e.target.checked)}
             />
-            Show inactive ({inactiveCount})
+            {t('staking.showInactive', { count: inactiveCount })}
           </label>
         )}
       </div>
 
       <div className="flex items-center gap-3 text-xs text-slate-400">
         <span className="flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-green-500" /> active
+          <span className="h-2 w-2 rounded-full bg-green-500" /> {t('staking.active')}
         </span>
         <span className="flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-red-500" /> jailed / inactive
+          <span className="h-2 w-2 rounded-full bg-red-500" /> {t('staking.jailedInactive')}
         </span>
       </div>
 
-      {loading && !data && <p className="text-sm text-slate-500">Loading validators...</p>}
+      {loading && !data && <p className="text-sm text-slate-500">{t('staking.loading')}</p>}
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div className="max-h-[60vh] overflow-y-auto rounded-xl border border-slate-200 bg-white">
         {ordered.map((v, i) => (
           <ValidatorRow
             key={v.operator}
+            chain={chain}
+            prepare={prepare}
             validator={v}
             staked={data?.delegations[v.operator]}
             reward={data?.rewards[v.operator]}
+            available={data?.available}
             first={i === 0}
             onDone={(msg) => {
               setNotice(msg)
@@ -320,50 +379,108 @@ export default function Staking() {
           />
         ))}
         {data && ordered.length === 0 && (
-          <p className="px-4 py-6 text-center text-sm text-slate-500">No validators match.</p>
+          <p className="px-4 py-6 text-center text-sm text-slate-500">{t('staking.noMatch')}</p>
         )}
       </div>
+      {modal}
     </div>
   )
 }
 
 function ValidatorRow({
+  chain,
+  prepare,
   validator,
   staked,
   reward,
+  available,
   first,
   onDone,
   onError,
 }: {
+  chain: ChainInfo
+  prepare: Prepare
   validator: Validator
   staked?: string
   reward?: string
+  available?: string
   first: boolean
   onDone: (msg: string) => void
   onError: (msg: string) => void
 }) {
+  const { t } = useT()
   const { active, getSigner } = useWallet()
   const [action, setAction] = useState<'none' | 'delegate' | 'undelegate'>('none')
   const free = isFree(chain, validator.operator)
   const up = isUp(validator)
   const power = Number(validator.tokens) / 10 ** chain.decimals
 
+  const baseRows = (): ReviewRow[] => [
+    { label: t('review.network'), value: `${chain.chainName} (${chain.chainId})` },
+    { label: t('review.from'), value: `${active!.name} · ${active!.address}`, mono: true },
+    { label: t('review.validator'), value: `${validator.moniker} · ${validator.operator}`, mono: true },
+  ]
+
   async function submitDelegate(password: string, amount: string) {
     if (!active) return
     const base = toBaseUnits(amount, chain)
     const signer = await getSigner(active.address, password)
-    const hash = await delegate(chain, signer, active.address, validator.operator, base)
-    setAction('none')
-    onDone(`Delegated to ${validator.moniker}. ${hash.slice(0, 12)}...`)
+    const { messages, memo } = buildDelegate(chain, active.address, validator.operator, base)
+    const hasFee = delegationHasServiceFee(chain, validator.operator)
+    await prepare({
+      chain,
+      signer,
+      sender: active.address,
+      messages,
+      memo,
+      confirmLabel: t('review.confirmDelegate'),
+      onDone: (hash) => {
+        setAction('none')
+        onDone(t('staking.delegatedTo', { name: validator.moniker, hash: hash.slice(0, 12) }))
+      },
+      onError,
+      buildRows: (est) => {
+        const serviceFee = hasFee ? chain.serviceFee : '0'
+        const total = addBase(addBase(base, est.amount), serviceFee)
+        const rows = baseRows()
+        rows.push({ label: t('review.amount'), value: `${formatAmount(base, chain)} ${chain.displayDenom}` })
+        if (hasFee) {
+          rows.push({ label: t('review.serviceFee'), value: `${formatAmount(serviceFee, chain)} ${chain.displayDenom}` })
+        }
+        rows.push({ label: t('review.fee'), value: `${formatAmount(est.amount, chain)} ${chain.displayDenom}` })
+        rows.push({ label: t('review.total'), value: `${formatAmount(total, chain)} ${chain.displayDenom}`, strong: true })
+        rows.push({ label: t('review.action'), value: t('review.actionDelegate') })
+        return rows
+      },
+    })
   }
 
   async function submitUndelegate(password: string, amount: string) {
     if (!active) return
     const base = toBaseUnits(amount, chain)
     const signer = await getSigner(active.address, password)
-    const hash = await undelegate(chain, signer, active.address, validator.operator, base)
-    setAction('none')
-    onDone(`Undelegation started from ${validator.moniker}. ${hash.slice(0, 12)}...`)
+    const { messages, memo } = buildUndelegate(chain, active.address, validator.operator, base)
+    await prepare({
+      chain,
+      signer,
+      sender: active.address,
+      messages,
+      memo,
+      confirmLabel: t('review.confirmUndelegate'),
+      warning: t('review.warnUnbond'),
+      onDone: (hash) => {
+        setAction('none')
+        onDone(t('staking.undelegationStarted', { name: validator.moniker, hash: hash.slice(0, 12) }))
+      },
+      onError,
+      buildRows: (est) => {
+        const rows = baseRows()
+        rows.push({ label: t('review.unbondAmount'), value: `${formatAmount(base, chain)} ${chain.displayDenom}` })
+        rows.push({ label: t('review.fee'), value: `${formatAmount(est.amount, chain)} ${chain.displayDenom}` })
+        rows.push({ label: t('review.action'), value: t('review.actionUndelegate') })
+        return rows
+      },
+    })
   }
 
   return (
@@ -372,7 +489,7 @@ function ValidatorRow({
         <div className="relative shrink-0">
           <ValidatorAvatar identity={validator.identity} moniker={validator.moniker} />
           <span
-            title={up ? 'Active' : validator.jailed ? 'Jailed' : 'Inactive'}
+            title={up ? t('staking.statusActive') : validator.jailed ? t('staking.statusJailed') : t('staking.statusInactive')}
             className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white ${
               up ? 'bg-green-500' : 'bg-red-500'
             }`}
@@ -384,19 +501,19 @@ function ValidatorRow({
             <span className="truncate">{validator.moniker}</span>
             {free && (
               <span className="flex shrink-0 items-center gap-0.5 rounded bg-green-100 px-1 text-[11px] font-medium text-green-700">
-                <ShieldCheck className="h-2.5 w-2.5" /> Free
+                <ShieldCheck className="h-2.5 w-2.5" /> {t('staking.free')}
               </span>
             )}
           </div>
           <div className="flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
-            <span>{(validator.commission * 100).toFixed(0)}% comm</span>
+            <span>{t('staking.comm', { pct: (validator.commission * 100).toFixed(0) })}</span>
             <span>·</span>
             <span>{abbrev(power)} {chain.displayDenom}</span>
             {staked && (
               <>
                 <span>·</span>
                 <span className="font-medium text-slate-700">
-                  you: {formatAmount(staked, chain)}
+                  {t('staking.you', { amount: formatAmount(staked, chain) })}
                 </span>
                 {reward && Number(reward) > 0 && (
                   <span className="text-green-700">+{formatAmount(reward, chain)}</span>
@@ -414,14 +531,14 @@ function ValidatorRow({
                 : 'border border-slate-300 hover:border-amber-500'
             }`}
           >
-            {free ? 'Stake' : 'Delegate'}
+            {free ? t('staking.stake') : t('staking.delegate')}
           </button>
           {staked && (
             <button
               onClick={() => setAction(action === 'undelegate' ? 'none' : 'undelegate')}
               className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs hover:border-amber-500"
             >
-              Undelegate
+              {t('staking.undelegate')}
             </button>
           )}
         </div>
@@ -431,13 +548,19 @@ function ValidatorRow({
         <div className="px-3 pb-3">
           {!free && serviceFeeActive(chain) && (
             <p className="mb-1 text-xs text-slate-500">
-              Service fee of {formatAmount(chain.serviceFee, chain)} {chain.displayDenom} applies.
+              {t('staking.serviceFee', { fee: formatAmount(chain.serviceFee, chain), denom: chain.displayDenom })}
             </p>
           )}
           <ActionForm
-            label={`Delegate to ${validator.moniker}`}
-            submitLabel="Sign and delegate"
+            chain={chain}
+            label={t('staking.delegateTo', { name: validator.moniker })}
+            submitLabel={t('staking.signAndDelegate')}
             withAmount
+            maxBase={available ?? '0'}
+            reserveBase={addBase(
+              feeReserve(chain, 250000),
+              !free && serviceFeeActive(chain) ? chain.serviceFee : '0',
+            )}
             onSubmit={submitDelegate}
             onError={onError}
           />
@@ -445,13 +568,13 @@ function ValidatorRow({
       )}
       {action === 'undelegate' && (
         <div className="px-3 pb-3">
-          <p className="mb-1 text-xs text-slate-500">
-            Undelegated funds unlock after the ~21-day unbonding period.
-          </p>
+          <p className="mb-1 text-xs text-slate-500">{t('staking.unbondNote')}</p>
           <ActionForm
-            label={`Undelegate from ${validator.moniker}`}
-            submitLabel="Sign and undelegate"
+            chain={chain}
+            label={t('staking.undelegateFrom', { name: validator.moniker })}
+            submitLabel={t('staking.signAndUndelegate')}
             withAmount
+            maxBase={staked ?? '0'}
             onSubmit={submitUndelegate}
             onError={onError}
           />
@@ -462,18 +585,25 @@ function ValidatorRow({
 }
 
 function ActionForm({
+  chain,
   label,
   submitLabel,
   withAmount = false,
+  maxBase,
+  reserveBase,
   onSubmit,
   onError,
 }: {
+  chain: ChainInfo
   label: string
   submitLabel: string
   withAmount?: boolean
+  maxBase?: string
+  reserveBase?: string
   onSubmit: (password: string, amount: string) => Promise<void>
   onError: (msg: string) => void
 }) {
+  const { t } = useT()
   const [amount, setAmount] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -483,11 +613,11 @@ function ActionForm({
     setBusy(true)
     onError('')
     try {
+      // onSubmit opens the review; fields are kept so a cancelled review can be
+      // re-submitted, and the form unmounts on a confirmed action anyway.
       await onSubmit(password, amount)
-      setAmount('')
-      setPassword('')
     } catch (err) {
-      onError(err instanceof Error ? err.message : 'Transaction failed')
+      onError(err instanceof Error ? err.message : t('staking.errTx'))
     } finally {
       setBusy(false)
     }
@@ -497,26 +627,36 @@ function ActionForm({
     <form onSubmit={submit} className="space-y-2 rounded-lg bg-slate-50 p-3">
       <div className="text-xs text-slate-500">{label}</div>
       {withAmount && (
-        <div className="flex items-center gap-2">
-          <input
-            name="beehive-stake-amount"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value.trim())}
-            placeholder="Amount"
-            required
-            inputMode="decimal"
-            autoComplete="off"
-            className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-          />
-          <span className="text-sm text-slate-500">{chain.displayDenom}</span>
-        </div>
+        <>
+          <div className="flex items-center gap-2">
+            <input
+              name="beehive-stake-amount"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value.trim())}
+              placeholder={t('send.amount')}
+              required
+              inputMode="decimal"
+              autoComplete="off"
+              className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+            />
+            <span className="text-sm text-slate-500">{chain.displayDenom}</span>
+          </div>
+          {maxBase && (
+            <PercentButtons
+              maxBase={maxBase}
+              reserveBase={reserveBase}
+              chain={chain}
+              onPick={setAmount}
+            />
+          )}
+        </>
       )}
       <input
         type="password"
         name="beehive-stake-password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
-        placeholder="Wallet password to sign"
+        placeholder={t('send.signPassword')}
         required
         autoComplete="new-password"
         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
@@ -525,7 +665,7 @@ function ActionForm({
         disabled={busy}
         className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
       >
-        {busy ? 'Signing...' : submitLabel}
+        {busy ? t('rewards.signing') : submitLabel}
       </button>
     </form>
   )

@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ShieldCheck } from 'lucide-react'
-import { api, type AdminOverview, type UserAction, ADMIN_FEATURES } from '../api'
+import {
+  api,
+  type AdminOverview,
+  type UserAction,
+  type AdminUptimeSub,
+  ADMIN_FEATURES,
+} from '../api'
 import { CHAINS, DEFAULT_CHAIN, formatAmount } from '../chains'
 import ChainManager from './ChainManager'
 
-type Tab = 'overview' | 'users' | 'access' | 'chains' | 'announcements'
+type Tab = 'overview' | 'users' | 'access' | 'chains' | 'announcements' | 'uptime'
 
 export default function Admin() {
   const [data, setData] = useState<AdminOverview | null>(null)
@@ -71,6 +77,7 @@ export default function Admin() {
     { id: 'access', label: 'Access', show: isSuper },
     { id: 'chains', label: 'Chains', show: can('chains') },
     { id: 'announcements', label: 'Announcements', show: can('announcements') },
+    { id: 'uptime', label: 'Uptime', show: can('uptime') },
   ]
   const tabs = allTabs.filter((t) => t.show)
 
@@ -160,6 +167,10 @@ export default function Admin() {
       )}
 
       {activeTab === 'chains' && can('chains') && <ChainManager onError={setError} />}
+
+      {activeTab === 'uptime' && can('uptime') && (
+        <UptimeManager isSuper={isSuper} onError={setError} />
+      )}
 
       {activeTab === 'access' && isSuper && (
         <RoleManager users={data.users} onChanged={load} onError={setError} />
@@ -481,6 +492,129 @@ function StatCard({ label, value }: { label: string; value: number }) {
     <div className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="text-xs text-slate-500">{label}</div>
       <div className="text-2xl font-semibold">{value.toLocaleString()}</div>
+    </div>
+  )
+}
+
+function UptimeManager({ isSuper, onError }: { isSuper: boolean; onError: (m: string) => void }) {
+  const [enabled, setEnabled] = useState(false)
+  const [subs, setSubs] = useState<AdminUptimeSub[]>([])
+
+  const load = useCallback(() => {
+    api
+      .adminUptimeList()
+      .then((r) => {
+        setEnabled(r.enabled)
+        setSubs(r.subscriptions)
+      })
+      .catch((e) => onError(e instanceof Error ? e.message : 'Failed'))
+  }, [onError])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  async function toggle() {
+    try {
+      await api.adminSettingSet('uptime_alerts_enabled', !enabled)
+      load()
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Failed')
+    }
+  }
+
+  async function decide(id: number, action: 'approve' | 'deny', days: number) {
+    try {
+      await api.adminUptimeDecide(id, action, days)
+      load()
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Failed')
+    }
+  }
+
+  const statusCls: Record<string, string> = {
+    pending: 'bg-slate-100 text-slate-600',
+    approved: 'bg-green-100 text-green-700',
+    denied: 'bg-red-100 text-red-700',
+  }
+
+  return (
+    <div className="space-y-4">
+      {isSuper ? (
+        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3">
+          <div>
+            <div className="text-sm font-medium">Validator uptime alerts</div>
+            <div className="text-xs text-slate-500">Global on/off for the whole feature.</div>
+          </div>
+          <button
+            onClick={toggle}
+            className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+              enabled ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+            }`}
+          >
+            {enabled ? 'On' : 'Off'}
+          </button>
+        </div>
+      ) : (
+        <p className="text-sm text-slate-500">
+          Feature is currently {enabled ? 'on' : 'off'} (a super admin controls the global switch).
+        </p>
+      )}
+
+      <section className="space-y-2">
+        <h2 className="font-medium">Applications</h2>
+        {subs.length === 0 ? (
+          <p className="text-sm text-slate-500">No applications yet.</p>
+        ) : (
+          <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
+            {subs.map((s) => (
+              <li key={s.id} className="space-y-2 px-4 py-3 text-sm">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">{s.moniker || s.validator_address}</div>
+                    <div className="truncate text-xs text-slate-400">
+                      {s.email} · <span className="font-mono">{s.validator_address.slice(0, 20)}...</span>
+                    </div>
+                  </div>
+                  <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${statusCls[s.status]}`}>
+                    {s.status}
+                    {s.status === 'approved' &&
+                      (s.authorized_until ? ` · until ${s.authorized_until.slice(0, 10)}` : ' · no expiry')}
+                  </span>
+                </div>
+                {s.status === 'pending' && (
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      onClick={() => decide(s.id, 'approve', 30)}
+                      className="rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-600"
+                    >
+                      Approve 30d
+                    </button>
+                    <button
+                      onClick={() => decide(s.id, 'approve', 90)}
+                      className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs hover:border-amber-500"
+                    >
+                      90d
+                    </button>
+                    <button
+                      onClick={() => decide(s.id, 'approve', 0)}
+                      className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs hover:border-amber-500"
+                    >
+                      Indefinite
+                    </button>
+                    <button
+                      onClick={() => decide(s.id, 'deny', 0)}
+                      className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs text-red-600 hover:border-red-400"
+                    >
+                      Deny
+                    </button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   )
 }

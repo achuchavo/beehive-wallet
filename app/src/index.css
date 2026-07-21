@@ -3,3 +3,26 @@
 body {
   @apply bg-slate-50 text-slate-900 antialiased;
 }
+
+/* iOS Safari zooms into any focused input whose font-size is under 16px.
+   Force 16px on small screens so tapping a field never zooms the page.
+   (Pinch-to-zoom stays available - this only affects the focus behaviour.) */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Respect the OS "reduce motion" preference: near-instant transitions/animations. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

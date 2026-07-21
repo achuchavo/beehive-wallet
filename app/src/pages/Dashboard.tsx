@@ -20,6 +20,7 @@ import { DEFAULT_CHAIN, CHAINS, formatAmount } from '../chains'
 import { useWallet } from '../wallet/WalletContext'
 import EmptyState from '../components/EmptyState'
 import { CURRENCIES, getCurrency, setCurrency, fetchPrice, fiatValue, formatFiat } from '../currency'
+import { useT } from '../i18n/I18nContext'
 import {
   fetchValidatorMonikers,
   fetchWalletPortfolio,
@@ -33,6 +34,7 @@ interface Row {
 
 export default function Dashboard() {
   const chain = DEFAULT_CHAIN
+  const { t } = useT()
   const { wallets } = useWallet()
   const [rows, setRows] = useState<Row[] | null>(null)
   const [error, setError] = useState('')
@@ -80,15 +82,15 @@ export default function Dashboard() {
   if (wallets.length === 0) {
     return (
       <div>
-        <h1 className="text-xl font-semibold">Dashboard</h1>
+        <h1 className="text-xl font-semibold">{t('dash.title')}</h1>
         <EmptyState
           icon={Wallet}
-          title="Welcome to Beehive Wallet"
-          description="Create a new wallet or import an existing one. It stays in your browser, encrypted with your password - we never see your keys."
+          title={t('dash.welcome')}
+          description={t('dash.welcomeDesc')}
           actions={[
-            { label: 'Create wallet', to: '/settings?action=create', icon: Plus },
-            { label: 'Import wallet', to: '/settings?action=import', icon: Import, variant: 'secondary' },
-            { label: 'Watch an address', to: '/alarms', icon: Bell, variant: 'secondary' },
+            { label: t('dash.createWallet'), to: '/settings?action=create', icon: Plus },
+            { label: t('dash.importWallet'), to: '/settings?action=import', icon: Import, variant: 'secondary' },
+            { label: t('dash.watchAddress'), to: '/alarms', icon: Bell, variant: 'secondary' },
           ]}
         />
       </div>
@@ -108,7 +110,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">Dashboard</h1>
+        <h1 className="text-xl font-semibold">{t('dash.title')}</h1>
         <div className="flex gap-2">
           <select
             value={currency}
@@ -139,14 +141,16 @@ export default function Dashboard() {
         <div className="flex items-center justify-between rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
           <button onClick={load} className="underline">
-            Retry
+            {t('common.retry')}
           </button>
         </div>
       )}
 
       {/* Portfolio totals across all wallets on this chain */}
       <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <div className="text-xs text-slate-500">Total value · {wallets.length} wallet{wallets.length > 1 ? 's' : ''}</div>
+        <div className="text-xs text-slate-500">
+          {t('dash.totalValue')} · {t(wallets.length > 1 ? 'dash.wallets' : 'dash.wallet', { count: wallets.length })}
+        </div>
         <div className="text-3xl font-semibold">
           {rows ? formatAmount(String(grandTotal), chain) : '...'}{' '}
           <span className="text-base font-normal text-slate-400">{chain.displayDenom}</span>
@@ -155,11 +159,11 @@ export default function Dashboard() {
           <div className="text-sm font-medium text-slate-500">≈ {fiat(grandTotal)}</div>
         )}
         <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
-          <Stat icon={Wallet} label="Available" value={rows ? formatAmount(String(totalAvailable), chain) : '...'} />
-          <Stat icon={Coins} label="Staked" value={rows ? formatAmount(String(totalStaked), chain) : '...'} />
-          <Stat icon={Gift} label="Rewards" value={rows ? formatAmount(String(totalRewards), chain) : '...'} />
+          <Stat icon={Wallet} label={t('dash.available')} value={rows ? formatAmount(String(totalAvailable), chain) : '...'} />
+          <Stat icon={Coins} label={t('dash.staked')} value={rows ? formatAmount(String(totalStaked), chain) : '...'} />
+          <Stat icon={Gift} label={t('dash.rewards')} value={rows ? formatAmount(String(totalRewards), chain) : '...'} />
           {anyValidator && (
-            <Stat icon={Landmark} label="Commission" value={formatAmount(String(totalCommission), chain)} />
+            <Stat icon={Landmark} label={t('dash.commission')} value={formatAmount(String(totalCommission), chain)} />
           )}
         </div>
       </div>
@@ -170,16 +174,17 @@ export default function Dashboard() {
           className="flex items-center justify-between rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800 hover:bg-green-100"
         >
           <span className="flex items-center gap-2">
-            <Gift className="h-4 w-4" /> {formatAmount(String(claimable), chain)} {chain.displayDenom} claimable
+            <Gift className="h-4 w-4" />{' '}
+            {t('dash.claimable', { amount: formatAmount(String(claimable), chain), denom: chain.displayDenom })}
           </span>
-          <span className="font-medium">Claim</span>
+          <span className="font-medium">{t('dash.claim')}</span>
         </Link>
       )}
 
-      {loading && !rows && <p className="text-sm text-slate-500">Loading your wallets from the chain...</p>}
+      {loading && !rows && <p className="text-sm text-slate-500">{t('dash.loadingWallets')}</p>}
 
       <section className="space-y-2">
-        <h2 className="font-medium">Your wallets</h2>
+        <h2 className="font-medium">{t('dash.yourWallets')}</h2>
         <div className="space-y-2">
           {rows?.map((r) => (
             <WalletRow
@@ -198,19 +203,19 @@ export default function Dashboard() {
           to="/send"
           className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
         >
-          <SendHorizontal className="h-4 w-4" /> Send / receive
+          <SendHorizontal className="h-4 w-4" /> {t('dash.send')}
         </Link>
         <Link
           to="/staking"
           className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm hover:border-amber-500"
         >
-          <Coins className="h-4 w-4" /> Stake
+          <Coins className="h-4 w-4" /> {t('dash.stake')}
         </Link>
         <Link
           to="/history"
           className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm hover:border-amber-500"
         >
-          <HistoryIcon className="h-4 w-4" /> History
+          <HistoryIcon className="h-4 w-4" /> {t('dash.history')}
         </Link>
       </div>
     </div>
@@ -240,6 +245,7 @@ function WalletRow({
   currency: string
 }) {
   const chain = DEFAULT_CHAIN
+  const { t } = useT()
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const total = Number(p.available) + Number(p.staked)
@@ -296,24 +302,24 @@ function WalletRow({
         <div className="space-y-3 border-t border-slate-100 px-4 py-3 text-sm">
           <div className="flex flex-wrap gap-x-6 gap-y-1">
             <span className="text-slate-500">
-              Available <span className="font-medium text-slate-800">{formatAmount(p.available, chain)}</span>
+              {t('dash.available')} <span className="font-medium text-slate-800">{formatAmount(p.available, chain)}</span>
             </span>
             <span className="text-slate-500">
-              Staked <span className="font-medium text-slate-800">{formatAmount(p.staked, chain)}</span>
+              {t('dash.staked')} <span className="font-medium text-slate-800">{formatAmount(p.staked, chain)}</span>
             </span>
             <span className="text-slate-500">
-              Rewards <span className="font-medium text-green-700">{formatAmount(p.rewards, chain)}</span>
+              {t('dash.rewards')} <span className="font-medium text-green-700">{formatAmount(p.rewards, chain)}</span>
             </span>
             {p.isValidator && (
               <span className="text-slate-500">
-                Commission <span className="font-medium text-amber-700">{formatAmount(p.commission, chain)}</span>
+                {t('dash.commission')} <span className="font-medium text-amber-700">{formatAmount(p.commission, chain)}</span>
               </span>
             )}
           </div>
 
           {p.delegations.length > 0 ? (
             <div>
-              <div className="mb-1 text-xs font-medium text-slate-500">Staked with</div>
+              <div className="mb-1 text-xs font-medium text-slate-500">{t('dash.stakedWith')}</div>
               <ul className="divide-y divide-slate-100 rounded-lg border border-slate-100">
                 {p.delegations.map((d) => (
                   <li key={d.validator} className="flex items-center justify-between px-3 py-1.5 text-xs">
@@ -330,9 +336,9 @@ function WalletRow({
             </div>
           ) : (
             <p className="text-xs text-slate-400">
-              Not staked yet.{' '}
+              {t('dash.notStaked')}{' '}
               <Link to="/staking" className="text-amber-700 hover:underline">
-                Stake to Beehive
+                {t('dash.stakeToBeehive')}
               </Link>
             </p>
           )}

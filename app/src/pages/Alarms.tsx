@@ -1,13 +1,32 @@
 import { useCallback, useEffect, useState } from 'react'
-import { BellRing, Eye, ArrowUpRight, ExternalLink, CircleCheck } from 'lucide-react'
-import { api, type WatchedAddress, type WalletAlert } from '../api'
+import { BellRing, Eye, ArrowUpRight, ArrowDownLeft, Undo2, ExternalLink, CircleCheck } from 'lucide-react'
+import { api, type WatchedAddress, type WalletAlert, type AlarmType, type AlertKind } from '../api'
 import { DEFAULT_CHAIN, formatAmount, CHAINS } from '../chains'
 import { useWallet } from '../wallet/WalletContext'
 import { useAuth } from '../auth/AuthContext'
+import { useT } from '../i18n/I18nContext'
 import PasswordInput from '../components/PasswordInput'
 import Modal from '../components/Modal'
+import CopyAddress from '../components/CopyAddress'
 
 const POLL_MS = 15000
+
+const ALARM_TYPES: AlarmType[] = ['both', 'sent', 'received', 'unbond']
+const TYPE_KEY: Record<AlarmType, string> = {
+  sent: 'alarms.typeSent',
+  received: 'alarms.typeReceived',
+  both: 'alarms.typeBoth',
+  unbond: 'alarms.typeUnbond',
+}
+
+const KIND_META: Record<
+  AlertKind,
+  { Icon: typeof ArrowUpRight; color: string; titleKey: string; arrow: string }
+> = {
+  sent: { Icon: ArrowUpRight, color: 'text-red-500', titleKey: 'alarms.outgoingFrom', arrow: '→' },
+  received: { Icon: ArrowDownLeft, color: 'text-green-600', titleKey: 'alarms.incomingTo', arrow: '←' },
+  unbond: { Icon: Undo2, color: 'text-amber-600', titleKey: 'alarms.unbondingFrom', arrow: '' },
+}
 
 function urlB64ToUint8Array(base64: string): Uint8Array {
   const padding = '='.repeat((4 - (base64.length % 4)) % 4)
@@ -18,6 +37,7 @@ function urlB64ToUint8Array(base64: string): Uint8Array {
 type PushState = 'unsupported' | 'denied' | 'off' | 'on' | 'busy'
 
 function PushSettings() {
+  const { t } = useT()
   const [state, setState] = useState<PushState>('busy')
   const [error, setError] = useState('')
 
@@ -83,14 +103,13 @@ function PushSettings() {
             <BellRing className="h-4.5 w-4.5" strokeWidth={1.8} />
           </div>
           <div>
-          <div className="text-sm font-medium">Push notifications</div>
+          <div className="text-sm font-medium">{t('alarms.push')}</div>
           <div className="text-xs text-slate-500">
-            {state === 'unsupported' && 'Not supported by this browser.'}
-            {state === 'denied' &&
-              'Blocked by the browser. Allow notifications for this site in browser settings.'}
-            {state === 'off' && 'Get alerts on this device even when the app is closed.'}
-            {state === 'on' && 'Enabled on this device.'}
-            {state === 'busy' && 'Checking...'}
+            {state === 'unsupported' && t('alarms.pushUnsupported')}
+            {state === 'denied' && t('alarms.pushDenied')}
+            {state === 'off' && t('alarms.pushOff')}
+            {state === 'on' && t('alarms.pushOn')}
+            {state === 'busy' && t('alarms.pushChecking')}
           </div>
           </div>
         </div>
@@ -99,7 +118,7 @@ function PushSettings() {
             onClick={enable}
             className="shrink-0 rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-600"
           >
-            Enable
+            {t('alarms.enable')}
           </button>
         )}
         {state === 'on' && (
@@ -107,23 +126,22 @@ function PushSettings() {
             onClick={disable}
             className="shrink-0 rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:border-amber-500"
           >
-            Disable
+            {t('alarms.disable')}
           </button>
         )}
       </div>
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
-      <p className="mt-1 text-xs text-slate-400">
-        On iPhone: add this site to your home screen first (Share, then Add to Home Screen).
-      </p>
+      <p className="mt-1 text-xs text-slate-400">{t('alarms.pushIphone')}</p>
     </div>
   )
 }
 
 export default function Alarms() {
   const auth = useAuth()
+  const { t } = useT()
 
   if (auth.status === 'loading') {
-    return <p className="text-sm text-slate-500">Loading...</p>
+    return <p className="text-sm text-slate-500">{t('common.loading')}</p>
   }
   if (auth.status === 'out') {
     return <AuthForm />
@@ -134,6 +152,7 @@ export default function Alarms() {
 function AuthForm() {
   const { active } = useWallet()
   const { refresh } = useAuth()
+  const { t } = useT()
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [identifier, setIdentifier] = useState('')
   const [email, setEmail] = useState('')
@@ -154,7 +173,7 @@ function AuthForm() {
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     if (mode === 'register' && password !== confirm) {
-      setError('Passwords do not match')
+      setError(t('alarms.passwordsNoMatch'))
       return
     }
     setBusy(true)
@@ -187,29 +206,23 @@ function AuthForm() {
   return (
     <div className="mx-auto max-w-sm space-y-4">
       {registeredEmail && (
-        <Modal title="Account created" onClose={goSignIn}>
+        <Modal title={t('alarms.accountCreated')} onClose={goSignIn}>
           <div className="text-center">
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-green-600">
               <CircleCheck className="h-6 w-6" />
             </div>
-            <p className="text-sm text-slate-600">
-              Your account <span className="font-medium">{registeredEmail}</span> is ready. Sign
-              in to start watching addresses and setting alarms.
-            </p>
+            <p className="text-sm text-slate-600">{t('alarms.accountReady', { email: registeredEmail ?? '' })}</p>
             <button
               onClick={goSignIn}
               className="mt-5 w-full rounded-lg bg-amber-500 py-2 text-sm font-medium text-white hover:bg-amber-600"
             >
-              Sign in
+              {t('account.signIn')}
             </button>
           </div>
         </Modal>
       )}
-      <h1 className="text-xl font-semibold">Alarms</h1>
-      <p className="text-sm text-slate-500">
-        Sign in to watch addresses and get an alert whenever a transaction leaves them. Your
-        account only stores public addresses - never keys.
-      </p>
+      <h1 className="text-xl font-semibold">{t('alarms.title')}</h1>
+      <p className="text-sm text-slate-500">{t('alarms.signInDesc')}</p>
       <form onSubmit={submit} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
         {mode === 'login' ? (
           <input
@@ -217,7 +230,7 @@ function AuthForm() {
             required
             value={identifier}
             onChange={(e) => setIdentifier(e.target.value)}
-            placeholder="Email or wallet address"
+            placeholder={t('alarms.emailOrAddress')}
             autoComplete="username"
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
           />
@@ -228,7 +241,7 @@ function AuthForm() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="name@example.com"
+              placeholder={t('alarms.email')}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
             />
             <div>
@@ -236,13 +249,12 @@ function AuthForm() {
                 type="text"
                 value={mainAddress}
                 onChange={(e) => setMainAddress(e.target.value.trim())}
-                placeholder={`${DEFAULT_CHAIN.bech32Prefix}1... (optional)`}
+                placeholder={`${DEFAULT_CHAIN.bech32Prefix}1... (${t('alarms.mainAddrOptional')})`}
                 autoComplete="off"
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
               />
               <p className="mt-1 text-xs text-slate-400">
-                Your main wallet address. Lets you sign in with it too, and links alarms to it.
-                You can add or change it later.
+                {t('alarms.mainAddrHelp')}
               </p>
             </div>
           </>
@@ -252,7 +264,7 @@ function AuthForm() {
           minLength={10}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder={mode === 'register' ? 'Password (10+ characters)' : 'Password'}
+          placeholder={mode === 'register' ? t('alarms.passwordHint') : t('alarms.password')}
           autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
         />
@@ -261,24 +273,28 @@ function AuthForm() {
             required
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
-            placeholder="Confirm password"
+            placeholder={t('alarms.confirmPassword')}
             autoComplete="new-password"
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
           />
         )}
-        {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+        {error && (
+          <div role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+            {error}
+          </div>
+        )}
         <button
           disabled={busy}
           className="w-full rounded-lg bg-amber-500 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
         >
-          {busy ? 'Working...' : mode === 'register' ? 'Create account' : 'Sign in'}
+          {busy ? t('alarms.working') : mode === 'register' ? t('alarms.createAccount') : t('account.signIn')}
         </button>
       </form>
       <button
         onClick={() => (mode === 'login' ? startRegister() : setMode('login'))}
         className="text-sm text-amber-700 hover:underline"
       >
-        {mode === 'login' ? 'No account yet? Create one' : 'Have an account? Sign in'}
+        {mode === 'login' ? t('alarms.noAccount') : t('alarms.haveAccount')}
       </button>
     </div>
   )
@@ -286,6 +302,7 @@ function AuthForm() {
 
 function MainAddressCard() {
   const { active } = useWallet()
+  const { t } = useT()
   const [address, setAddress] = useState<string | null | undefined>(undefined)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
@@ -315,7 +332,7 @@ function MainAddressCard() {
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-      <div className="text-sm font-medium">Main address</div>
+      <div className="text-sm font-medium">{t('alarms.mainAddress')}</div>
       {address && !editing ? (
         <div className="flex items-center justify-between gap-2">
           <span className="truncate font-mono text-xs text-slate-500">{address}</span>
@@ -326,7 +343,7 @@ function MainAddressCard() {
             }}
             className="shrink-0 text-xs text-amber-700 hover:underline"
           >
-            Change
+            {t('alarms.change')}
           </button>
         </div>
       ) : editing || !address ? (
@@ -344,7 +361,7 @@ function MainAddressCard() {
                 onClick={() => setDraft(active.address)}
                 className="shrink-0 rounded-lg border border-slate-300 px-2 text-xs hover:border-amber-500"
               >
-                Use my wallet
+                {t('alarms.useMyWallet')}
               </button>
             )}
             <button
@@ -352,12 +369,10 @@ function MainAddressCard() {
               disabled={busy}
               className="shrink-0 rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
             >
-              Save
+              {t('common.save')}
             </button>
           </div>
-          <p className="text-xs text-slate-400">
-            Not set yet. Add your main wallet address to sign in with it and link your alarms.
-          </p>
+          <p className="text-xs text-slate-400">{t('alarms.mainAddrNotSet')}</p>
           {error && <p className="text-xs text-red-600">{error}</p>}
         </div>
       ) : null}
@@ -367,6 +382,7 @@ function MainAddressCard() {
 
 function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => void }) {
   const { wallets } = useWallet()
+  const { t } = useT()
   const [addresses, setAddresses] = useState<WatchedAddress[]>([])
   const [alerts, setAlerts] = useState<WalletAlert[]>([])
   const [unread, setUnread] = useState(0)
@@ -374,6 +390,7 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
 
   const [newAddress, setNewAddress] = useState('')
   const [newLabel, setNewLabel] = useState('')
+  const [newType, setNewType] = useState<AlarmType>('both')
   const [busy, setBusy] = useState(false)
 
   const refresh = useCallback(async () => {
@@ -399,9 +416,10 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
     setBusy(true)
     setError('')
     try {
-      await api.watchedAdd(DEFAULT_CHAIN.key, newAddress.trim(), newLabel.trim())
+      await api.watchedAdd(DEFAULT_CHAIN.key, newAddress.trim(), newLabel.trim(), newType)
       setNewAddress('')
       setNewLabel('')
+      setNewType('both')
       await refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add address')
@@ -425,16 +443,20 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Alarms</h1>
+        <h1 className="text-xl font-semibold">{t('alarms.title')}</h1>
         <div className="flex items-center gap-3 text-sm text-slate-500">
           <span>{email}</span>
           <button onClick={logout} className="text-amber-700 hover:underline">
-            Sign out
+            {t('account.signOut')}
           </button>
         </div>
       </div>
 
-      {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      {error && (
+        <div role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       <MainAddressCard />
 
@@ -442,7 +464,7 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
 
       <section className="space-y-3">
         <h2 className="flex items-center gap-2 font-medium">
-          <Eye className="h-4 w-4 text-slate-400" /> Watched addresses
+          <Eye className="h-4 w-4 text-slate-400" /> {t('alarms.watched')}
         </h2>
         <form onSubmit={addAddress} className="space-y-2">
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -456,19 +478,33 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
             <input
               value={newLabel}
               onChange={(e) => setNewLabel(e.target.value)}
-              placeholder="Label (optional)"
+              placeholder={t('alarms.labelOptional')}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none sm:w-40"
             />
             <button
               disabled={busy}
               className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
             >
-              Watch
+              {t('alarms.watch')}
             </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400">{t('alarms.alarmType')}</span>
+            <select
+              value={newType}
+              onChange={(e) => setNewType(e.target.value as AlarmType)}
+              className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-600 focus:border-amber-500 focus:outline-none"
+            >
+              {ALARM_TYPES.map((ty) => (
+                <option key={ty} value={ty}>
+                  {t(TYPE_KEY[ty])}
+                </option>
+              ))}
+            </select>
           </div>
           {wallets.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-xs text-slate-400">Your wallets:</span>
+              <span className="text-xs text-slate-400">{t('alarms.yourWallets')}</span>
               {wallets.map((w) => (
                 <button
                   key={w.address}
@@ -486,7 +522,7 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
           )}
         </form>
         {addresses.length === 0 ? (
-          <p className="text-sm text-slate-500">No watched addresses yet. Add one above.</p>
+          <p className="text-sm text-slate-500">{t('alarms.noWatched')}</p>
         ) : (
           <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
             {addresses.map((w) => (
@@ -498,9 +534,23 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
                       {chainName(w.chain_key)}
                     </span>
                   </div>
-                  <div className="truncate font-mono text-xs text-slate-400">{w.address}</div>
+                  <CopyAddress address={w.address} className="max-w-full text-xs text-slate-400" />
                 </div>
-                <label className="flex items-center gap-1.5 text-xs text-slate-500">
+                <select
+                  value={w.alarm_type}
+                  onChange={(e) =>
+                    api.watchedSetType(w.id, e.target.value as AlarmType).then(refresh)
+                  }
+                  aria-label={t('alarms.alarmType')}
+                  className="shrink-0 rounded-lg border border-slate-300 px-1.5 py-1 text-xs text-slate-600 focus:border-amber-500 focus:outline-none"
+                >
+                  {ALARM_TYPES.map((ty) => (
+                    <option key={ty} value={ty}>
+                      {t(TYPE_KEY[ty])}
+                    </option>
+                  ))}
+                </select>
+                <label className="flex shrink-0 items-center gap-1.5 text-xs text-slate-500">
                   <input
                     type="checkbox"
                     checked={w.alarm_enabled === 1}
@@ -508,13 +558,13 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
                       api.watchedToggle(w.id, e.target.checked).then(refresh)
                     }
                   />
-                  Alarm
+                  {t('alarms.alarm')}
                 </label>
                 <button
                   onClick={() => api.watchedRemove(w.id).then(refresh)}
-                  className="text-xs text-red-600 hover:underline"
+                  className="shrink-0 text-xs text-red-600 hover:underline"
                 >
-                  Remove
+                  {t('common.remove')}
                 </button>
               </li>
             ))}
@@ -525,10 +575,10 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="font-medium">
-            Alerts
+            {t('alarms.alerts')}
             {unread > 0 && (
               <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
-                {unread} new
+                {t('alarms.new', { count: unread })}
               </span>
             )}
           </h2>
@@ -537,32 +587,33 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
               onClick={() => api.alertsMarkRead().then(refresh)}
               className="text-sm text-amber-700 hover:underline"
             >
-              Mark all read
+              {t('alarms.markRead')}
             </button>
           )}
         </div>
         {alerts.length === 0 ? (
-          <p className="text-sm text-slate-500">
-            No alerts yet. When a transaction leaves a watched address, it shows up here within
-            about a minute.
-          </p>
+          <p className="text-sm text-slate-500">{t('alarms.noAlerts')}</p>
         ) : (
           <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
             {alerts.map((a) => {
               const chain = CHAINS.find((c) => c.key === a.chain_key) ?? DEFAULT_CHAIN
+              const meta = KIND_META[a.kind] ?? KIND_META.sent
+              const KindIcon = meta.Icon
               return (
                 <li key={a.id} className={`px-4 py-3 ${a.is_read ? '' : 'bg-amber-50'}`}>
                   <div className="flex items-center justify-between text-sm">
                     <span className="flex items-center gap-1.5 font-medium">
-                      <ArrowUpRight className="h-4 w-4 text-red-500" />
-                      Outgoing tx from {a.label || shortAddr(a.address)}
+                      <KindIcon className={`h-4 w-4 ${meta.color}`} />
+                      {t(meta.titleKey, { label: a.label || shortAddr(a.address) })}
                     </span>
                     <span className="text-xs text-slate-400">{a.detected_at}</span>
                   </div>
                   <div className="mt-1 text-sm text-slate-600">
                     {a.amount
-                      ? `${formatAmount(a.amount, chain)} ${chain.displayDenom} to ${shortAddr(a.recipient)}`
-                      : 'Non-transfer transaction (stake, vote, ...)'}
+                      ? `${formatAmount(a.amount, chain)} ${chain.displayDenom}${
+                          meta.arrow && a.recipient ? ` ${meta.arrow} ${shortAddr(a.recipient)}` : ''
+                        }`
+                      : t('alarms.nonTransfer')}
                   </div>
                   <a
                     href={`${chain.explorerTxUrl}${a.tx_hash}`}
