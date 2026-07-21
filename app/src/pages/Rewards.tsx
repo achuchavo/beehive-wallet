@@ -11,6 +11,7 @@ import {
   type ClaimRecord,
 } from '../wallet/rewards'
 import EmptyState from '../components/EmptyState'
+import Collapsible from '../components/Collapsible'
 
 const chain = DEFAULT_CHAIN
 
@@ -170,19 +171,17 @@ export default function Rewards() {
       </section>
 
       {months.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="font-medium">Monthly income</h2>
+        <Collapsible title="Monthly income" subtitle={`${months.length} month${months.length > 1 ? 's' : ''}`}>
           <MonthlyChart months={months} />
-          <p className="text-xs text-slate-400">
+          <p className="mt-2 text-xs text-slate-400">
             Based on recent on-chain claim history. Full history arrives once our own indexed
             node is live.
           </p>
-        </section>
+        </Collapsible>
       )}
 
       {history.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="font-medium">Claim history</h2>
+        <Collapsible title="Claim history" subtitle={`${history.length} claim${history.length > 1 ? 's' : ''}`}>
           <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
             {history.slice(0, 30).map((h) => (
               <li key={h.hash} className="flex items-center justify-between px-4 py-2 text-sm">
@@ -209,7 +208,7 @@ export default function Rewards() {
               </li>
             ))}
           </ul>
-        </section>
+        </Collapsible>
       )}
     </div>
   )
