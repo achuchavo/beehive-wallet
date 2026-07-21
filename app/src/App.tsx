@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Routes, Route, NavLink } from 'react-router-dom'
+import { Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import {
   LayoutDashboard,
   SendHorizontal,
@@ -45,15 +45,22 @@ const BANNER_ICON: Record<Announcement['severity'], typeof Info> = {
   danger: OctagonAlert,
 }
 
+type AdminAuth = 'loading' | 'admin' | 'denied'
+
 function App() {
-  const [isAdmin, setIsAdmin] = useState(false)
+  const [adminAuth, setAdminAuth] = useState<AdminAuth>('loading')
+  const isAdmin = adminAuth === 'admin'
   const [banner, setBanner] = useState<Announcement | null>(null)
 
   useEffect(() => {
     api
       .me()
-      .then((r) => setIsAdmin(r.logged_in && (r.is_admin === true || r.is_super_admin === true)))
-      .catch(() => setIsAdmin(false))
+      .then((r) =>
+        setAdminAuth(
+          r.logged_in && (r.is_admin === true || r.is_super_admin === true) ? 'admin' : 'denied',
+        ),
+      )
+      .catch(() => setAdminAuth('denied'))
 
     const loadBanner = () =>
       api
@@ -110,7 +117,18 @@ function App() {
           <Route path="/history" element={<History />} />
           <Route path="/alarms" element={<Alarms />} />
           <Route path="/settings" element={<Settings />} />
-          <Route path="/admin" element={<Admin />} />
+          <Route
+            path="/admin"
+            element={
+              adminAuth === 'loading' ? (
+                <p className="text-sm text-slate-500">Loading...</p>
+              ) : adminAuth === 'admin' ? (
+                <Admin />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
         </Routes>
       </main>
     </div>
