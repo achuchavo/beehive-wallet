@@ -19,6 +19,8 @@ interface ApiChain {
   explorerValidatorUrl: string
   beehiveValidator: string
   beehiveMoniker: string
+  coingeckoId: string
+  freeValidators: string[]
   serviceFee: string
   feeCollector: string
 }

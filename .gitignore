@@ -10,5 +10,6 @@ vapid_private.pem
 __pycache__/
 venv/
 *.log
+api/cache/
 desktop.ini
 .DS_Store

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Coins, Gift, ShieldCheck, Star, Search, Plus, Import, Wallet } from 'lucide-react'
 import { DEFAULT_CHAIN, formatAmount, toBaseUnits } from '../chains'
 import { useWallet } from '../wallet/WalletContext'
-import { delegate, undelegate, claimRewards, serviceFeeActive, isBeehive } from '../wallet/staking'
+import { delegate, undelegate, claimRewards, serviceFeeActive, isFree } from '../wallet/staking'
 import EmptyState from '../components/EmptyState'
 
 interface Validator {
@@ -184,8 +184,10 @@ export default function Staking() {
         .filter((v) => !v.jailed || data.delegations[v.operator])
         .filter((v) => q === '' || v.moniker.toLowerCase().includes(q))
         .sort((a, b) => {
-          if (isBeehive(chain, a.operator)) return -1
-          if (isBeehive(chain, b.operator)) return 1
+          const af = isFree(chain, a.operator)
+          const bf = isFree(chain, b.operator)
+          if (af && !bf) return -1
+          if (bf && !af) return 1
           return Number(b.tokens) - Number(a.tokens)
         })
     : []
@@ -310,7 +312,7 @@ function ValidatorRow({
 }) {
   const { active, getSigner } = useWallet()
   const [action, setAction] = useState<'none' | 'delegate' | 'undelegate'>('none')
-  const beehive = isBeehive(chain, validator.operator)
+  const free = isFree(chain, validator.operator)
   const power = Number(validator.tokens) / 10 ** chain.decimals
 
   async function submitDelegate(password: string, amount: string) {
@@ -332,14 +334,14 @@ function ValidatorRow({
   }
 
   return (
-    <div className={`${first ? '' : 'border-t border-slate-100'} ${beehive ? 'bg-amber-50/50' : ''}`}>
+    <div className={`${first ? '' : 'border-t border-slate-100'} ${free ? 'bg-amber-50/50' : ''}`}>
       <div className="flex items-center gap-3 px-3 py-2">
         <ValidatorAvatar identity={validator.identity} moniker={validator.moniker} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 text-sm font-medium">
-            {beehive && <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-400" />}
+            {free && <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-400" />}
             <span className="truncate">{validator.moniker}</span>
-            {beehive && (
+            {free && (
               <span className="flex shrink-0 items-center gap-0.5 rounded bg-green-100 px-1 text-[11px] font-medium text-green-700">
                 <ShieldCheck className="h-2.5 w-2.5" /> Free
               </span>
@@ -366,12 +368,12 @@ function ValidatorRow({
           <button
             onClick={() => setAction(action === 'delegate' ? 'none' : 'delegate')}
             className={`rounded-lg px-2.5 py-1 text-xs font-medium ${
-              beehive
+              free
                 ? 'bg-amber-500 text-white hover:bg-amber-600'
                 : 'border border-slate-300 hover:border-amber-500'
             }`}
           >
-            {beehive ? 'Stake' : 'Delegate'}
+            {free ? 'Stake' : 'Delegate'}
           </button>
           {staked && (
             <button
@@ -386,7 +388,7 @@ function ValidatorRow({
 
       {action === 'delegate' && (
         <div className="px-3 pb-3">
-          {!beehive && serviceFeeActive(chain) && (
+          {!free && serviceFeeActive(chain) && (
             <p className="mb-1 text-xs text-slate-500">
               Service fee of {formatAmount(chain.serviceFee, chain)} {chain.displayDenom} applies.
             </p>

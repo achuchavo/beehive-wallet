@@ -23,6 +23,7 @@ $fields = [
     'explorer_validator_url' => trim($b['explorer_validator_url'] ?? ''),
     'beehive_validator' => trim($b['beehive_validator'] ?? ''),
     'beehive_moniker' => trim($b['beehive_moniker'] ?? ''),
+    'coingecko_id' => trim($b['coingecko_id'] ?? ''),
     'service_fee' => trim($b['service_fee'] ?? '0'),
     'fee_collector' => trim($b['fee_collector'] ?? ''),
     'is_active' => !empty($b['is_active']) ? 1 : 0,

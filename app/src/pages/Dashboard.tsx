@@ -19,6 +19,7 @@ import {
 import { DEFAULT_CHAIN, CHAINS, formatAmount } from '../chains'
 import { useWallet } from '../wallet/WalletContext'
 import EmptyState from '../components/EmptyState'
+import { CURRENCIES, getCurrency, setCurrency, fetchPrice, fiatValue, formatFiat } from '../currency'
 import {
   fetchValidatorMonikers,
   fetchWalletPortfolio,
@@ -36,6 +37,20 @@ export default function Dashboard() {
   const [rows, setRows] = useState<Row[] | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [currency, setCurrencyState] = useState(getCurrency())
+  const [price, setPrice] = useState<number | null>(null)
+
+  useEffect(() => {
+    fetchPrice(chain.coingeckoId, currency).then(setPrice)
+  }, [chain.coingeckoId, currency])
+
+  function changeCurrency(code: string) {
+    setCurrency(code)
+    setCurrencyState(code)
+  }
+
+  const fiat = (base: string | number) =>
+    price !== null ? formatFiat(fiatValue(base, chain.decimals, price), currency) : null
 
   const load = useCallback(async () => {
     if (wallets.length === 0) return
@@ -92,19 +107,32 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h1 className="text-xl font-semibold">Dashboard</h1>
-        <select
-          value={chain.key}
-          disabled={CHAINS.length < 2}
-          className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm disabled:text-slate-500"
-        >
-          {CHAINS.map((c) => (
-            <option key={c.key} value={c.key}>
-              {c.chainName}
-            </option>
-          ))}
-        </select>
+        <div className="flex gap-2">
+          <select
+            value={currency}
+            onChange={(e) => changeCurrency(e.target.value)}
+            className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+          >
+            {CURRENCIES.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+          <select
+            value={chain.key}
+            disabled={CHAINS.length < 2}
+            className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm disabled:text-slate-500"
+          >
+            {CHAINS.map((c) => (
+              <option key={c.key} value={c.key}>
+                {c.chainName}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {error && (
@@ -123,6 +151,9 @@ export default function Dashboard() {
           {rows ? formatAmount(String(grandTotal), chain) : '...'}{' '}
           <span className="text-base font-normal text-slate-400">{chain.displayDenom}</span>
         </div>
+        {rows && fiat(grandTotal) && (
+          <div className="text-sm font-medium text-slate-500">≈ {fiat(grandTotal)}</div>
+        )}
         <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
           <Stat icon={Wallet} label="Available" value={rows ? formatAmount(String(totalAvailable), chain) : '...'} />
           <Stat icon={Coins} label="Staked" value={rows ? formatAmount(String(totalStaked), chain) : '...'} />
@@ -150,7 +181,15 @@ export default function Dashboard() {
       <section className="space-y-2">
         <h2 className="font-medium">Your wallets</h2>
         <div className="space-y-2">
-          {rows?.map((r) => <WalletRow key={r.portfolio.address} name={r.name} p={r.portfolio} />)}
+          {rows?.map((r) => (
+            <WalletRow
+              key={r.portfolio.address}
+              name={r.name}
+              p={r.portfolio}
+              price={price}
+              currency={currency}
+            />
+          ))}
         </div>
       </section>
 
@@ -189,7 +228,17 @@ function Stat({ icon: Icon, label, value }: { icon: typeof Wallet; label: string
   )
 }
 
-function WalletRow({ name, p }: { name: string; p: WalletPortfolio }) {
+function WalletRow({
+  name,
+  p,
+  price,
+  currency,
+}: {
+  name: string
+  p: WalletPortfolio
+  price: number | null
+  currency: string
+}) {
   const chain = DEFAULT_CHAIN
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -230,7 +279,11 @@ function WalletRow({ name, p }: { name: string; p: WalletPortfolio }) {
         </div>
         <div className="shrink-0 text-right">
           <div className="text-sm font-semibold">{formatAmount(String(total), chain)}</div>
-          <div className="text-xs text-slate-400">{chain.displayDenom}</div>
+          <div className="text-xs text-slate-400">
+            {price !== null
+              ? formatFiat(fiatValue(total, chain.decimals, price), currency)
+              : chain.displayDenom}
+          </div>
         </div>
         {open ? (
           <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />

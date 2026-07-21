@@ -18,9 +18,11 @@ export interface ChainInfo {
   explorerValidatorUrl: string
   beehiveValidator: string
   beehiveMoniker: string
-  // Service fee charged when delegating to a NON-Beehive validator, bundled as
-  // a bank send in the same signed tx. "0" = no fee (staking anywhere is free).
-  // Set feeCollector to a Beehive account address to start charging.
+  coingeckoId: string
+  // Validators offered for free staking (no service fee), admin-managed.
+  freeValidators: string[]
+  // Service fee charged when delegating to a validator NOT in freeValidators,
+  // bundled as a bank send in the same signed tx. "0" = no fee.
   serviceFee: string
   feeCollector: string
 }
@@ -56,6 +58,8 @@ export const CHAINS: ChainInfo[] = [
     explorerValidatorUrl: 'https://www.mintscan.io/medibloc/validators/',
     beehiveValidator: 'panaceavaloper1hlpw58lg9fvwvwa3ryzgjqyw39tf2nmns4r0z5',
     beehiveMoniker: 'MatanVerse [Official]',
+    coingeckoId: 'medibloc',
+    freeValidators: ['panaceavaloper1hlpw58lg9fvwvwa3ryzgjqyw39tf2nmns4r0z5'],
     serviceFee: '0',
     feeCollector: '',
   },

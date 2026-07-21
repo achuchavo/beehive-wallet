@@ -12,6 +12,7 @@ $epStmt = $db->prepare(
      WHERE chain_key = ? AND is_active = 1
      ORDER BY priority, id'
 );
+$freeStmt = $db->prepare('SELECT valoper FROM chain_free_validators WHERE chain_key = ?');
 
 $out = [];
 foreach ($chains as $c) {
@@ -22,6 +23,8 @@ foreach ($chains as $c) {
         if ($ep['kind'] === 'lcd') $lcd[] = $ep['url'];
         elseif ($ep['kind'] === 'rpc') $rpc[] = $ep['url'];
     }
+    $freeStmt->execute([$c['chain_key']]);
+    $freeValidators = array_column($freeStmt->fetchAll(), 'valoper');
     $out[] = [
         'key' => $c['chain_key'],
         'chainId' => $c['chain_id'],
@@ -36,8 +39,10 @@ foreach ($chains as $c) {
         'explorerValidatorUrl' => $c['explorer_validator_url'],
         'beehiveValidator' => $c['beehive_validator'],
         'beehiveMoniker' => $c['beehive_moniker'],
+        'coingeckoId' => $c['coingecko_id'] ?? '',
         'serviceFee' => $c['service_fee'],
         'feeCollector' => $c['fee_collector'],
+        'freeValidators' => $freeValidators,
         'lcdEndpoints' => $lcd,
         'rpcEndpoints' => $rpc,
     ];

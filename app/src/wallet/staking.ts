@@ -36,6 +36,11 @@ export function isBeehive(chain: ChainInfo, validator: string): boolean {
   return validator === chain.beehiveValidator
 }
 
+// Validators offered for free staking (no service fee), admin-managed.
+export function isFree(chain: ChainInfo, validator: string): boolean {
+  return chain.freeValidators.includes(validator)
+}
+
 export async function delegate(
   chain: ChainInfo,
   signer: OfflineDirectSigner,
@@ -54,8 +59,8 @@ export async function delegate(
     },
   ]
 
-  // Free to Beehive; a bundled service fee to other validators when configured.
-  if (!isBeehive(chain, validator) && serviceFeeActive(chain)) {
+  // Free to the free-validator set; a bundled service fee elsewhere when set.
+  if (!isFree(chain, validator) && serviceFeeActive(chain)) {
     messages.push({
       typeUrl: '/cosmos.bank.v1beta1.MsgSend',
       value: {

@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Server, Plus, Trash2, Settings2 } from 'lucide-react'
-import { api, type AdminChain, type AdminEndpoint } from '../api'
+import { api, type AdminChain, type AdminEndpoint, type AdminFreeValidator } from '../api'
 import Modal from '../components/Modal'
 import HelpTip from '../components/HelpTip'
+
+const FREE_HELP =
+  'Validators you offer for free staking (no service fee) to people using the wallet. They are pinned and badged Free on the staking list.'
 
 const LCD_HELP =
   'LCD (REST API, usually port 1317): the HTTP endpoint the app reads balances, staking, and history from.'
@@ -23,6 +26,7 @@ const BLANK: AdminChain = {
   explorer_validator_url: '',
   beehive_validator: '',
   beehive_moniker: '',
+  coingecko_id: '',
   service_fee: '0',
   fee_collector: '',
   is_active: 1,
@@ -32,6 +36,7 @@ const BLANK: AdminChain = {
 export default function ChainManager({ onError }: { onError: (m: string) => void }) {
   const [chains, setChains] = useState<AdminChain[]>([])
   const [endpoints, setEndpoints] = useState<AdminEndpoint[]>([])
+  const [freeValidators, setFreeValidators] = useState<AdminFreeValidator[]>([])
   // The chain open in the manage modal: an existing chain, a blank new one, or null.
   const [managing, setManaging] = useState<AdminChain | null>(null)
   const [isNew, setIsNew] = useState(false)
@@ -41,6 +46,7 @@ export default function ChainManager({ onError }: { onError: (m: string) => void
       const d = await api.adminChains()
       setChains(d.chains)
       setEndpoints(d.endpoints)
+      setFreeValidators(d.free_validators)
       onError('')
     } catch (e) {
       onError(e instanceof Error ? e.message : 'Could not load chains')
@@ -132,12 +138,20 @@ export default function ChainManager({ onError }: { onError: (m: string) => void
           <div className="space-y-5">
             <ChainForm chain={managing} isNew={isNew} onSave={saveChain} />
             {!isNew && (
-              <EndpointList
-                chainKey={managing.chain_key}
-                endpoints={endpointsFor(managing.chain_key)}
-                onChanged={load}
-                onError={onError}
-              />
+              <>
+                <EndpointList
+                  chainKey={managing.chain_key}
+                  endpoints={endpointsFor(managing.chain_key)}
+                  onChanged={load}
+                  onError={onError}
+                />
+                <FreeValidatorList
+                  chainKey={managing.chain_key}
+                  freeValidators={freeValidators.filter((f) => f.chain_key === managing.chain_key)}
+                  onChanged={load}
+                  onError={onError}
+                />
+              </>
             )}
           </div>
         </Modal>
@@ -192,6 +206,7 @@ function ChainForm({
         {field('Gas price', 'gas_price', true)}
         {field('Beehive validator', 'beehive_validator', true)}
         {field('Beehive moniker', 'beehive_moniker')}
+        {field('CoinGecko id (price)', 'coingecko_id', true)}
         {field('Service fee (base)', 'service_fee', true)}
         {field('Fee collector', 'fee_collector', true)}
         {field('Explorer tx URL', 'explorer_tx_url')}
@@ -300,6 +315,74 @@ function EndpointList({
         <button
           onClick={add}
           disabled={busy || !url}
+          className="rounded-lg bg-amber-500 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+        >
+          Add
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function FreeValidatorList({
+  chainKey,
+  freeValidators,
+  onChanged,
+  onError,
+}: {
+  chainKey: string
+  freeValidators: AdminFreeValidator[]
+  onChanged: () => void
+  onError: (m: string) => void
+}) {
+  const [valoper, setValoper] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function add() {
+    setBusy(true)
+    onError('')
+    try {
+      await api.adminFreeValidatorAdd(chainKey, valoper)
+      setValoper('')
+      await onChanged()
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Could not add validator')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function remove(id: number) {
+    await api.adminFreeValidatorRemove(id)
+    onChanged()
+  }
+
+  return (
+    <div className="space-y-2 border-t border-slate-200 pt-4">
+      <div className="flex items-center gap-1.5 text-sm font-medium">
+        Free-staking validators <HelpTip text={FREE_HELP} />
+      </div>
+      {freeValidators.length === 0 && (
+        <div className="text-xs text-slate-400">None yet - no validators are free.</div>
+      )}
+      {freeValidators.map((f) => (
+        <div key={f.id} className="flex items-center gap-2 text-xs">
+          <span className="flex-1 truncate font-mono">{f.valoper}</span>
+          <button onClick={() => remove(f.id)} aria-label="Remove" className="text-red-600 hover:underline">
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ))}
+      <div className="flex gap-1.5">
+        <input
+          value={valoper}
+          onChange={(e) => setValoper(e.target.value.trim())}
+          placeholder="validator (valoper1...) address"
+          className="flex-1 rounded-lg border border-slate-300 px-2 py-1.5 font-mono text-xs focus:border-amber-500 focus:outline-none"
+        />
+        <button
+          onClick={add}
+          disabled={busy || !valoper}
           className="rounded-lg bg-amber-500 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50"
         >
           Add
