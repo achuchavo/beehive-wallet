@@ -30,7 +30,7 @@ export const CHAINS: ChainInfo[] = [
     coinType: 371,
     gasPrice: '5umed',
     rpc: 'https://rpc.gopanacea.org',
-    lcd: 'https://api.gopanacea.org',
+    lcd: import.meta.env.DEV ? '/lcd/medibloc' : 'https://api.gopanacea.org',
     explorerTxUrl: 'https://www.mintscan.io/medibloc/tx/',
     beehiveValidator: 'panaceavaloper1REPLACE_WITH_OUR_VALOPER',
   },

@@ -13,6 +13,13 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '/wallet/api'),
       },
+      // Public LCDs don't send CORS headers, so the dev server relays them.
+      // In production our own node's nginx adds CORS and this proxy isn't used.
+      '/lcd/medibloc': {
+        target: 'https://api.gopanacea.org',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/lcd\/medibloc/, ''),
+      },
     },
   },
 })
