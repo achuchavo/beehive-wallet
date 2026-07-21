@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Gift, Landmark, ExternalLink, ShieldCheck, Plus, Import, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react'
 import { DEFAULT_CHAIN, formatAmount } from '../chains'
 import { useWallet } from '../wallet/WalletContext'
-import { claimEarnings } from '../wallet/staking'
+import { claimEarnings, restakeEarnings } from '../wallet/staking'
 import {
   fetchWalletEarnings,
   fetchClaimHistory,
@@ -87,6 +87,18 @@ export default function Rewards() {
       row.earnings.isValidator && Number(row.earnings.commission) > 0 ? row.earnings.valoper : null,
     )
     setNotice(`Claimed for ${row.name}. ${hash.slice(0, 12)}...`)
+    await load()
+  }
+
+  async function restakeOne(row: Row, password: string) {
+    const signer = await getSigner(row.earnings.address, password)
+    const hash = await restakeEarnings(
+      chain,
+      signer,
+      row.earnings.address,
+      row.earnings.rewardsByValidator,
+    )
+    setNotice(`Restaked for ${row.name}. ${hash.slice(0, 12)}...`)
     await load()
   }
 
@@ -179,7 +191,13 @@ export default function Rewards() {
         <h2 className="font-medium">Your wallets</h2>
         <div className="space-y-2">
           {rows?.map((row) => (
-            <WalletCard key={row.earnings.address} row={row} onClaim={claimOne} onError={setError} />
+            <WalletCard
+              key={row.earnings.address}
+              row={row}
+              onClaim={claimOne}
+              onRestake={restakeOne}
+              onError={setError}
+            />
           ))}
         </div>
       </section>
@@ -254,15 +272,18 @@ export default function Rewards() {
 function WalletCard({
   row,
   onClaim,
+  onRestake,
   onError,
 }: {
   row: Row
   onClaim: (row: Row, password: string) => Promise<void>
+  onRestake: (row: Row, password: string) => Promise<void>
   onError: (msg: string) => void
 }) {
-  const [open, setOpen] = useState(false)
+  const [action, setAction] = useState<'none' | 'claim' | 'restake'>('none')
   const { earnings, name } = row
-  const hasSomething = Number(earnings.rewards) > 0 || Number(earnings.commission) > 0
+  const hasRewards = Number(earnings.rewards) > 0
+  const hasSomething = hasRewards || Number(earnings.commission) > 0
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -288,21 +309,42 @@ function WalletCard({
             )}
           </div>
         </div>
-        {hasSomething && (
-          <button
-            onClick={() => setOpen((o) => !o)}
-            className="shrink-0 rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-600"
-          >
-            Claim
-          </button>
-        )}
+        <div className="flex shrink-0 gap-1.5">
+          {hasRewards && (
+            <button
+              onClick={() => setAction(action === 'restake' ? 'none' : 'restake')}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:border-amber-500"
+            >
+              Restake
+            </button>
+          )}
+          {hasSomething && (
+            <button
+              onClick={() => setAction(action === 'claim' ? 'none' : 'claim')}
+              className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-600"
+            >
+              Claim
+            </button>
+          )}
+        </div>
       </div>
-      {open && hasSomething && (
+      {action === 'claim' && (
         <div className="mt-3">
           <ClaimForm
             label={`Claim rewards${earnings.isValidator && Number(earnings.commission) > 0 ? ' and commission' : ''} for ${name}`}
             submitLabel="Sign and claim"
-            onSubmit={(pw) => onClaim(row, pw).then(() => setOpen(false))}
+            onSubmit={(pw) => onClaim(row, pw).then(() => setAction('none'))}
+            onError={onError}
+          />
+        </div>
+      )}
+      {action === 'restake' && (
+        <div className="mt-3">
+          <ClaimForm
+            label={`Restake ${formatAmount(earnings.rewards, chain)} ${chain.displayDenom} rewards back into your delegations for ${name}`}
+            submitLabel="Sign and restake"
+            hint="Withdraws your rewards and delegates them straight back to the same validators. The network fee comes from your available balance."
+            onSubmit={(pw) => onRestake(row, pw).then(() => setAction('none'))}
             onError={onError}
           />
         </div>

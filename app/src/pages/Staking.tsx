@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Coins, Gift, ShieldCheck, Star, Search, Plus, Import } from 'lucide-react'
+import { Coins, Gift, ShieldCheck, Star, Search, Plus, Import, Wallet } from 'lucide-react'
 import { DEFAULT_CHAIN, formatAmount, toBaseUnits } from '../chains'
 import { useWallet } from '../wallet/WalletContext'
 import { delegate, undelegate, claimRewards, serviceFeeActive, isBeehive } from '../wallet/staking'
@@ -123,7 +123,7 @@ async function fetchStakeData(address: string): Promise<StakeData> {
 }
 
 export default function Staking() {
-  const { active, getSigner } = useWallet()
+  const { active, wallets, setActive, getSigner } = useWallet()
   const [data, setData] = useState<StakeData | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -193,6 +193,33 @@ export default function Staking() {
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">Staking</h1>
+
+      <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+          <Wallet className="h-4.5 w-4.5" strokeWidth={1.8} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-xs text-slate-500">Staking from</div>
+          <div className="truncate font-mono text-xs text-slate-400">
+            {active.address.slice(0, 18)}...{active.address.slice(-6)}
+          </div>
+        </div>
+        {wallets.length > 1 ? (
+          <select
+            value={active.address}
+            onChange={(e) => setActive(e.target.value)}
+            className="shrink-0 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+          >
+            {wallets.map((w) => (
+              <option key={w.address} value={w.address}>
+                {w.name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="shrink-0 text-sm font-medium">{active.name}</span>
+        )}
+      </div>
 
       {notice && (
         <div className="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">{notice}</div>

@@ -124,3 +124,32 @@ export async function claimEarnings(
   if (messages.length === 0) throw new Error('Nothing to claim')
   return broadcast(chain, signer, address, messages, 'Beehive Wallet: claim')
 }
+
+// Compound: withdraw each validator's rewards and delegate that amount straight
+// back to the same validator, in one signed transaction. The network fee comes
+// from the wallet's available balance.
+export async function restakeEarnings(
+  chain: ChainInfo,
+  signer: OfflineDirectSigner,
+  address: string,
+  rewardsByValidator: { validator: string; amount: string }[],
+): Promise<string> {
+  const messages: EncodeObject[] = []
+  for (const { validator, amount } of rewardsByValidator) {
+    if (Number(amount) <= 0) continue
+    messages.push({
+      typeUrl: '/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward',
+      value: { delegatorAddress: address, validatorAddress: validator },
+    })
+    messages.push({
+      typeUrl: '/cosmos.staking.v1beta1.MsgDelegate',
+      value: {
+        delegatorAddress: address,
+        validatorAddress: validator,
+        amount: { denom: chain.denom, amount },
+      },
+    })
+  }
+  if (messages.length === 0) throw new Error('No rewards to restake')
+  return broadcast(chain, signer, address, messages, 'Beehive Wallet: restake')
+}

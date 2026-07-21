@@ -8,11 +8,17 @@ export function accountToValoper(address: string, prefix: string): string {
   return toBech32(`${prefix}valoper`, data)
 }
 
+export interface RewardByValidator {
+  validator: string
+  amount: string // base units (floored)
+}
+
 export interface WalletEarnings {
   address: string
   valoper: string
   rewards: string // claimable delegator rewards, base units (floored)
   rewardValidators: string[] // validators with rewards > 0
+  rewardsByValidator: RewardByValidator[] // per-validator reward, for restaking
   isValidator: boolean
   commission: string // claimable commission, base units (floored)
 }
@@ -37,11 +43,16 @@ export async function fetchWalletEarnings(
 
   let rewards = '0'
   const rewardValidators: string[] = []
+  const rewardsByValidator: RewardByValidator[] = []
   if (rewRes.ok) {
     const d = await rewRes.json()
     rewards = sumUmed(chain, d.total)
     for (const r of d.rewards ?? []) {
-      if (Number(sumUmed(chain, r.reward)) > 0) rewardValidators.push(r.validator_address)
+      const amount = sumUmed(chain, r.reward)
+      if (Number(amount) > 0) {
+        rewardValidators.push(r.validator_address)
+        rewardsByValidator.push({ validator: r.validator_address, amount })
+      }
     }
   }
 
@@ -52,7 +63,7 @@ export async function fetchWalletEarnings(
     commission = sumUmed(chain, d.commission?.commission)
   }
 
-  return { address, valoper, rewards, rewardValidators, isValidator, commission }
+  return { address, valoper, rewards, rewardValidators, rewardsByValidator, isValidator, commission }
 }
 
 export interface ClaimRecord {
