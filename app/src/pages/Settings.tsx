@@ -1,7 +1,26 @@
 import { useState } from 'react'
-import { Plus, Import, TriangleAlert } from 'lucide-react'
+import { Plus, Import, TriangleAlert, Copy, Check } from 'lucide-react'
 import { DEFAULT_CHAIN } from '../chains'
 import { useWallet, generateMnemonic } from '../wallet/WalletContext'
+
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false)
+  async function copy() {
+    await navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      className="flex items-center gap-1 text-xs text-amber-700 hover:underline"
+    >
+      {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? 'Copied' : label}
+    </button>
+  )
+}
 
 type Mode = 'list' | 'create' | 'import'
 
@@ -96,9 +115,13 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
                   <div className="space-y-2 rounded-lg bg-slate-50 p-3">
                     {secret ? (
                       <>
-                        <p className="text-xs font-medium text-red-600">
-                          Never share this. Anyone with it controls the wallet.
-                        </p>
+                        <div className="flex items-center justify-between">
+                          <p className="flex items-center gap-1.5 text-xs font-medium text-red-600">
+                            <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
+                            Never share this. Anyone with it controls the wallet.
+                          </p>
+                          <CopyButton text={secret} label={w.kind === 'privkey' ? 'Copy key' : 'Copy seed'} />
+                        </div>
                         <p className="break-all rounded bg-white p-2 font-mono text-sm">{secret}</p>
                       </>
                     ) : (
@@ -230,11 +253,14 @@ function CreateWallet({ onDone }: { onDone: () => void }) {
       ) : (
         <form onSubmit={finish} className="space-y-3">
           <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
-            <p className="mb-2 flex items-start gap-1.5 text-xs font-medium text-red-600">
-              <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              Write these 24 words down on paper, in order. Never store them digitally or share
-              them. Anyone with these words controls your funds.
-            </p>
+            <div className="mb-2 flex items-start justify-between gap-2">
+              <p className="flex items-start gap-1.5 text-xs font-medium text-red-600">
+                <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                Write these 24 words down on paper, in order. Never store them digitally or share
+                them. Anyone with these words controls your funds.
+              </p>
+              <CopyButton text={mnemonic} label="Copy" />
+            </div>
             <p className="font-mono text-sm leading-relaxed">{mnemonic}</p>
           </div>
           <label className="flex items-center gap-2 text-sm">
