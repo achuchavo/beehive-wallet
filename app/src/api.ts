@@ -53,6 +53,7 @@ export interface AdminOverview {
     id: number
     email: string
     is_admin: number
+    is_disabled: number
     created_at: string
     watched_count: number
   }[]
@@ -81,4 +82,18 @@ export const api = {
   alertsList: () => call<{ unread: number; alerts: WalletAlert[] }>('alerts_list.php'),
   alertsMarkRead: () => call('alerts_mark_read.php', {}),
   adminOverview: () => call<AdminOverview & { ok: boolean }>('admin_overview.php'),
+  adminUserUpdate: (id: number, action: UserAction) =>
+    call('admin_user_update.php', { id, action }),
+  announcementGet: () =>
+    call<{ announcement: Announcement | null }>('announcement_get.php'),
+  adminAnnouncementSet: (message: string, severity: string, expires_hours: number) =>
+    call('admin_announcement_set.php', { message, severity, expires_hours }),
+  adminAnnouncementClear: () => call('admin_announcement_set.php', { clear: true }),
+}
+
+export type UserAction = 'disable' | 'enable' | 'promote' | 'demote' | 'delete'
+
+export interface Announcement {
+  message: string
+  severity: 'info' | 'warning' | 'danger'
 }

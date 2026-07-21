@@ -9,6 +9,7 @@ CREATE TABLE users (
     email VARCHAR(190) NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     is_admin TINYINT(1) NOT NULL DEFAULT 0,
+    is_disabled TINYINT(1) NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL,
     PRIMARY KEY (id),
     UNIQUE KEY uq_email (email)
@@ -44,6 +45,18 @@ CREATE TABLE wallet_alerts (
     KEY idx_detected (detected_at),
     CONSTRAINT fk_alert_watched FOREIGN KEY (watched_address_id)
         REFERENCES watched_addresses (id) ON DELETE CASCADE
+) ENGINE = InnoDB;
+
+-- Admin-set site-wide banner. Latest active, non-expired row is shown.
+CREATE TABLE announcements (
+    id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    message VARCHAR(300) NOT NULL,
+    severity VARCHAR(10) NOT NULL DEFAULT 'info',
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    expires_at DATETIME NULL,
+    created_by INT UNSIGNED NULL,
+    created_at DATETIME NOT NULL,
+    PRIMARY KEY (id)
 ) ENGINE = InnoDB;
 
 -- Phase 2: web push subscriptions (one row per browser/device).

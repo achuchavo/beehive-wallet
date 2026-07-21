@@ -41,17 +41,29 @@ function get_db(): PDO
     return $pdo;
 }
 
-function require_user(): int
+function require_user(PDO $db): int
 {
     if (empty($_SESSION['user_id'])) {
         json_error('Not logged in', 401);
     }
-    return (int) $_SESSION['user_id'];
+    $userId = (int) $_SESSION['user_id'];
+    $stmt = $db->prepare('SELECT is_disabled FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $row = $stmt->fetch();
+    if (!$row) {
+        $_SESSION = [];
+        session_destroy();
+        json_error('Not logged in', 401);
+    }
+    if ((int) $row['is_disabled'] === 1) {
+        json_error('Account disabled', 403);
+    }
+    return $userId;
 }
 
 function require_admin(PDO $db): int
 {
-    $userId = require_user();
+    $userId = require_user($db);
     $stmt = $db->prepare('SELECT is_admin FROM users WHERE id = ?');
     $stmt->execute([$userId]);
     $row = $stmt->fetch();

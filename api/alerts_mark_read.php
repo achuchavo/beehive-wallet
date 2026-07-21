@@ -1,9 +1,8 @@
 <?php
 require __DIR__ . '/common.php';
 
-$userId = require_user();
-
 $db = get_db();
+$userId = require_user($db);
 $stmt = $db->prepare(
     'UPDATE wallet_alerts a
      JOIN watched_addresses w ON w.id = a.watched_address_id

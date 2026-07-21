@@ -1,7 +1,8 @@
 <?php
 require __DIR__ . '/common.php';
 
-$userId = require_user();
+$db = get_db();
+$userId = require_user($db);
 $body = read_body();
 
 $chainKey = trim($body['chain_key'] ?? '');
@@ -23,8 +24,6 @@ if ($chain === null) {
 if (!looks_like_address($address, $chain['bech32Prefix'])) {
     json_error("Enter a valid {$chain['chainName']} address");
 }
-
-$db = get_db();
 
 $stmt = $db->prepare('SELECT COUNT(*) AS n FROM watched_addresses WHERE user_id = ?');
 $stmt->execute([$userId]);

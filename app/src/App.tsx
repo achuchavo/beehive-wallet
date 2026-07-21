@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Routes, Route, NavLink } from 'react-router-dom'
-import { api } from './api'
+import { api, type Announcement } from './api'
 import Dashboard from './pages/Dashboard'
 import Send from './pages/Send'
 import Staking from './pages/Staking'
@@ -18,14 +18,30 @@ const NAV = [
   { to: '/settings', label: 'Settings' },
 ]
 
+const BANNER_STYLE: Record<Announcement['severity'], string> = {
+  info: 'bg-blue-50 text-blue-800 border-blue-200',
+  warning: 'bg-amber-50 text-amber-800 border-amber-200',
+  danger: 'bg-red-50 text-red-800 border-red-200',
+}
+
 function App() {
   const [isAdmin, setIsAdmin] = useState(false)
+  const [banner, setBanner] = useState<Announcement | null>(null)
 
   useEffect(() => {
     api
       .me()
       .then((r) => setIsAdmin(r.logged_in && r.is_admin === true))
       .catch(() => setIsAdmin(false))
+
+    const loadBanner = () =>
+      api
+        .announcementGet()
+        .then((r) => setBanner(r.announcement))
+        .catch(() => {})
+    loadBanner()
+    const t = setInterval(loadBanner, 5 * 60 * 1000)
+    return () => clearInterval(t)
   }, [])
 
   const nav = isAdmin ? [...NAV, { to: '/admin', label: 'Admin' }] : NAV
@@ -54,6 +70,13 @@ function App() {
         ))}
       </nav>
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 pb-20 pt-6 md:pb-6">
+        {banner && (
+          <div
+            className={`mb-4 rounded-lg border px-4 py-3 text-sm ${BANNER_STYLE[banner.severity]}`}
+          >
+            {banner.message}
+          </div>
+        )}
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/send" element={<Send />} />

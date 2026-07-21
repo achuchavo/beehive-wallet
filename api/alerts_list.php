@@ -1,8 +1,8 @@
 <?php
 require __DIR__ . '/common.php';
 
-$userId = require_user();
 $db = get_db();
+$userId = require_user($db);
 
 $stmt = $db->prepare(
     'SELECT a.id, a.watched_address_id, w.chain_key, w.address, w.label,

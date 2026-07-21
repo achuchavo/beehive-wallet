@@ -6,11 +6,11 @@ if (empty($_SESSION['user_id'])) {
 }
 
 $db = get_db();
-$stmt = $db->prepare('SELECT email, is_admin FROM users WHERE id = ?');
+$stmt = $db->prepare('SELECT email, is_admin, is_disabled FROM users WHERE id = ?');
 $stmt->execute([(int) $_SESSION['user_id']]);
 $user = $stmt->fetch();
 
-if (!$user) {
+if (!$user || (int) $user['is_disabled'] === 1) {
     $_SESSION = [];
     session_destroy();
     json_out(['ok' => true, 'logged_in' => false]);
