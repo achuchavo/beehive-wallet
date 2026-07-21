@@ -10,9 +10,11 @@ CREATE TABLE users (
     password_hash VARCHAR(255) NOT NULL,
     is_admin TINYINT(1) NOT NULL DEFAULT 0,
     is_disabled TINYINT(1) NOT NULL DEFAULT 0,
+    main_address VARCHAR(120) NULL,
     created_at DATETIME NOT NULL,
     PRIMARY KEY (id),
-    UNIQUE KEY uq_email (email)
+    UNIQUE KEY uq_email (email),
+    UNIQUE KEY uq_main_address (main_address)
 ) ENGINE = InnoDB;
 
 CREATE TABLE watched_addresses (

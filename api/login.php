@@ -2,16 +2,21 @@
 require __DIR__ . '/common.php';
 
 $body = read_body();
-$email = strtolower(trim($body['email'] ?? ''));
+// Accept either an email or a wallet address as the identifier. The address
+// is only a username here - the password is still the credential.
+$identifier = trim($body['identifier'] ?? $body['email'] ?? '');
+$email = strtolower($identifier);
 $password = $body['password'] ?? '';
 
 $db = get_db();
-$stmt = $db->prepare('SELECT id, password_hash, is_disabled FROM users WHERE email = ?');
-$stmt->execute([$email]);
+$stmt = $db->prepare(
+    'SELECT id, password_hash, is_disabled FROM users WHERE email = ? OR main_address = ?'
+);
+$stmt->execute([$email, $identifier]);
 $user = $stmt->fetch();
 
 if (!$user || !password_verify($password, $user['password_hash'])) {
-    json_error('Wrong email or password', 401);
+    json_error('Wrong login or password', 401);
 }
 if ((int) $user['is_disabled'] === 1) {
     json_error('This account has been disabled', 403);

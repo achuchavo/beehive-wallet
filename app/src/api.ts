@@ -54,6 +54,7 @@ export interface AdminOverview {
     email: string
     is_admin: number
     is_disabled: number
+    main_address: string | null
     created_at: string
     watched_count: number
   }[]
@@ -70,9 +71,18 @@ export interface AdminOverview {
 }
 
 export const api = {
-  me: () => call<{ logged_in: boolean; email?: string; is_admin?: boolean }>('me.php'),
-  register: (email: string, password: string) => call('register.php', { email, password }),
-  login: (email: string, password: string) => call('login.php', { email, password }),
+  me: () =>
+    call<{
+      logged_in: boolean
+      email?: string
+      is_admin?: boolean
+      main_address?: string | null
+    }>('me.php'),
+  register: (email: string, password: string, main_address: string) =>
+    call('register.php', { email, password, main_address }),
+  login: (identifier: string, password: string) => call('login.php', { identifier, password }),
+  accountSetAddress: (main_address: string) =>
+    call<{ main_address: string | null }>('account_set_address.php', { main_address }),
   logout: () => call('logout.php', {}),
   watchedList: () => call<{ addresses: WatchedAddress[] }>('watched_list.php'),
   watchedAdd: (chain_key: string, address: string, label: string) =>

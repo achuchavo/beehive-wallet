@@ -6,7 +6,7 @@ if (empty($_SESSION['user_id'])) {
 }
 
 $db = get_db();
-$stmt = $db->prepare('SELECT email, is_admin, is_disabled FROM users WHERE id = ?');
+$stmt = $db->prepare('SELECT email, is_admin, is_disabled, main_address FROM users WHERE id = ?');
 $stmt->execute([(int) $_SESSION['user_id']]);
 $user = $stmt->fetch();
 
@@ -21,4 +21,5 @@ json_out([
     'logged_in' => true,
     'email' => $user['email'],
     'is_admin' => (int) $user['is_admin'] === 1,
+    'main_address' => $user['main_address'],
 ]);

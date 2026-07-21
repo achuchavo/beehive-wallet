@@ -104,7 +104,14 @@ export default function Admin() {
             <tbody>
               {data.users.map((u) => (
                 <tr key={u.id} className="border-b border-slate-100 last:border-0">
-                  <td className="px-4 py-2">{u.email}</td>
+                  <td className="px-4 py-2">
+                    {u.email}
+                    {u.main_address && (
+                      <div className="font-mono text-xs text-slate-400">
+                        {u.main_address.slice(0, 12)}...{u.main_address.slice(-6)}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-2">{u.watched_count}</td>
                   <td className="px-4 py-2">
                     {u.is_admin === 1 ? (

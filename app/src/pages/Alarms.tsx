@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { BellRing, Eye, ArrowUpRight, ExternalLink } from 'lucide-react'
 import { api, type WatchedAddress, type WalletAlert } from '../api'
 import { DEFAULT_CHAIN, formatAmount, CHAINS } from '../chains'
+import { useWallet } from '../wallet/WalletContext'
 
 const POLL_MS = 15000
 
@@ -136,11 +137,21 @@ export default function Alarms() {
 }
 
 function AuthForm({ onLoggedIn }: { onLoggedIn: (email: string) => void }) {
+  const { active } = useWallet()
   const [mode, setMode] = useState<'login' | 'register'>('login')
+  const [identifier, setIdentifier] = useState('')
   const [email, setEmail] = useState('')
+  const [mainAddress, setMainAddress] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+
+  // Offer the active wallet's address as the main address when registering.
+  function startRegister() {
+    setMode('register')
+    setError('')
+    if (active && !mainAddress) setMainAddress(active.address)
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -148,11 +159,12 @@ function AuthForm({ onLoggedIn }: { onLoggedIn: (email: string) => void }) {
     setError('')
     try {
       if (mode === 'register') {
-        await api.register(email, password)
+        await api.register(email, password, mainAddress.trim())
+        onLoggedIn(email)
       } else {
-        await api.login(email, password)
+        await api.login(identifier.trim(), password)
+        onLoggedIn(identifier)
       }
-      onLoggedIn(email)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {
@@ -168,14 +180,42 @@ function AuthForm({ onLoggedIn }: { onLoggedIn: (email: string) => void }) {
         account only stores public addresses - never keys.
       </p>
       <form onSubmit={submit} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
-        <input
-          type="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="name@example.com"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-        />
+        {mode === 'login' ? (
+          <input
+            type="text"
+            required
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
+            placeholder="Email or wallet address"
+            autoComplete="username"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+          />
+        ) : (
+          <>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@example.com"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+            />
+            <div>
+              <input
+                type="text"
+                value={mainAddress}
+                onChange={(e) => setMainAddress(e.target.value.trim())}
+                placeholder={`${DEFAULT_CHAIN.bech32Prefix}1... (optional)`}
+                autoComplete="off"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                Your main wallet address. Lets you sign in with it too, and links alarms to it.
+                You can add or change it later.
+              </p>
+            </div>
+          </>
+        )}
         <input
           type="password"
           required
@@ -183,6 +223,7 @@ function AuthForm({ onLoggedIn }: { onLoggedIn: (email: string) => void }) {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder={mode === 'register' ? 'Password (10+ characters)' : 'Password'}
+          autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
         />
         {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
@@ -194,11 +235,92 @@ function AuthForm({ onLoggedIn }: { onLoggedIn: (email: string) => void }) {
         </button>
       </form>
       <button
-        onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
+        onClick={() => (mode === 'login' ? startRegister() : setMode('login'))}
         className="text-sm text-amber-700 hover:underline"
       >
         {mode === 'login' ? 'No account yet? Create one' : 'Have an account? Sign in'}
       </button>
+    </div>
+  )
+}
+
+function MainAddressCard() {
+  const { active } = useWallet()
+  const [address, setAddress] = useState<string | null | undefined>(undefined)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    api.me().then((r) => setAddress(r.main_address ?? null))
+  }, [])
+
+  async function save(value: string) {
+    setBusy(true)
+    setError('')
+    try {
+      const r = await api.accountSetAddress(value.trim())
+      setAddress(r.main_address)
+      setEditing(false)
+      setDraft('')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (address === undefined) return null
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+      <div className="text-sm font-medium">Main address</div>
+      {address && !editing ? (
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate font-mono text-xs text-slate-500">{address}</span>
+          <button
+            onClick={() => {
+              setDraft(address)
+              setEditing(true)
+            }}
+            className="shrink-0 text-xs text-amber-700 hover:underline"
+          >
+            Change
+          </button>
+        </div>
+      ) : editing || !address ? (
+        <div className="mt-1 space-y-2">
+          <div className="flex gap-2">
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value.trim())}
+              placeholder={`${DEFAULT_CHAIN.bech32Prefix}1...`}
+              className="flex-1 rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
+            />
+            {active && (
+              <button
+                type="button"
+                onClick={() => setDraft(active.address)}
+                className="shrink-0 rounded-lg border border-slate-300 px-2 text-xs hover:border-amber-500"
+              >
+                Use my wallet
+              </button>
+            )}
+            <button
+              onClick={() => save(draft)}
+              disabled={busy}
+              className="shrink-0 rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+            >
+              Save
+            </button>
+          </div>
+          <p className="text-xs text-slate-400">
+            Not set yet. Add your main wallet address to sign in with it and link your alarms.
+          </p>
+          {error && <p className="text-xs text-red-600">{error}</p>}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -273,6 +395,8 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
       </div>
 
       {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+
+      <MainAddressCard />
 
       <PushSettings />
 
