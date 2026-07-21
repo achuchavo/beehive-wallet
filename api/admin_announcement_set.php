@@ -2,7 +2,7 @@
 require __DIR__ . '/common.php';
 
 $db = get_db();
-$adminId = require_admin($db);
+$adminId = require_permission($db, 'announcements');
 
 $body = read_body();
 

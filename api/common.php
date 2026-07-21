@@ -61,14 +61,55 @@ function require_user(PDO $db): int
     return $userId;
 }
 
+// Admin features that can be granted individually. Super admins have all.
+const ADMIN_FEATURES = ['users', 'chains', 'announcements'];
+
+function admin_context(PDO $db, int $userId): array
+{
+    $stmt = $db->prepare('SELECT is_admin, is_super_admin FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $row = $stmt->fetch();
+    $isAdmin = $row && (int) $row['is_admin'] === 1;
+    $isSuper = $row && (int) $row['is_super_admin'] === 1;
+
+    if ($isSuper) {
+        return ['is_admin' => true, 'is_super_admin' => true, 'features' => ADMIN_FEATURES];
+    }
+    $features = [];
+    if ($isAdmin) {
+        $stmt = $db->prepare('SELECT feature FROM admin_permissions WHERE user_id = ?');
+        $stmt->execute([$userId]);
+        $features = array_column($stmt->fetchAll(), 'feature');
+    }
+    return ['is_admin' => $isAdmin, 'is_super_admin' => false, 'features' => $features];
+}
+
 function require_admin(PDO $db): int
 {
     $userId = require_user($db);
-    $stmt = $db->prepare('SELECT is_admin FROM users WHERE id = ?');
-    $stmt->execute([$userId]);
-    $row = $stmt->fetch();
-    if (!$row || (int) $row['is_admin'] !== 1) {
+    $ctx = admin_context($db, $userId);
+    if (!$ctx['is_admin']) {
         json_error('Admins only', 403);
+    }
+    return $userId;
+}
+
+function require_permission(PDO $db, string $feature): int
+{
+    $userId = require_user($db);
+    $ctx = admin_context($db, $userId);
+    if (!$ctx['is_admin'] || !in_array($feature, $ctx['features'], true)) {
+        json_error('You do not have access to this feature', 403);
+    }
+    return $userId;
+}
+
+function require_super_admin(PDO $db): int
+{
+    $userId = require_user($db);
+    $ctx = admin_context($db, $userId);
+    if (!$ctx['is_super_admin']) {
+        json_error('Super admins only', 403);
     }
     return $userId;
 }

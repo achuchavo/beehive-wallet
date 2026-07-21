@@ -53,8 +53,10 @@ export interface AdminOverview {
     id: number
     email: string
     is_admin: number
+    is_super_admin: number
     is_disabled: number
     main_address: string | null
+    features: string | null
     created_at: string
     watched_count: number
   }[]
@@ -76,6 +78,8 @@ export const api = {
       logged_in: boolean
       email?: string
       is_admin?: boolean
+      is_super_admin?: boolean
+      admin_features?: string[]
       main_address?: string | null
     }>('me.php'),
   register: (email: string, password: string, main_address: string) =>
@@ -94,6 +98,12 @@ export const api = {
   adminOverview: () => call<AdminOverview & { ok: boolean }>('admin_overview.php'),
   adminUserUpdate: (id: number, action: UserAction) =>
     call('admin_user_update.php', { id, action }),
+  adminRoleUpdate: (
+    id: number,
+    is_admin: boolean,
+    is_super_admin: boolean,
+    features: string[],
+  ) => call('admin_role_update.php', { id, is_admin, is_super_admin, features }),
   announcementGet: () =>
     call<{ announcement: Announcement | null }>('announcement_get.php'),
   adminAnnouncementSet: (message: string, severity: string, expires_hours: number) =>
@@ -105,7 +115,10 @@ export const api = {
   pushUnsubscribe: (endpoint: string) => call('push_unsubscribe.php', { endpoint }),
 }
 
-export type UserAction = 'disable' | 'enable' | 'promote' | 'demote' | 'delete'
+export type UserAction = 'disable' | 'enable' | 'delete'
+
+export const ADMIN_FEATURES = ['users', 'chains', 'announcements'] as const
+export type AdminFeature = (typeof ADMIN_FEATURES)[number]
 
 export interface Announcement {
   message: string

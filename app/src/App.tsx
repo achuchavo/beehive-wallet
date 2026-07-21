@@ -52,7 +52,7 @@ function App() {
   useEffect(() => {
     api
       .me()
-      .then((r) => setIsAdmin(r.logged_in && r.is_admin === true))
+      .then((r) => setIsAdmin(r.logged_in && (r.is_admin === true || r.is_super_admin === true)))
       .catch(() => setIsAdmin(false))
 
     const loadBanner = () =>

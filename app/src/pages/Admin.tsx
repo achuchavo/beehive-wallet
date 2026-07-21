@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, type AdminOverview, type UserAction } from '../api'
+import { ShieldCheck } from 'lucide-react'
+import { api, type AdminOverview, type UserAction, ADMIN_FEATURES } from '../api'
 import { CHAINS, DEFAULT_CHAIN, formatAmount } from '../chains'
 
 export default function Admin() {
   const [data, setData] = useState<AdminOverview | null>(null)
+  const [features, setFeatures] = useState<string[]>([])
+  const [isSuper, setIsSuper] = useState(false)
   const [error, setError] = useState('')
 
   const load = useCallback(
@@ -19,10 +22,16 @@ export default function Admin() {
   )
 
   useEffect(() => {
+    api.me().then((r) => {
+      setFeatures(r.admin_features ?? [])
+      setIsSuper(r.is_super_admin === true)
+    })
     load()
     const t = setInterval(load, 30000)
     return () => clearInterval(t)
   }, [load])
+
+  const can = (feature: string) => features.includes(feature)
 
   async function userAction(id: number, action: UserAction) {
     if (action === 'delete' && !window.confirm('Delete this user and all their data?')) {
@@ -85,8 +94,11 @@ export default function Admin() {
         </span>
       </div>
 
-      <AnnouncementEditor onChanged={load} />
+      {can('announcements') && <AnnouncementEditor onChanged={load} />}
 
+      {isSuper && <RoleManager users={data.users} onChanged={load} onError={setError} />}
+
+      {can('users') && (
       <section className="space-y-2">
         <h2 className="font-medium">Users</h2>
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
@@ -114,7 +126,11 @@ export default function Admin() {
                   </td>
                   <td className="px-4 py-2">{u.watched_count}</td>
                   <td className="px-4 py-2">
-                    {u.is_admin === 1 ? (
+                    {u.is_super_admin === 1 ? (
+                      <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700">
+                        super
+                      </span>
+                    ) : u.is_admin === 1 ? (
                       <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700">
                         admin
                       </span>
@@ -143,14 +159,6 @@ export default function Admin() {
                         {u.is_disabled === 1 ? 'Enable' : 'Disable'}
                       </button>
                       <button
-                        onClick={() =>
-                          userAction(u.id, u.is_admin === 1 ? 'demote' : 'promote')
-                        }
-                        className="text-slate-600 hover:underline"
-                      >
-                        {u.is_admin === 1 ? 'Demote' : 'Promote'}
-                      </button>
-                      <button
                         onClick={() => userAction(u.id, 'delete')}
                         className="text-red-600 hover:underline"
                       >
@@ -167,6 +175,7 @@ export default function Admin() {
           Actions on your own account are blocked server-side.
         </p>
       </section>
+      )}
 
       <section className="space-y-2">
         <h2 className="font-medium">Recent alerts (all users)</h2>
@@ -194,6 +203,129 @@ export default function Admin() {
         )}
       </section>
     </div>
+  )
+}
+
+function RoleManager({
+  users,
+  onChanged,
+  onError,
+}: {
+  users: AdminOverview['users']
+  onChanged: () => void
+  onError: (msg: string) => void
+}) {
+  const [editing, setEditing] = useState<number | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [isSuper, setIsSuper] = useState(false)
+  const [feats, setFeats] = useState<string[]>([])
+  const [busy, setBusy] = useState(false)
+
+  function startEdit(u: AdminOverview['users'][number]) {
+    setEditing(u.id)
+    setIsAdmin(u.is_admin === 1)
+    setIsSuper(u.is_super_admin === 1)
+    setFeats(u.features ? u.features.split(',') : [])
+  }
+
+  async function save(id: number) {
+    setBusy(true)
+    onError('')
+    try {
+      await api.adminRoleUpdate(id, isAdmin, isSuper, feats)
+      setEditing(null)
+      onChanged()
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function toggleFeat(f: string) {
+    setFeats((prev) => (prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f]))
+  }
+
+  return (
+    <section className="space-y-2">
+      <h2 className="flex items-center gap-2 font-medium">
+        <ShieldCheck className="h-4 w-4 text-purple-500" /> Admin access
+      </h2>
+      <p className="text-sm text-slate-500">
+        Grant admin access and choose which features each admin can use. Super admins have every
+        feature and can manage other admins.
+      </p>
+      <div className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
+        {users.map((u) => (
+          <div key={u.id} className="px-4 py-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium">{u.email}</div>
+                <div className="text-xs text-slate-500">
+                  {u.is_super_admin === 1
+                    ? 'Super admin'
+                    : u.is_admin === 1
+                      ? `Admin · ${u.features || 'no features'}`
+                      : 'User'}
+                </div>
+              </div>
+              <button
+                onClick={() => (editing === u.id ? setEditing(null) : startEdit(u))}
+                className="shrink-0 text-xs text-amber-700 hover:underline"
+              >
+                {editing === u.id ? 'Cancel' : 'Edit access'}
+              </button>
+            </div>
+            {editing === u.id && (
+              <div className="mt-3 space-y-2 rounded-lg bg-slate-50 p-3">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={isSuper}
+                    onChange={(e) => {
+                      setIsSuper(e.target.checked)
+                      if (e.target.checked) setIsAdmin(true)
+                    }}
+                  />
+                  Super admin (all features, manages admins)
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={isAdmin}
+                    disabled={isSuper}
+                    onChange={(e) => setIsAdmin(e.target.checked)}
+                  />
+                  Admin
+                </label>
+                {isAdmin && !isSuper && (
+                  <div className="flex flex-wrap gap-3 pl-6">
+                    {ADMIN_FEATURES.map((f) => (
+                      <label key={f} className="flex items-center gap-1.5 text-sm capitalize">
+                        <input
+                          type="checkbox"
+                          checked={feats.includes(f)}
+                          onChange={() => toggleFeat(f)}
+                        />
+                        {f}
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <button
+                  onClick={() => save(u.id)}
+                  disabled={busy}
+                  className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+                >
+                  {busy ? 'Saving...' : 'Save access'}
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-slate-400">Your own role can't be changed here.</p>
+    </section>
   )
 }
 

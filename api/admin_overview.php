@@ -22,10 +22,12 @@ $stats['watcher_last_run'] = $row['last_run'];
 $stats['watcher_age_seconds'] = $row['age_seconds'] === null ? null : (int) $row['age_seconds'];
 
 $users = $db->query(
-    'SELECT u.id, u.email, u.is_admin, u.is_disabled, u.main_address, u.created_at,
-            COUNT(w.id) AS watched_count
+    'SELECT u.id, u.email, u.is_admin, u.is_super_admin, u.is_disabled, u.main_address,
+            u.created_at, COUNT(w.id) AS watched_count,
+            GROUP_CONCAT(DISTINCT p.feature) AS features
      FROM users u
      LEFT JOIN watched_addresses w ON w.user_id = u.id
+     LEFT JOIN admin_permissions p ON p.user_id = u.id
      GROUP BY u.id
      ORDER BY u.created_at DESC
      LIMIT 100'

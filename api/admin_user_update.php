@@ -2,13 +2,14 @@
 require __DIR__ . '/common.php';
 
 $db = get_db();
-$adminId = require_admin($db);
+$adminId = require_permission($db, 'users');
 
 $body = read_body();
 $targetId = (int) ($body['id'] ?? 0);
 $action = $body['action'] ?? '';
 
-$allowed = ['disable', 'enable', 'promote', 'demote', 'delete'];
+// Admin-role actions (promote/demote) moved to admin_role_update.php (super only).
+$allowed = ['disable', 'enable', 'delete'];
 if (!in_array($action, $allowed, true)) {
     json_error('Unknown action');
 }
@@ -28,12 +29,6 @@ switch ($action) {
         break;
     case 'enable':
         $db->prepare('UPDATE users SET is_disabled = 0 WHERE id = ?')->execute([$targetId]);
-        break;
-    case 'promote':
-        $db->prepare('UPDATE users SET is_admin = 1 WHERE id = ?')->execute([$targetId]);
-        break;
-    case 'demote':
-        $db->prepare('UPDATE users SET is_admin = 0 WHERE id = ?')->execute([$targetId]);
         break;
     case 'delete':
         // watched_addresses and wallet_alerts cascade via foreign keys.
