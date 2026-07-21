@@ -3,6 +3,8 @@ import { BellRing, Eye, ArrowUpRight, ExternalLink } from 'lucide-react'
 import { api, type WatchedAddress, type WalletAlert } from '../api'
 import { DEFAULT_CHAIN, formatAmount, CHAINS } from '../chains'
 import { useWallet } from '../wallet/WalletContext'
+import { useAuth } from '../auth/AuthContext'
+import PasswordInput from '../components/PasswordInput'
 
 const POLL_MS = 15000
 
@@ -117,27 +119,20 @@ function PushSettings() {
 }
 
 export default function Alarms() {
-  const [authChecked, setAuthChecked] = useState(false)
-  const [email, setEmail] = useState<string | null>(null)
+  const auth = useAuth()
 
-  useEffect(() => {
-    api.me().then((r) => {
-      setEmail(r.logged_in ? (r.email ?? null) : null)
-      setAuthChecked(true)
-    })
-  }, [])
-
-  if (!authChecked) {
+  if (auth.status === 'loading') {
     return <p className="text-sm text-slate-500">Loading...</p>
   }
-  if (!email) {
-    return <AuthForm onLoggedIn={setEmail} />
+  if (auth.status === 'out') {
+    return <AuthForm />
   }
-  return <AlarmPanel email={email} onLoggedOut={() => setEmail(null)} />
+  return <AlarmPanel email={auth.email ?? ''} onLoggedOut={auth.logout} />
 }
 
-function AuthForm({ onLoggedIn }: { onLoggedIn: (email: string) => void }) {
+function AuthForm() {
   const { active } = useWallet()
+  const { refresh } = useAuth()
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [identifier, setIdentifier] = useState('')
   const [email, setEmail] = useState('')
@@ -160,10 +155,10 @@ function AuthForm({ onLoggedIn }: { onLoggedIn: (email: string) => void }) {
     try {
       if (mode === 'register') {
         await api.register(email, password, mainAddress.trim())
-        onLoggedIn(email)
+        await refresh()
       } else {
         await api.login(identifier.trim(), password)
-        onLoggedIn(identifier)
+        await refresh()
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
@@ -216,8 +211,7 @@ function AuthForm({ onLoggedIn }: { onLoggedIn: (email: string) => void }) {
             </div>
           </>
         )}
-        <input
-          type="password"
+        <PasswordInput
           required
           minLength={10}
           value={password}
@@ -369,8 +363,7 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
     }
   }
 
-  async function logout() {
-    await api.logout()
+  function logout() {
     onLoggedOut()
   }
 

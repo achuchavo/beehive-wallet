@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Plus, Import, TriangleAlert, Copy, Check } from 'lucide-react'
 import { DEFAULT_CHAIN } from '../chains'
 import { useWallet, generateMnemonic } from '../wallet/WalletContext'
+import PasswordInput from '../components/PasswordInput'
 
 function CopyButton({ text, label }: { text: string; label: string }) {
   const [copied, setCopied] = useState(false)
@@ -126,8 +127,7 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
                       </>
                     ) : (
                       <div className="flex gap-2">
-                        <input
-                          type="password"
+                        <PasswordInput
                           name="beehive-reveal-password"
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
@@ -182,8 +182,7 @@ function PasswordFields({
 }) {
   return (
     <>
-      <input
-        type="password"
+      <PasswordInput
         name="beehive-new-password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
@@ -193,8 +192,7 @@ function PasswordFields({
         autoComplete="new-password"
         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
       />
-      <input
-        type="password"
+      <PasswordInput
         name="beehive-confirm-password"
         value={confirm}
         onChange={(e) => setConfirm(e.target.value)}

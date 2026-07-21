@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Routes, Route, NavLink, Navigate } from 'react-router-dom'
+import { Routes, Route, NavLink, Navigate, Link } from 'react-router-dom'
 import {
   LayoutDashboard,
   SendHorizontal,
@@ -12,8 +12,12 @@ import {
   Info,
   TriangleAlert,
   OctagonAlert,
+  LogOut,
+  LogIn,
+  UserCircle,
 } from 'lucide-react'
 import { api, type Announcement } from './api'
+import { useAuth } from './auth/AuthContext'
 import Dashboard from './pages/Dashboard'
 import Send from './pages/Send'
 import Staking from './pages/Staking'
@@ -45,23 +49,12 @@ const BANNER_ICON: Record<Announcement['severity'], typeof Info> = {
   danger: OctagonAlert,
 }
 
-type AdminAuth = 'loading' | 'admin' | 'denied'
-
 function App() {
-  const [adminAuth, setAdminAuth] = useState<AdminAuth>('loading')
-  const isAdmin = adminAuth === 'admin'
+  const auth = useAuth()
+  const isAdmin = auth.status === 'in' && auth.isAdmin
   const [banner, setBanner] = useState<Announcement | null>(null)
 
   useEffect(() => {
-    api
-      .me()
-      .then((r) =>
-        setAdminAuth(
-          r.logged_in && (r.is_admin === true || r.is_super_admin === true) ? 'admin' : 'denied',
-        ),
-      )
-      .catch(() => setAdminAuth('denied'))
-
     const loadBanner = () =>
       api
         .announcementGet()
@@ -99,6 +92,32 @@ function App() {
             <span className="hidden sm:inline">{item.label}</span>
           </NavLink>
         ))}
+
+        <div className="hidden md:mt-auto md:block md:border-t md:border-slate-200 md:pt-4">
+          {auth.status === 'in' ? (
+            <div className="px-3">
+              <div className="flex items-center gap-2 text-sm">
+                <UserCircle className="h-5 w-5 shrink-0 text-slate-400" strokeWidth={1.8} />
+                <span className="truncate text-slate-700" title={auth.email ?? ''}>
+                  {auth.email}
+                </span>
+              </div>
+              <button
+                onClick={() => auth.logout()}
+                className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 hover:text-amber-700"
+              >
+                <LogOut className="h-3.5 w-3.5" /> Sign out
+              </button>
+            </div>
+          ) : auth.status === 'out' ? (
+            <Link
+              to="/alarms"
+              className="mx-3 flex items-center gap-1.5 text-sm text-amber-700 hover:underline"
+            >
+              <LogIn className="h-4 w-4" /> Sign in
+            </Link>
+          ) : null}
+        </div>
       </nav>
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 pb-20 pt-6 md:pb-6">
         {banner && (
@@ -120,9 +139,9 @@ function App() {
           <Route
             path="/admin"
             element={
-              adminAuth === 'loading' ? (
+              auth.status === 'loading' ? (
                 <p className="text-sm text-slate-500">Loading...</p>
-              ) : adminAuth === 'admin' ? (
+              ) : isAdmin ? (
                 <Admin />
               ) : (
                 <Navigate to="/" replace />

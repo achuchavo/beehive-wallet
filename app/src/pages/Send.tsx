@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { SendHorizontal, QrCode, Copy, Check, CircleCheck, LockKeyhole } from 'lucide-react'
 import { SigningStargateClient, GasPrice } from '@cosmjs/stargate'
 import QRCode from 'qrcode'
+import PasswordInput from '../components/PasswordInput'
 import { DEFAULT_CHAIN, toBaseUnits, formatAmount } from '../chains'
 import { useWallet } from '../wallet/WalletContext'
 
@@ -199,8 +200,7 @@ function SendForm() {
         autoComplete="off"
         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
       />
-      <input
-        type="password"
+      <PasswordInput
         name="beehive-sign-password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
