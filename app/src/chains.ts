@@ -30,7 +30,11 @@ export const CHAINS: ChainInfo[] = [
     coinType: 371,
     gasPrice: '5umed',
     rpc: 'https://rpc.gopanacea.org',
-    lcd: import.meta.env.DEV ? '/lcd/medibloc' : 'https://api.gopanacea.org',
+    // Dev: Vite proxy relays to the public LCD (which sends no CORS headers).
+    // Prod: lcd_proxy.php relays server-side until our own node is up.
+    lcd: import.meta.env.DEV
+      ? '/lcd/medibloc'
+      : `${import.meta.env.BASE_URL}api/lcd_proxy.php`,
     explorerTxUrl: 'https://www.mintscan.io/medibloc/tx/',
     beehiveValidator: 'panaceavaloper1REPLACE_WITH_OUR_VALOPER',
   },

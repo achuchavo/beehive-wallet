@@ -24,8 +24,10 @@ export interface WalletAlert {
   is_read: number
 }
 
+const API_BASE = `${import.meta.env.BASE_URL}api/`.replace('//', '/')
+
 async function call<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`/api/${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     method: body === undefined ? 'GET' : 'POST',
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),

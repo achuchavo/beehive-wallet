@@ -1,0 +1,8 @@
+# SPA fallback: deep links like /wallet/alarms serve index.html.
+# Real files (assets, api/*.php) are untouched.
+DirectoryIndex index.html index.php
+RewriteEngine On
+RewriteBase /wallet/
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . index.html [L]
