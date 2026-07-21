@@ -55,7 +55,5 @@ $stmt->execute([$email, $hash, $storeAddress]);
 // Count this registration against the per-IP cap.
 record_attempt($db, $ip, $email, 'register', false);
 
-$_SESSION['user_id'] = (int) $db->lastInsertId();
-session_regenerate_id(true);
-
+// Do not auto-login: the user confirms success and signs in explicitly.
 json_out(['ok' => true]);

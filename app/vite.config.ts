@@ -13,12 +13,13 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     proxy: {
-      // Local Apache only serves the site over HTTPS (port 80 redirects),
-      // so target 443 directly and present the vhost's Host header.
+      // Route API calls to the live subdomain vhost. The /wallet path now 301s
+      // to the subdomain, so target it directly and strip the base prefix.
       [`${base}api`.replace('//', '/')]: {
-        target: 'https://127.0.0.1',
+        target: 'https://wallet.achumuamah.com',
+        changeOrigin: true,
         secure: false,
-        headers: { host: 'achumuamah.com' },
+        rewrite: (p) => p.replace(base.replace(/\/$/, ''), ''),
       },
     },
   },

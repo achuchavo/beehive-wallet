@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { BellRing, Eye, ArrowUpRight, ExternalLink } from 'lucide-react'
+import { BellRing, Eye, ArrowUpRight, ExternalLink, CircleCheck } from 'lucide-react'
 import { api, type WatchedAddress, type WalletAlert } from '../api'
 import { DEFAULT_CHAIN, formatAmount, CHAINS } from '../chains'
 import { useWallet } from '../wallet/WalletContext'
 import { useAuth } from '../auth/AuthContext'
 import PasswordInput from '../components/PasswordInput'
+import Modal from '../components/Modal'
 
 const POLL_MS = 15000
 
@@ -138,8 +139,10 @@ function AuthForm() {
   const [email, setEmail] = useState('')
   const [mainAddress, setMainAddress] = useState('')
   const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [registeredEmail, setRegisteredEmail] = useState<string | null>(null)
 
   // Offer the active wallet's address as the main address when registering.
   function startRegister() {
@@ -150,12 +153,16 @@ function AuthForm() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
+    if (mode === 'register' && password !== confirm) {
+      setError('Passwords do not match')
+      return
+    }
     setBusy(true)
     setError('')
     try {
       if (mode === 'register') {
         await api.register(email, password, mainAddress.trim())
-        await refresh()
+        setRegisteredEmail(email)
       } else {
         await api.login(identifier.trim(), password)
         await refresh()
@@ -167,8 +174,37 @@ function AuthForm() {
     }
   }
 
+  // After registering, move to the sign-in form with the email prefilled.
+  function goSignIn() {
+    setMode('login')
+    setIdentifier(registeredEmail ?? '')
+    setPassword('')
+    setConfirm('')
+    setError('')
+    setRegisteredEmail(null)
+  }
+
   return (
     <div className="mx-auto max-w-sm space-y-4">
+      {registeredEmail && (
+        <Modal title="Account created" onClose={goSignIn}>
+          <div className="text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-green-600">
+              <CircleCheck className="h-6 w-6" />
+            </div>
+            <p className="text-sm text-slate-600">
+              Your account <span className="font-medium">{registeredEmail}</span> is ready. Sign
+              in to start watching addresses and setting alarms.
+            </p>
+            <button
+              onClick={goSignIn}
+              className="mt-5 w-full rounded-lg bg-amber-500 py-2 text-sm font-medium text-white hover:bg-amber-600"
+            >
+              Sign in
+            </button>
+          </div>
+        </Modal>
+      )}
       <h1 className="text-xl font-semibold">Alarms</h1>
       <p className="text-sm text-slate-500">
         Sign in to watch addresses and get an alert whenever a transaction leaves them. Your
@@ -220,6 +256,16 @@ function AuthForm() {
           autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
         />
+        {mode === 'register' && (
+          <PasswordInput
+            required
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            placeholder="Confirm password"
+            autoComplete="new-password"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+          />
+        )}
         {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
         <button
           disabled={busy}
