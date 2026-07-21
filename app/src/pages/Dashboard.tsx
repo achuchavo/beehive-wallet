@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Wallet, Coins, Copy, Check, SendHorizontal, History as HistoryIcon } from 'lucide-react'
+import { Wallet, Coins, Copy, Check, SendHorizontal, History as HistoryIcon, Plus, Import, Bell } from 'lucide-react'
 import { DEFAULT_CHAIN, formatAmount } from '../chains'
 import { useWallet } from '../wallet/WalletContext'
+import EmptyState from '../components/EmptyState'
 
 interface Coin {
   denom: string
@@ -64,22 +65,18 @@ export default function Dashboard() {
 
   if (!active) {
     return (
-      <div className="space-y-3">
+      <div>
         <h1 className="text-xl font-semibold">Dashboard</h1>
-        <p className="text-sm text-slate-500">
-          Welcome to Beehive Wallet. Get started by{' '}
-          <Link to="/settings" className="text-amber-700 underline">
-            creating or importing a wallet
-          </Link>{' '}
-          - it stays in your browser, encrypted with your password.
-        </p>
-        <p className="text-sm text-slate-500">
-          Or just want transaction alarms on an address?{' '}
-          <Link to="/alarms" className="text-amber-700 underline">
-            Set one up here
-          </Link>
-          .
-        </p>
+        <EmptyState
+          icon={Wallet}
+          title="Welcome to Beehive Wallet"
+          description="Create a new wallet or import an existing one. It stays in your browser, encrypted with your password - we never see your keys."
+          actions={[
+            { label: 'Create wallet', to: '/settings?action=create', icon: Plus },
+            { label: 'Import wallet', to: '/settings?action=import', icon: Import, variant: 'secondary' },
+            { label: 'Watch an address', to: '/alarms', icon: Bell, variant: 'secondary' },
+          ]}
+        />
       </div>
     )
   }

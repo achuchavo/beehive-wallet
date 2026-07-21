@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { SendHorizontal, QrCode, Copy, Check, CircleCheck, LockKeyhole } from 'lucide-react'
+import { SendHorizontal, QrCode, Copy, Check, CircleCheck, LockKeyhole, Plus, Import } from 'lucide-react'
 import { SigningStargateClient, GasPrice } from '@cosmjs/stargate'
 import QRCode from 'qrcode'
 import PasswordInput from '../components/PasswordInput'
+import EmptyState from '../components/EmptyState'
 import { DEFAULT_CHAIN, toBaseUnits, formatAmount } from '../chains'
 import { useWallet } from '../wallet/WalletContext'
 
@@ -13,11 +13,17 @@ export default function Send() {
 
   if (!active) {
     return (
-      <div className="space-y-2">
+      <div>
         <h1 className="text-xl font-semibold">Send / receive</h1>
-        <p className="text-sm text-slate-500">
-          No wallet yet. <Link to="/settings" className="text-amber-700 underline">Create or import one in Settings</Link> first.
-        </p>
+        <EmptyState
+          icon={SendHorizontal}
+          title="No wallet yet"
+          description="Add a wallet to send and receive tokens. Your keys stay encrypted in this browser."
+          actions={[
+            { label: 'Create wallet', to: '/settings?action=create', icon: Plus },
+            { label: 'Import wallet', to: '/settings?action=import', icon: Import, variant: 'secondary' },
+          ]}
+        />
       </div>
     )
   }

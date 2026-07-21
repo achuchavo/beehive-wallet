@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Plus, Import, TriangleAlert, Copy, Check } from 'lucide-react'
 import { DEFAULT_CHAIN } from '../chains'
 import { useWallet, generateMnemonic } from '../wallet/WalletContext'
@@ -26,14 +27,29 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 type Mode = 'list' | 'create' | 'import'
 
 export default function Settings() {
-  const [mode, setMode] = useState<Mode>('list')
+  const [params, setParams] = useSearchParams()
+  const initialMode: Mode =
+    params.get('action') === 'create'
+      ? 'create'
+      : params.get('action') === 'import'
+        ? 'import'
+        : 'list'
+  const [mode, setMode] = useState<Mode>(initialMode)
+
+  function goList() {
+    setMode('list')
+    if (params.has('action')) {
+      params.delete('action')
+      setParams(params, { replace: true })
+    }
+  }
 
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-semibold">Settings</h1>
       {mode === 'list' && <WalletList onCreate={() => setMode('create')} onImport={() => setMode('import')} />}
-      {mode === 'create' && <CreateWallet onDone={() => setMode('list')} />}
-      {mode === 'import' && <ImportWallet onDone={() => setMode('list')} />}
+      {mode === 'create' && <CreateWallet onDone={goList} />}
+      {mode === 'import' && <ImportWallet onDone={goList} />}
     </div>
   )
 }

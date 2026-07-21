@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { Coins, Gift, ShieldCheck, Star, Search } from 'lucide-react'
+import { Coins, Gift, ShieldCheck, Star, Search, Plus, Import } from 'lucide-react'
 import { DEFAULT_CHAIN, formatAmount, toBaseUnits } from '../chains'
 import { useWallet } from '../wallet/WalletContext'
 import { delegate, undelegate, claimRewards, serviceFeeActive, isBeehive } from '../wallet/staking'
+import EmptyState from '../components/EmptyState'
 
 interface Validator {
   operator: string
@@ -150,15 +150,17 @@ export default function Staking() {
 
   if (!active) {
     return (
-      <div className="space-y-2">
+      <div>
         <h1 className="text-xl font-semibold">Staking</h1>
-        <p className="text-sm text-slate-500">
-          No wallet yet.{' '}
-          <Link to="/settings" className="text-amber-700 underline">
-            Create or import one in Settings
-          </Link>{' '}
-          to stake.
-        </p>
+        <EmptyState
+          icon={Coins}
+          title="No wallet yet"
+          description="Add a wallet to stake to Beehive for free and earn rewards."
+          actions={[
+            { label: 'Create wallet', to: '/settings?action=create', icon: Plus },
+            { label: 'Import wallet', to: '/settings?action=import', icon: Import, variant: 'secondary' },
+          ]}
+        />
       </div>
     )
   }

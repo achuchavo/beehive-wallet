@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { Gift, Landmark, ExternalLink, ShieldCheck } from 'lucide-react'
+import { Gift, Landmark, ExternalLink, ShieldCheck, Plus, Import } from 'lucide-react'
 import { DEFAULT_CHAIN, formatAmount } from '../chains'
 import { useWallet } from '../wallet/WalletContext'
 import { claimEarnings } from '../wallet/staking'
@@ -11,6 +10,7 @@ import {
   type WalletEarnings,
   type ClaimRecord,
 } from '../wallet/rewards'
+import EmptyState from '../components/EmptyState'
 
 const chain = DEFAULT_CHAIN
 
@@ -53,15 +53,17 @@ export default function Rewards() {
 
   if (wallets.length === 0) {
     return (
-      <div className="space-y-2">
+      <div>
         <h1 className="text-xl font-semibold">Rewards</h1>
-        <p className="text-sm text-slate-500">
-          No wallets yet.{' '}
-          <Link to="/settings" className="text-amber-700 underline">
-            Create or import one in Settings
-          </Link>{' '}
-          to track and claim rewards.
-        </p>
+        <EmptyState
+          icon={Gift}
+          title="No wallets yet"
+          description="Add a wallet to track and claim your staking rewards and commission."
+          actions={[
+            { label: 'Create wallet', to: '/settings?action=create', icon: Plus },
+            { label: 'Import wallet', to: '/settings?action=import', icon: Import, variant: 'secondary' },
+          ]}
+        />
       </div>
     )
   }
