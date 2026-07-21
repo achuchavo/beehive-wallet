@@ -101,3 +101,26 @@ export async function claimRewards(
   }))
   return broadcast(chain, signer, delegator, messages, 'Beehive Wallet: claim rewards')
 }
+
+// Claims delegator rewards (per validator) and, if commissionValoper is given,
+// validator commission - all in one signed transaction for this address.
+export async function claimEarnings(
+  chain: ChainInfo,
+  signer: OfflineDirectSigner,
+  address: string,
+  rewardValidators: string[],
+  commissionValoper: string | null,
+): Promise<string> {
+  const messages: EncodeObject[] = rewardValidators.map((validatorAddress) => ({
+    typeUrl: '/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward',
+    value: { delegatorAddress: address, validatorAddress },
+  }))
+  if (commissionValoper) {
+    messages.push({
+      typeUrl: '/cosmos.distribution.v1beta1.MsgWithdrawValidatorCommission',
+      value: { validatorAddress: commissionValoper },
+    })
+  }
+  if (messages.length === 0) throw new Error('Nothing to claim')
+  return broadcast(chain, signer, address, messages, 'Beehive Wallet: claim')
+}

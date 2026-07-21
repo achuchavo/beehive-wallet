@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   SendHorizontal,
   Coins,
+  Gift,
   History as HistoryIcon,
   Bell,
   Settings as SettingsIcon,
@@ -16,6 +17,7 @@ import { api, type Announcement } from './api'
 import Dashboard from './pages/Dashboard'
 import Send from './pages/Send'
 import Staking from './pages/Staking'
+import Rewards from './pages/Rewards'
 import History from './pages/History'
 import Alarms from './pages/Alarms'
 import Settings from './pages/Settings'
@@ -25,6 +27,7 @@ const NAV = [
   { to: '/', label: 'Dashboard', Icon: LayoutDashboard },
   { to: '/send', label: 'Send / receive', Icon: SendHorizontal },
   { to: '/staking', label: 'Staking', Icon: Coins },
+  { to: '/rewards', label: 'Rewards', Icon: Gift },
   { to: '/history', label: 'History', Icon: HistoryIcon },
   { to: '/alarms', label: 'Alarms', Icon: Bell },
   { to: '/settings', label: 'Settings', Icon: SettingsIcon },
@@ -103,6 +106,7 @@ function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/send" element={<Send />} />
           <Route path="/staking" element={<Staking />} />
+          <Route path="/rewards" element={<Rewards />} />
           <Route path="/history" element={<History />} />
           <Route path="/alarms" element={<Alarms />} />
           <Route path="/settings" element={<Settings />} />
