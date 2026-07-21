@@ -8,9 +8,12 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     proxy: {
+      // Local Apache only serves the site over HTTPS (port 80 redirects),
+      // so target 443 directly and present the vhost's Host header.
       '/api': {
-        target: 'http://localhost',
-        changeOrigin: true,
+        target: 'https://127.0.0.1',
+        secure: false,
+        headers: { host: 'achumuamah.com' },
         rewrite: (path) => path.replace(/^\/api/, '/wallet/api'),
       },
       // Public LCDs don't send CORS headers, so the dev server relays them.

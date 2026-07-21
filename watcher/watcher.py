@@ -62,17 +62,19 @@ def get_chain(chains: list, key: str):
 def fetch_outgoing_txs(chain: dict, address: str) -> list:
     """Newest-first outgoing txs for an address from the LCD tx search API."""
     url = f"{chain['lcd']}/cosmos/tx/v1beta1/txs"
+    # order_by=2 is ORDER_BY_DESC as a numeric enum - the panacea LCD rejects
+    # the string form. It also ignores pagination.limit, so slice client-side.
     params = {
         "events": f"message.sender='{address}'",
-        "order_by": "ORDER_BY_DESC",
+        "order_by": "2",
         "pagination.limit": str(PAGE_LIMIT),
     }
-    r = requests.get(url, params=params, timeout=20)
+    r = requests.get(url, params=params, timeout=60)
     r.raise_for_status()
     data = r.json()
 
     txs = []
-    for resp in data.get("tx_responses", []):
+    for resp in data.get("tx_responses", [])[:PAGE_LIMIT]:
         amount, denom, recipient = extract_transfer(resp)
         txs.append(
             {
