@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { BellRing, Eye, ArrowUpRight, ExternalLink } from 'lucide-react'
 import { api, type WatchedAddress, type WalletAlert } from '../api'
 import { DEFAULT_CHAIN, formatAmount, CHAINS } from '../chains'
 
@@ -73,7 +74,11 @@ function PushSettings() {
   return (
     <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
       <div className="flex items-center justify-between gap-3">
-        <div>
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+            <BellRing className="h-4.5 w-4.5" strokeWidth={1.8} />
+          </div>
+          <div>
           <div className="text-sm font-medium">Push notifications</div>
           <div className="text-xs text-slate-500">
             {state === 'unsupported' && 'Not supported by this browser.'}
@@ -82,6 +87,7 @@ function PushSettings() {
             {state === 'off' && 'Get alerts on this device even when the app is closed.'}
             {state === 'on' && 'Enabled on this device.'}
             {state === 'busy' && 'Checking...'}
+          </div>
           </div>
         </div>
         {state === 'off' && (
@@ -271,7 +277,9 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
       <PushSettings />
 
       <section className="space-y-3">
-        <h2 className="font-medium">Watched addresses</h2>
+        <h2 className="flex items-center gap-2 font-medium">
+          <Eye className="h-4 w-4 text-slate-400" /> Watched addresses
+        </h2>
         <form onSubmit={addAddress} className="flex flex-col gap-2 sm:flex-row">
           <input
             value={newAddress}
@@ -361,7 +369,8 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
               return (
                 <li key={a.id} className={`px-4 py-3 ${a.is_read ? '' : 'bg-amber-50'}`}>
                   <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium">
+                    <span className="flex items-center gap-1.5 font-medium">
+                      <ArrowUpRight className="h-4 w-4 text-red-500" />
                       Outgoing tx from {a.label || shortAddr(a.address)}
                     </span>
                     <span className="text-xs text-slate-400">{a.detected_at}</span>
@@ -375,9 +384,10 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
                     href={`${chain.explorerTxUrl}${a.tx_hash}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="font-mono text-xs text-amber-700 hover:underline"
+                    className="inline-flex items-center gap-1 font-mono text-xs text-amber-700 hover:underline"
                   >
                     {a.tx_hash.slice(0, 16)}...
+                    <ExternalLink className="h-3 w-3" />
                   </a>
                 </li>
               )

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { SendHorizontal, QrCode, Copy, Check, CircleCheck, LockKeyhole } from 'lucide-react'
 import { SigningStargateClient, GasPrice } from '@cosmjs/stargate'
 import QRCode from 'qrcode'
 import { DEFAULT_CHAIN, toBaseUnits, formatAmount } from '../chains'
@@ -28,10 +29,11 @@ export default function Send() {
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`rounded-full px-4 py-1.5 text-sm capitalize ${
+            className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm capitalize ${
               tab === t ? 'bg-amber-500 font-medium text-white' : 'bg-slate-100 text-slate-600'
             }`}
           >
+            {t === 'send' ? <SendHorizontal className="h-3.5 w-3.5" /> : <QrCode className="h-3.5 w-3.5" />}
             {t}
           </button>
         ))}
@@ -67,8 +69,9 @@ function Receive() {
       <div className="break-all font-mono text-sm text-slate-600">{active.address}</div>
       <button
         onClick={copy}
-        className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:border-amber-500"
+        className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:border-amber-500"
       >
+        {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
         {copied ? 'Copied' : 'Copy address'}
       </button>
     </div>
@@ -204,7 +207,8 @@ function SendForm() {
       </p>
       {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
       {txHash && (
-        <div className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
+        <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
+          <CircleCheck className="h-4 w-4 shrink-0" />
           Sent.{' '}
           <a
             href={`${chain.explorerTxUrl}${txHash}`}
@@ -218,8 +222,9 @@ function SendForm() {
       )}
       <button
         disabled={busy}
-        className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+        className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
       >
+        <LockKeyhole className="h-4 w-4" />
         {busy ? 'Signing and broadcasting...' : 'Sign and send'}
       </button>
     </form>

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Plus, Import, TriangleAlert } from 'lucide-react'
 import { DEFAULT_CHAIN } from '../chains'
 import { useWallet, generateMnemonic } from '../wallet/WalletContext'
 
@@ -128,15 +129,15 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
       <div className="flex gap-2">
         <button
           onClick={onCreate}
-          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
+          className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
         >
-          Create new wallet
+          <Plus className="h-4 w-4" /> Create new wallet
         </button>
         <button
           onClick={onImport}
-          className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm hover:border-amber-500"
+          className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm hover:border-amber-500"
         >
-          Import wallet
+          <Import className="h-4 w-4" /> Import wallet
         </button>
       </div>
     </div>
@@ -229,7 +230,8 @@ function CreateWallet({ onDone }: { onDone: () => void }) {
       ) : (
         <form onSubmit={finish} className="space-y-3">
           <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
-            <p className="mb-2 text-xs font-medium text-red-600">
+            <p className="mb-2 flex items-start gap-1.5 text-xs font-medium text-red-600">
+              <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               Write these 24 words down on paper, in order. Never store them digitally or share
               them. Anyone with these words controls your funds.
             </p>

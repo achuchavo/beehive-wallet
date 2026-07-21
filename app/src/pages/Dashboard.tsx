@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { Wallet, Coins, Copy, Check, SendHorizontal, History as HistoryIcon } from 'lucide-react'
 import { DEFAULT_CHAIN, formatAmount } from '../chains'
 import { useWallet } from '../wallet/WalletContext'
 
@@ -108,15 +109,25 @@ export default function Dashboard() {
         )}
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-        <div className="text-sm font-medium">{active.name}</div>
-        <button
-          onClick={copy}
-          title="Copy address"
-          className="truncate font-mono text-xs text-slate-400 hover:text-amber-700"
-        >
-          {active.address} {copied ? '(copied)' : ''}
-        </button>
+      <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+          <Wallet className="h-4.5 w-4.5" strokeWidth={1.8} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium">{active.name}</div>
+          <button
+            onClick={copy}
+            title="Copy address"
+            className="flex max-w-full items-center gap-1.5 truncate font-mono text-xs text-slate-400 hover:text-amber-700"
+          >
+            <span className="truncate">{active.address}</span>
+            {copied ? (
+              <Check className="h-3.5 w-3.5 shrink-0 text-green-600" />
+            ) : (
+              <Copy className="h-3.5 w-3.5 shrink-0" />
+            )}
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -130,14 +141,18 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="text-xs text-slate-500">Available</div>
+          <div className="flex items-center gap-1.5 text-xs text-slate-500">
+            <Wallet className="h-3.5 w-3.5" /> Available
+          </div>
           <div className="text-2xl font-semibold">
             {loading || !balances ? '...' : formatAmount(balances.available, chain)}
           </div>
           <div className="text-xs text-slate-400">{chain.displayDenom}</div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="text-xs text-slate-500">Staked</div>
+          <div className="flex items-center gap-1.5 text-xs text-slate-500">
+            <Coins className="h-3.5 w-3.5" /> Staked
+          </div>
           <div className="text-2xl font-semibold">
             {loading || !balances || balances.staked === null
               ? '...'
@@ -150,15 +165,15 @@ export default function Dashboard() {
       <div className="flex gap-2">
         <Link
           to="/send"
-          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
+          className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
         >
-          Send / receive
+          <SendHorizontal className="h-4 w-4" /> Send / receive
         </Link>
         <Link
           to="/history"
-          className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm hover:border-amber-500"
+          className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm hover:border-amber-500"
         >
-          History
+          <HistoryIcon className="h-4 w-4" /> History
         </Link>
       </div>
     </div>
