@@ -1,49 +1,59 @@
 <?php
-// GET-only relay to the chain LCD, because public LCD endpoints send no CORS
-// headers so browsers block direct calls. Whitelisted to /cosmos/ paths -
-// this is NOT an open proxy. Becomes unnecessary once our own node (with
-// CORS configured in nginx) replaces the public endpoint.
+// LCD relay with endpoint failover. Path form:
+//   lcd_proxy.php/<chainKey>/cosmos/...  (+ optional query string)
+// Reads the chain's active LCD endpoints from the DB and tries each in
+// priority order until one answers, so a dead endpoint fails over to the next.
 
 declare(strict_types=1);
+require __DIR__ . '/common.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'GET') {
-    http_response_code(405);
-    echo json_encode(['error' => 'GET only']);
+    json_out(['error' => 'GET only'], 405);
+}
+
+$pathInfo = $_SERVER['PATH_INFO'] ?? '';
+// /<chainKey>/cosmos/...
+if (!preg_match('#^/([a-z0-9_-]+)(/cosmos/.*)$#', $pathInfo, $m)) {
+    json_out(['error' => 'Path must be /<chain>/cosmos/...'], 400);
+}
+$chainKey = $m[1];
+$lcdPath = $m[2];
+
+$db = get_db();
+$stmt = $db->prepare(
+    "SELECT url FROM chain_endpoints
+     WHERE chain_key = ? AND kind = 'lcd' AND is_active = 1
+     ORDER BY priority, id"
+);
+$stmt->execute([$chainKey]);
+$endpoints = array_column($stmt->fetchAll(), 'url');
+
+if (!$endpoints) {
+    json_out(['error' => 'No LCD endpoint for chain'], 502);
+}
+
+$query = $_SERVER['QUERY_STRING'] ?? '';
+$suffix = $lcdPath . ($query !== '' ? '?' . $query : '');
+
+foreach ($endpoints as $base) {
+    $ctx = stream_context_create(['http' => ['method' => 'GET', 'timeout' => 90, 'ignore_errors' => true]]);
+    $body = @file_get_contents(rtrim($base, '/') . $suffix, false, $ctx);
+    if ($body === false) {
+        continue; // endpoint unreachable - try the next
+    }
+    $status = 502;
+    if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $mm)) {
+        $status = (int) $mm[1];
+    }
+    // 5xx from an endpoint means try the next; otherwise return this response.
+    if ($status >= 500) {
+        continue;
+    }
+    http_response_code($status);
+    echo $body;
     exit;
 }
 
-$path = $_SERVER['PATH_INFO'] ?? '';
-if (strpos($path, '/cosmos/') !== 0 || strpos($path, '..') !== false) {
-    http_response_code(400);
-    echo json_encode(['error' => 'Path not allowed']);
-    exit;
-}
-
-$chains = json_decode(file_get_contents(__DIR__ . '/chains.json'), true);
-$chain = $chains[0];
-
-$url = $chain['lcd'] . $path;
-if (!empty($_SERVER['QUERY_STRING'])) {
-    $url .= '?' . $_SERVER['QUERY_STRING'];
-}
-
-// PHP streams instead of curl - the curl extension is not enabled on this server.
-$ctx = stream_context_create([
-    'http' => ['method' => 'GET', 'timeout' => 90, 'ignore_errors' => true],
-]);
-$body = @file_get_contents($url, false, $ctx);
-
-if ($body === false) {
-    http_response_code(502);
-    echo json_encode(['error' => 'Chain API unreachable']);
-    exit;
-}
-
-$status = 502;
-if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $m)) {
-    $status = (int) $m[1];
-}
-http_response_code($status);
-echo $body;
+json_out(['error' => 'All LCD endpoints failed'], 502);

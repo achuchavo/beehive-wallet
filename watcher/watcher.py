@@ -24,7 +24,6 @@ from pywebpush import webpush, WebPushException
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_CONFIG_FILE = BASE_DIR / "db_config.json"
-CHAINS_FILE = BASE_DIR.parent / "config" / "chains.json"
 VAPID_PRIVATE_KEY = BASE_DIR / "vapid_private.pem"
 VAPID_CLAIMS = {"sub": "mailto:matanverse@gmail.com"}
 
@@ -56,6 +55,25 @@ def get_db():
     )
 
 
+def load_chains(cursor) -> list:
+    """Chains and their active LCD endpoints, straight from the DB (shared with
+    the app), so the watcher fails over between endpoints like the frontend."""
+    cursor.execute("SELECT * FROM chains WHERE is_active = 1")
+    chains = cursor.fetchall()
+    cursor.execute(
+        "SELECT chain_key, url FROM chain_endpoints "
+        "WHERE kind = 'lcd' AND is_active = 1 ORDER BY priority, id"
+    )
+    endpoints: dict = {}
+    for row in cursor.fetchall():
+        endpoints.setdefault(row["chain_key"], []).append(row["url"])
+    for chain in chains:
+        chain["key"] = chain["chain_key"]
+        chain["displayDenom"] = chain["display_denom"]
+        chain["lcd_endpoints"] = endpoints.get(chain["chain_key"], [])
+    return chains
+
+
 def get_chain(chains: list, key: str):
     for chain in chains:
         if chain["key"] == key:
@@ -64,8 +82,8 @@ def get_chain(chains: list, key: str):
 
 
 def fetch_outgoing_txs(chain: dict, address: str) -> list:
-    """Newest-first outgoing txs for an address from the LCD tx search API."""
-    url = f"{chain['lcd']}/cosmos/tx/v1beta1/txs"
+    """Newest-first outgoing txs for an address, trying each LCD endpoint in
+    order until one answers (failover)."""
     # order_by=2 is ORDER_BY_DESC as a numeric enum - the panacea LCD rejects
     # the string form. It also ignores pagination.limit, so slice client-side.
     params = {
@@ -73,9 +91,23 @@ def fetch_outgoing_txs(chain: dict, address: str) -> list:
         "order_by": "2",
         "pagination.limit": str(PAGE_LIMIT),
     }
-    r = requests.get(url, params=params, timeout=60)
-    r.raise_for_status()
-    data = r.json()
+    endpoints = chain.get("lcd_endpoints") or []
+    if not endpoints:
+        raise RuntimeError(f"no LCD endpoints for chain {chain['key']}")
+
+    data = None
+    last_error = None
+    for base in endpoints:
+        try:
+            r = requests.get(f"{base.rstrip('/')}/cosmos/tx/v1beta1/txs", params=params, timeout=60)
+            r.raise_for_status()
+            data = r.json()
+            break
+        except Exception as e:
+            last_error = e
+            continue
+    if data is None:
+        raise RuntimeError(f"all LCD endpoints failed: {last_error}")
 
     txs = []
     for resp in data.get("tx_responses", [])[:PAGE_LIMIT]:
@@ -231,10 +263,10 @@ def cleanup(cursor, db) -> None:
 
 
 def run_once() -> None:
-    chains = load_json(CHAINS_FILE)
     db = get_db()
     cursor = db.cursor(dictionary=True)
     try:
+        chains = load_chains(cursor)
         cleanup(cursor, db)
         cursor.execute("SELECT * FROM watched_addresses ORDER BY id")
         rows = cursor.fetchall()

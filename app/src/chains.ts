@@ -25,6 +25,17 @@ export interface ChainInfo {
   feeCollector: string
 }
 
+const API_ORIGIN = `${window.location.origin}${import.meta.env.BASE_URL}api`
+
+// Per-chain proxy URLs. Path form is /<chainKey>/cosmos/... so callers just do
+// `${chain.lcd}/cosmos/...`. CosmJS needs an absolute RPC URL.
+export function proxyLcd(key: string): string {
+  return `${API_ORIGIN}/lcd_proxy.php/${key}`
+}
+export function proxyRpc(key: string): string {
+  return `${API_ORIGIN}/rpc_proxy.php?chain=${key}`
+}
+
 export const CHAINS: ChainInfo[] = [
   {
     key: 'medibloc',
@@ -36,16 +47,11 @@ export const CHAINS: ChainInfo[] = [
     decimals: 6,
     coinType: 371,
     gasPrice: '5umed',
-    // Dev: Vite proxy relays to the public endpoints (which send no CORS
-    // headers). Prod: lcd_proxy.php / rpc_proxy.php relay server-side until
-    // our own node (with CORS in nginx) is up.
-    // CosmJS requires an absolute RPC URL (it inspects the protocol).
-    rpc: import.meta.env.DEV
-      ? `${window.location.origin}/rpc/medibloc`
-      : `${window.location.origin}${import.meta.env.BASE_URL}api/rpc_proxy.php`,
-    lcd: import.meta.env.DEV
-      ? '/lcd/medibloc'
-      : `${import.meta.env.BASE_URL}api/lcd_proxy.php`,
+    // All chain traffic goes through our PHP proxies, which read the chain's
+    // endpoint list from the DB and fail over between them server-side. Same
+    // path in dev (Vite forwards /wallet/api to Apache) and prod.
+    rpc: proxyRpc('medibloc'),
+    lcd: proxyLcd('medibloc'),
     explorerTxUrl: 'https://www.mintscan.io/medibloc/tx/',
     explorerValidatorUrl: 'https://www.mintscan.io/medibloc/validators/',
     beehiveValidator: 'panaceavaloper1hlpw58lg9fvwvwa3ryzgjqyw39tf2nmns4r0z5',

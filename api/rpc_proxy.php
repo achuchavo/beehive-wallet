@@ -1,16 +1,20 @@
 <?php
-// JSON-RPC relay to the chain's Tendermint RPC for the browser (CosmJS),
-// since the public RPC sends no CORS headers. POST-only, method-whitelisted -
-// this is NOT an open proxy. Unnecessary once our own node is behind nginx.
+// Tendermint JSON-RPC relay with endpoint failover, for CosmJS in the browser.
+//   rpc_proxy.php?chain=<chainKey>   (POST JSON-RPC body)
+// Tries the chain's active RPC endpoints in priority order.
 
 declare(strict_types=1);
+require __DIR__ . '/common.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['error' => 'POST only']);
-    exit;
+    json_out(['error' => 'POST only'], 405);
+}
+
+$chainKey = preg_replace('/[^a-z0-9_-]/', '', $_GET['chain'] ?? '');
+if ($chainKey === '') {
+    json_out(['error' => 'Missing chain'], 400);
 }
 
 $raw = file_get_contents('php://input');
@@ -22,36 +26,47 @@ $allowedMethods = [
     'tx', 'tx_search', 'block', 'block_results', 'header', 'commit',
     'validators', 'num_unconfirmed_txs',
 ];
-
 if (!is_array($req) || !in_array($req['method'] ?? '', $allowedMethods, true)) {
-    http_response_code(400);
-    echo json_encode(['error' => 'Method not allowed']);
+    json_out(['error' => 'Method not allowed'], 400);
+}
+
+$db = get_db();
+$stmt = $db->prepare(
+    "SELECT url FROM chain_endpoints
+     WHERE chain_key = ? AND kind = 'rpc' AND is_active = 1
+     ORDER BY priority, id"
+);
+$stmt->execute([$chainKey]);
+$endpoints = array_column($stmt->fetchAll(), 'url');
+
+if (!$endpoints) {
+    json_out(['error' => 'No RPC endpoint for chain'], 502);
+}
+
+foreach ($endpoints as $base) {
+    $ctx = stream_context_create([
+        'http' => [
+            'method' => 'POST',
+            'header' => "Content-Type: application/json\r\n",
+            'content' => $raw,
+            'timeout' => 60,
+            'ignore_errors' => true,
+        ],
+    ]);
+    $body = @file_get_contents(rtrim($base, '/'), false, $ctx);
+    if ($body === false) {
+        continue;
+    }
+    $status = 502;
+    if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $mm)) {
+        $status = (int) $mm[1];
+    }
+    if ($status >= 500) {
+        continue;
+    }
+    http_response_code($status);
+    echo $body;
     exit;
 }
 
-$chains = json_decode(file_get_contents(__DIR__ . '/chains.json'), true);
-$rpc = $chains[0]['rpc'];
-
-$ctx = stream_context_create([
-    'http' => [
-        'method' => 'POST',
-        'header' => "Content-Type: application/json\r\n",
-        'content' => $raw,
-        'timeout' => 60,
-        'ignore_errors' => true,
-    ],
-]);
-$body = @file_get_contents($rpc, false, $ctx);
-
-if ($body === false) {
-    http_response_code(502);
-    echo json_encode(['error' => 'Chain RPC unreachable']);
-    exit;
-}
-
-$status = 502;
-if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $m)) {
-    $status = (int) $m[1];
-}
-http_response_code($status);
-echo $body;
+json_out(['error' => 'All RPC endpoints failed'], 502);

@@ -109,6 +109,12 @@ export const api = {
   adminAnnouncementSet: (message: string, severity: string, expires_hours: number) =>
     call('admin_announcement_set.php', { message, severity, expires_hours }),
   adminAnnouncementClear: () => call('admin_announcement_set.php', { clear: true }),
+  adminChains: () => call<{ chains: AdminChain[]; endpoints: AdminEndpoint[] }>('admin_chains.php'),
+  adminChainSave: (chain: Partial<AdminChain> & { chain_key: string }) =>
+    call('admin_chain_save.php', chain),
+  adminEndpointSave: (ep: Partial<AdminEndpoint> & { chain_key: string; kind: string; url: string }) =>
+    call('admin_endpoint_save.php', ep),
+  adminEndpointDelete: (id: number) => call('admin_endpoint_delete.php', { id }),
   pushConfig: () => call<{ publicKey: string }>('push_config.php'),
   pushSubscribe: (subscription: PushSubscriptionJSON) =>
     call('push_subscribe.php', subscription),
@@ -119,6 +125,35 @@ export type UserAction = 'disable' | 'enable' | 'delete'
 
 export const ADMIN_FEATURES = ['users', 'chains', 'announcements'] as const
 export type AdminFeature = (typeof ADMIN_FEATURES)[number]
+
+export interface AdminChain {
+  chain_key: string
+  chain_id: string
+  chain_name: string
+  bech32_prefix: string
+  denom: string
+  display_denom: string
+  decimals: number
+  coin_type: number
+  gas_price: string
+  explorer_tx_url: string
+  explorer_validator_url: string
+  beehive_validator: string
+  beehive_moniker: string
+  service_fee: string
+  fee_collector: string
+  is_active: number
+  sort_order: number
+}
+
+export interface AdminEndpoint {
+  id: number
+  chain_key: string
+  kind: string
+  url: string
+  priority: number
+  is_active: number
+}
 
 export interface Announcement {
   message: string

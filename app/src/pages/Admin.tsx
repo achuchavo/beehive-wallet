@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { ShieldCheck } from 'lucide-react'
 import { api, type AdminOverview, type UserAction, ADMIN_FEATURES } from '../api'
 import { CHAINS, DEFAULT_CHAIN, formatAmount } from '../chains'
+import ChainManager from './ChainManager'
 
 export default function Admin() {
   const [data, setData] = useState<AdminOverview | null>(null)
@@ -95,6 +96,8 @@ export default function Admin() {
       </div>
 
       {can('announcements') && <AnnouncementEditor onChanged={load} />}
+
+      {can('chains') && <ChainManager onError={setError} />}
 
       {isSuper && <RoleManager users={data.users} onChanged={load} onError={setError} />}
 

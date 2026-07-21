@@ -18,18 +18,6 @@ export default defineConfig({
         secure: false,
         headers: { host: 'achumuamah.com' },
       },
-      // Public LCDs don't send CORS headers, so the dev server relays them.
-      // In production our own node's nginx adds CORS and this proxy isn't used.
-      '/lcd/medibloc': {
-        target: 'https://api.gopanacea.org',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/lcd\/medibloc/, ''),
-      },
-      '/rpc/medibloc': {
-        target: 'https://rpc.gopanacea.org',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/rpc\/medibloc/, ''),
-      },
     },
   },
 })
