@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { ChevronLeft, ChevronRight, ExternalLink, Wallet } from 'lucide-react'
 import { DEFAULT_CHAIN, formatAmount } from '../chains'
 import { api, type WatchedAddress } from '../api'
+import { useWallet } from '../wallet/WalletContext'
 
 interface TxRow {
   hash: string
@@ -13,6 +15,7 @@ interface TxRow {
 type Filter = 'all' | 'sent' | 'received' | 'other'
 
 const MAX_ROWS = 50
+const PAGE_SIZE = 10
 
 interface LcdTxResponse {
   txhash: string
@@ -102,11 +105,20 @@ async function fetchTxs(address: string): Promise<TxRow[]> {
   return [...byHash.values()].sort((a, b) => b.height - a.height).slice(0, MAX_ROWS)
 }
 
+interface Chip {
+  address: string
+  label: string
+  mine: boolean
+}
+
 export default function History() {
   const chain = DEFAULT_CHAIN
+  const { wallets, active } = useWallet()
   const [address, setAddress] = useState('')
+  const [loadedAddress, setLoadedAddress] = useState('')
   const [rows, setRows] = useState<TxRow[] | null>(null)
   const [filter, setFilter] = useState<Filter>('all')
+  const [page, setPage] = useState(0)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [watched, setWatched] = useState<WatchedAddress[]>([])
@@ -118,25 +130,48 @@ export default function History() {
       .catch(() => setWatched([]))
   }, [])
 
-  async function load(addr: string) {
-    if (!addr.startsWith(chain.bech32Prefix)) {
-      setError(`Enter a ${chain.chainName} address (starts with "${chain.bech32Prefix}")`)
-      return
+  const load = useCallback(
+    async (addr: string) => {
+      if (!addr.startsWith(chain.bech32Prefix)) {
+        setError(`Enter a ${chain.chainName} address (starts with "${chain.bech32Prefix}")`)
+        return
+      }
+      setAddress(addr)
+      setLoadedAddress(addr)
+      setLoading(true)
+      setError('')
+      setRows(null)
+      setFilter('all')
+      setPage(0)
+      try {
+        setRows(await fetchTxs(addr))
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Lookup failed')
+      } finally {
+        setLoading(false)
+      }
+    },
+    [chain.bech32Prefix, chain.chainName],
+  )
+
+  // Auto-load the active wallet's history on first visit.
+  useEffect(() => {
+    if (active && !loadedAddress) {
+      load(active.address)
     }
-    setAddress(addr)
-    setLoading(true)
-    setError('')
-    setRows(null)
-    try {
-      setRows(await fetchTxs(addr))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Lookup failed')
-    } finally {
-      setLoading(false)
-    }
-  }
+  }, [active, loadedAddress, load])
+
+  // Chips: the user's own wallets first (tagged), then watched addresses.
+  const chips: Chip[] = [
+    ...wallets.map((w) => ({ address: w.address, label: w.name, mine: true })),
+    ...watched
+      .filter((w) => !wallets.some((mine) => mine.address === w.address))
+      .map((w) => ({ address: w.address, label: w.label || shortAddr(w.address), mine: false })),
+  ]
 
   const visible = (rows ?? []).filter((r) => filter === 'all' || r.direction === filter)
+  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE))
+  const pageRows = visible.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
 
   const dirStyle: Record<TxRow['direction'], string> = {
     sent: 'bg-red-100 text-red-700',
@@ -155,10 +190,12 @@ export default function History() {
         className="flex gap-2"
       >
         <input
+          name="beehive-history-address"
           value={address}
           onChange={(e) => setAddress(e.target.value.trim())}
           placeholder={`${chain.bech32Prefix}1...`}
           required
+          autoComplete="off"
           className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
         />
         <button
@@ -169,18 +206,33 @@ export default function History() {
         </button>
       </form>
 
-      {watched.length > 0 && (
+      {chips.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {watched.map((w) => (
-            <button
-              key={w.id}
-              onClick={() => load(w.address)}
-              className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-600 hover:border-amber-500 hover:text-amber-700"
-            >
-              {w.label || shortAddr(w.address)}
-            </button>
-          ))}
+          {chips.map((c) => {
+            const activeChip = c.address === loadedAddress
+            return (
+              <button
+                key={c.address}
+                onClick={() => load(c.address)}
+                className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${
+                  activeChip
+                    ? 'border-amber-500 bg-amber-50 font-medium text-amber-700'
+                    : 'border-slate-300 bg-white text-slate-600 hover:border-amber-500 hover:text-amber-700'
+                }`}
+              >
+                {c.mine && <Wallet className="h-3 w-3" />}
+                {c.label}
+                {c.mine && (
+                  <span className="rounded bg-amber-100 px-1 text-[10px] text-amber-700">mine</span>
+                )}
+              </button>
+            )
+          })}
         </div>
+      )}
+
+      {loadedAddress && (
+        <p className="font-mono text-xs text-slate-400">Showing {shortAddr(loadedAddress)}</p>
       )}
 
       {loading && (
@@ -197,7 +249,10 @@ export default function History() {
             {(['all', 'sent', 'received', 'other'] as Filter[]).map((f) => (
               <button
                 key={f}
-                onClick={() => setFilter(f)}
+                onClick={() => {
+                  setFilter(f)
+                  setPage(0)
+                }}
                 className={`rounded-full px-3 py-1 text-xs capitalize ${
                   filter === f ? 'bg-amber-500 font-medium text-white' : 'bg-slate-100 text-slate-600'
                 }`}
@@ -209,29 +264,53 @@ export default function History() {
           {visible.length === 0 ? (
             <p className="text-sm text-slate-500">No transactions found.</p>
           ) : (
-            <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
-              {visible.map((r) => (
-                <li key={r.hash} className="px-4 py-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span
-                      className={`rounded px-1.5 py-0.5 text-xs font-medium capitalize ${dirStyle[r.direction]}`}
+            <>
+              <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
+                {pageRows.map((r) => (
+                  <li key={r.hash} className="px-4 py-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-xs font-medium capitalize ${dirStyle[r.direction]}`}
+                      >
+                        {r.direction}
+                      </span>
+                      <span className="text-xs text-slate-400">{r.time}</span>
+                    </div>
+                    <div className="mt-1 text-sm">{r.summary}</div>
+                    <a
+                      href={`${chain.explorerTxUrl}${r.hash}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 font-mono text-xs text-amber-700 hover:underline"
                     >
-                      {r.direction}
-                    </span>
-                    <span className="text-xs text-slate-400">{r.time}</span>
-                  </div>
-                  <div className="mt-1 text-sm">{r.summary}</div>
-                  <a
-                    href={`${chain.explorerTxUrl}${r.hash}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="font-mono text-xs text-amber-700 hover:underline"
+                      {r.hash.slice(0, 16)}...
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </li>
+                ))}
+              </ul>
+              {pageCount > 1 && (
+                <div className="flex items-center justify-between text-sm">
+                  <button
+                    onClick={() => setPage((p) => Math.max(0, p - 1))}
+                    disabled={page === 0}
+                    className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 hover:border-amber-500 disabled:opacity-40"
                   >
-                    {r.hash.slice(0, 16)}...
-                  </a>
-                </li>
-              ))}
-            </ul>
+                    <ChevronLeft className="h-4 w-4" /> Prev
+                  </button>
+                  <span className="text-xs text-slate-500">
+                    Page {page + 1} of {pageCount} · {visible.length} txs
+                  </span>
+                  <button
+                    onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+                    disabled={page >= pageCount - 1}
+                    className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 hover:border-amber-500 disabled:opacity-40"
+                  >
+                    Next <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </>
       )}
