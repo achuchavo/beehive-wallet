@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Gift, Landmark, ExternalLink, ShieldCheck, Plus, Import } from 'lucide-react'
+import { Gift, Landmark, ExternalLink, ShieldCheck, Plus, Import, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react'
 import { DEFAULT_CHAIN, formatAmount } from '../chains'
 import { useWallet } from '../wallet/WalletContext'
 import { claimEarnings } from '../wallet/staking'
 import {
   fetchWalletEarnings,
   fetchClaimHistory,
-  monthlyTotals,
   type WalletEarnings,
   type ClaimRecord,
 } from '../wallet/rewards'
@@ -27,6 +26,7 @@ export default function Rewards() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [loading, setLoading] = useState(false)
+  const [historyPage, setHistoryPage] = useState(0)
 
   const load = useCallback(async () => {
     if (wallets.length === 0) return
@@ -115,7 +115,21 @@ export default function Rewards() {
     await load()
   }
 
-  const months = monthlyTotals(history)
+  // Average monthly income: total claimed over the calendar span it covers.
+  const HISTORY_PER_PAGE = 10
+  const totalClaimed = history.reduce((s, h) => s + h.rewards + h.commission, 0)
+  let monthsSpan = 0
+  if (history.length > 0) {
+    const [ly, lm] = history[0].time.slice(0, 7).split('-').map(Number)
+    const [ey, em] = history[history.length - 1].time.slice(0, 7).split('-').map(Number)
+    monthsSpan = (ly - ey) * 12 + (lm - em) + 1
+  }
+  const avgMonthly = monthsSpan > 0 ? totalClaimed / monthsSpan : 0
+  const historyPageCount = Math.max(1, Math.ceil(history.length / HISTORY_PER_PAGE))
+  const historyRows = history.slice(
+    historyPage * HISTORY_PER_PAGE,
+    historyPage * HISTORY_PER_PAGE + HISTORY_PER_PAGE,
+  )
 
   return (
     <div className="space-y-5">
@@ -170,20 +184,22 @@ export default function Rewards() {
         </div>
       </section>
 
-      {months.length > 0 && (
-        <Collapsible title="Monthly income" subtitle={`${months.length} month${months.length > 1 ? 's' : ''}`}>
-          <MonthlyChart months={months} />
-          <p className="mt-2 text-xs text-slate-400">
-            Based on recent on-chain claim history. Full history arrives once our own indexed
-            node is live.
-          </p>
-        </Collapsible>
+      {avgMonthly > 0 && (
+        <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          <TrendingUp className="h-4 w-4 shrink-0 text-green-600" />
+          <span>
+            Averaging <span className="font-medium text-slate-800">
+              {formatAmount(String(Math.round(avgMonthly)), chain)} {chain.displayDenom}
+            </span>{' '}
+            per month{monthsSpan > 1 ? ` over the last ${monthsSpan} months` : ''}.
+          </span>
+        </div>
       )}
 
       {history.length > 0 && (
         <Collapsible title="Claim history" subtitle={`${history.length} claim${history.length > 1 ? 's' : ''}`}>
           <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
-            {history.slice(0, 30).map((h) => (
+            {historyRows.map((h) => (
               <li key={h.hash} className="flex items-center justify-between px-4 py-2 text-sm">
                 <span>
                   {h.rewards > 0 && (
@@ -208,6 +224,27 @@ export default function Rewards() {
               </li>
             ))}
           </ul>
+          {historyPageCount > 1 && (
+            <div className="mt-2 flex items-center justify-between text-sm">
+              <button
+                onClick={() => setHistoryPage((p) => Math.max(0, p - 1))}
+                disabled={historyPage === 0}
+                className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 hover:border-amber-500 disabled:opacity-40"
+              >
+                <ChevronLeft className="h-4 w-4" /> Prev
+              </button>
+              <span className="text-xs text-slate-500">
+                Page {historyPage + 1} of {historyPageCount}
+              </span>
+              <button
+                onClick={() => setHistoryPage((p) => Math.min(historyPageCount - 1, p + 1))}
+                disabled={historyPage >= historyPageCount - 1}
+                className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 hover:border-amber-500 disabled:opacity-40"
+              >
+                Next <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          )}
         </Collapsible>
       )}
     </div>
@@ -327,38 +364,5 @@ function ClaimForm({
       </div>
       {hint && <p className="text-xs text-slate-400">{hint}</p>}
     </form>
-  )
-}
-
-function MonthlyChart({ months }: { months: { month: string; rewards: number; commission: number }[] }) {
-  const max = Math.max(...months.map((m) => m.rewards + m.commission), 1)
-  return (
-    <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-4">
-      {months.map((m) => {
-        const total = m.rewards + m.commission
-        const rewardPct = (m.rewards / max) * 100
-        const commPct = (m.commission / max) * 100
-        return (
-          <div key={m.month} className="flex items-center gap-3 text-xs">
-            <span className="w-16 shrink-0 text-slate-500">{m.month}</span>
-            <div className="flex h-4 flex-1 overflow-hidden rounded bg-slate-100">
-              <div className="h-full bg-green-400" style={{ width: `${rewardPct}%` }} />
-              <div className="h-full bg-amber-400" style={{ width: `${commPct}%` }} />
-            </div>
-            <span className="w-24 shrink-0 text-right font-medium">
-              {formatAmount(String(total), chain)} {chain.displayDenom}
-            </span>
-          </div>
-        )
-      })}
-      <div className="flex gap-4 pt-1 text-xs text-slate-400">
-        <span className="flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-green-400" /> rewards
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-amber-400" /> commission
-        </span>
-      </div>
-    </div>
   )
 }
