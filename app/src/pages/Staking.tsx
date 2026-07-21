@@ -12,6 +12,12 @@ interface Validator {
   commission: number
   tokens: string
   jailed: boolean
+  status: string // BOND_STATUS_BONDED | _UNBONDING | _UNBONDED
+}
+
+// A validator is "up" (signing) when it is bonded and not jailed.
+function isUp(v: Validator): boolean {
+  return v.status === 'BOND_STATUS_BONDED' && !v.jailed
 }
 
 interface StakeData {
@@ -75,7 +81,7 @@ function ValidatorAvatar({ identity, moniker }: { identity: string; moniker: str
 
 async function fetchStakeData(address: string): Promise<StakeData> {
   const [valsRes, delRes, rewRes] = await Promise.all([
-    fetch(`${chain.lcd}/cosmos/staking/v1beta1/validators?status=BOND_STATUS_BONDED&pagination.limit=300`),
+    fetch(`${chain.lcd}/cosmos/staking/v1beta1/validators?pagination.limit=500`),
     fetch(`${chain.lcd}/cosmos/staking/v1beta1/delegations/${address}`),
     fetch(`${chain.lcd}/cosmos/distribution/v1beta1/delegators/${address}/rewards`),
   ])
@@ -89,6 +95,7 @@ async function fetchStakeData(address: string): Promise<StakeData> {
       commission: { commission_rates: { rate: string } }
       tokens: string
       jailed: boolean
+      status: string
     }) => ({
       operator: v.operator_address,
       moniker: v.description?.moniker ?? v.operator_address,
@@ -96,6 +103,7 @@ async function fetchStakeData(address: string): Promise<StakeData> {
       commission: Number(v.commission?.commission_rates?.rate ?? 0),
       tokens: v.tokens ?? '0',
       jailed: !!v.jailed,
+      status: v.status ?? '',
     }),
   )
 
@@ -129,6 +137,7 @@ export default function Staking() {
   const [loading, setLoading] = useState(false)
   const [notice, setNotice] = useState('')
   const [query, setQuery] = useState('')
+  const [showInactive, setShowInactive] = useState(false)
 
   const load = useCallback(async () => {
     if (!active) return
@@ -179,9 +188,11 @@ export default function Staking() {
   }
 
   const q = query.trim().toLowerCase()
+  const inactiveCount = data ? data.validators.filter((v) => !isUp(v) && !data.delegations[v.operator]).length : 0
   const ordered = data
     ? [...data.validators]
-        .filter((v) => !v.jailed || data.delegations[v.operator])
+        // Active validators + any you're staked with; inactive/jailed hidden unless toggled.
+        .filter((v) => isUp(v) || data.delegations[v.operator] || showInactive)
         .filter((v) => q === '' || v.moniker.toLowerCase().includes(q))
         .sort((a, b) => {
           const af = isFree(chain, a.operator)
@@ -194,7 +205,7 @@ export default function Staking() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Staking</h1>
+      <h1 className="text-xl font-semibold">Staking / Validators</h1>
 
       <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
@@ -258,16 +269,37 @@ export default function Staking() {
         />
       )}
 
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-        <input
-          name="beehive-validator-search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search validators"
-          autoComplete="off"
-          className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm focus:border-amber-500 focus:outline-none"
-        />
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+          <input
+            name="beehive-validator-search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search validators"
+            autoComplete="off"
+            className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm focus:border-amber-500 focus:outline-none"
+          />
+        </div>
+        {inactiveCount > 0 && (
+          <label className="flex shrink-0 items-center gap-1.5 text-xs text-slate-500">
+            <input
+              type="checkbox"
+              checked={showInactive}
+              onChange={(e) => setShowInactive(e.target.checked)}
+            />
+            Show inactive ({inactiveCount})
+          </label>
+        )}
+      </div>
+
+      <div className="flex items-center gap-3 text-xs text-slate-400">
+        <span className="flex items-center gap-1">
+          <span className="h-2 w-2 rounded-full bg-green-500" /> active
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="h-2 w-2 rounded-full bg-red-500" /> jailed / inactive
+        </span>
       </div>
 
       {loading && !data && <p className="text-sm text-slate-500">Loading validators...</p>}
@@ -313,6 +345,7 @@ function ValidatorRow({
   const { active, getSigner } = useWallet()
   const [action, setAction] = useState<'none' | 'delegate' | 'undelegate'>('none')
   const free = isFree(chain, validator.operator)
+  const up = isUp(validator)
   const power = Number(validator.tokens) / 10 ** chain.decimals
 
   async function submitDelegate(password: string, amount: string) {
@@ -336,7 +369,15 @@ function ValidatorRow({
   return (
     <div className={`${first ? '' : 'border-t border-slate-100'} ${free ? 'bg-amber-50/50' : ''}`}>
       <div className="flex items-center gap-3 px-3 py-2">
-        <ValidatorAvatar identity={validator.identity} moniker={validator.moniker} />
+        <div className="relative shrink-0">
+          <ValidatorAvatar identity={validator.identity} moniker={validator.moniker} />
+          <span
+            title={up ? 'Active' : validator.jailed ? 'Jailed' : 'Inactive'}
+            className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white ${
+              up ? 'bg-green-500' : 'bg-red-500'
+            }`}
+          />
+        </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 text-sm font-medium">
             {free && <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-400" />}

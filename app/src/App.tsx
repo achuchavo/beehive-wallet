@@ -30,7 +30,7 @@ import Admin from './pages/Admin'
 const NAV = [
   { to: '/', label: 'Dashboard', Icon: LayoutDashboard },
   { to: '/send', label: 'Send / receive', Icon: SendHorizontal },
-  { to: '/staking', label: 'Staking', Icon: Coins },
+  { to: '/staking', label: 'Validators', Icon: Coins },
   { to: '/rewards', label: 'Rewards', Icon: Gift },
   { to: '/history', label: 'History', Icon: HistoryIcon },
   { to: '/alarms', label: 'Alarms', Icon: Bell },
