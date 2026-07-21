@@ -2,6 +2,13 @@
 // TODO: replace rpc/lcd with our own node endpoints once the Vultr Seoul node is up
 // (e.g. https://rpc-medi.achumuamah.com / https://lcd-medi.achumuamah.com).
 
+import { fromBech32 } from '@cosmjs/encoding'
+import {
+  toBaseUnits as amountToBaseUnits,
+  fromBaseUnits as amountFromBaseUnits,
+  formatBase,
+} from './wallet/amount'
+
 export interface ChainInfo {
   key: string
   chainId: string
@@ -65,27 +72,61 @@ export const CHAINS: ChainInfo[] = [
   },
 ]
 
+// Bootstrap default. Prefer resolveChain(wallet.chainKey) for wallet-specific
+// (signing) operations - see resolveChain / findChain below.
 export const DEFAULT_CHAIN = CHAINS[0]
 
-export function formatAmount(raw: string | number, chain: ChainInfo): string {
-  const value = Number(raw) / 10 ** chain.decimals
-  return value.toLocaleString(undefined, { maximumFractionDigits: 6 })
+/** The chain for a wallet's chainKey, or undefined if it is not configured. */
+export function findChain(chainKey: string): ChainInfo | undefined {
+  return CHAINS.find((c) => c.key === chainKey)
+}
+
+/**
+ * The chain for a wallet's chainKey. Throws a clear error if the chain is not
+ * configured - callers must block the operation rather than fall back to another
+ * chain for signing.
+ */
+export function resolveChain(chainKey: string): ChainInfo {
+  const chain = findChain(chainKey)
+  if (!chain) {
+    throw new Error(`Chain "${chainKey}" is not configured. Reload the app and try again.`)
+  }
+  return chain
+}
+
+/**
+ * Resolve a chain from an account address by its Bech32 HRP (prefix). Used by the
+ * read-only History explorer, which works on arbitrary addresses with no wallet
+ * context. Falls back to DEFAULT_CHAIN for unrecognized/invalid input.
+ */
+export function chainForAddress(address: string): ChainInfo {
+  try {
+    const { prefix } = fromBech32(address)
+    return CHAINS.find((c) => c.bech32Prefix === prefix) ?? DEFAULT_CHAIN
+  } catch {
+    return DEFAULT_CHAIN
+  }
+}
+
+// Exact display formatting (grouped, no Number, no scientific notation).
+export function formatAmount(raw: string | number | bigint, chain: ChainInfo): string {
+  return formatBase(raw, chain.decimals)
+}
+
+// "1500000" umed -> "1.5" MED as a clean, input-friendly string (no commas).
+export function fromBaseUnits(base: string | number | bigint, chain: ChainInfo): string {
+  return amountFromBaseUnits(base, chain.decimals)
 }
 
 // "1.5" MED -> "1500000" umed without float rounding errors.
 export function toBaseUnits(display: string, chain: ChainInfo): string {
-  const trimmed = display.trim()
-  if (!/^\d+(\.\d+)?$/.test(trimmed)) {
-    throw new Error('Enter a valid amount')
-  }
-  const [whole, frac = ''] = trimmed.split('.')
-  if (frac.length > chain.decimals) {
-    throw new Error(`Maximum ${chain.decimals} decimal places`)
-  }
-  const base = whole + frac.padEnd(chain.decimals, '0')
-  const clean = base.replace(/^0+(?=\d)/, '')
-  if (clean === '0'.repeat(clean.length)) {
-    throw new Error('Amount must be more than zero')
-  }
-  return clean
+  return amountToBaseUnits(display, chain.decimals)
+}
+
+// Rough fee to hold back from a "Max" spend so the tx can still pay gas.
+// Fees are auto-estimated at broadcast; this is a safe over-estimate (~1.5x),
+// computed with integer math so no float creeps into a spend total.
+export function feeReserve(chain: ChainInfo, gasLimit: number): string {
+  const gasNum = BigInt(parseInt(chain.gasPrice, 10) || 0)
+  return ((gasNum * BigInt(Math.floor(gasLimit)) * 3n) / 2n).toString()
 }

@@ -1,5 +1,6 @@
 import { fromBech32, toBech32 } from '@cosmjs/encoding'
 import type { ChainInfo } from '../chains'
+import { floorBaseUnits, isPositiveBase } from './amount'
 
 // An account address and its validator (valoper) address share the same key
 // bytes, only the bech32 prefix differs.
@@ -25,7 +26,7 @@ export interface WalletEarnings {
 
 function sumUmed(chain: ChainInfo, coins: { denom: string; amount: string }[] | undefined): string {
   const coin = (coins ?? []).find((c) => c.denom === chain.denom)
-  return coin ? String(Math.floor(Number(coin.amount))) : '0'
+  return coin ? floorBaseUnits(coin.amount) : '0'
 }
 
 export async function fetchWalletEarnings(
@@ -49,7 +50,7 @@ export async function fetchWalletEarnings(
     rewards = sumUmed(chain, d.total)
     for (const r of d.rewards ?? []) {
       const amount = sumUmed(chain, r.reward)
-      if (Number(amount) > 0) {
+      if (isPositiveBase(amount)) {
         rewardValidators.push(r.validator_address)
         rewardsByValidator.push({ validator: r.validator_address, amount })
       }

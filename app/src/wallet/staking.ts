@@ -1,30 +1,14 @@
-import { SigningStargateClient, GasPrice } from '@cosmjs/stargate'
-import type { OfflineDirectSigner, EncodeObject } from '@cosmjs/proto-signing'
+import type { EncodeObject } from '@cosmjs/proto-signing'
 import type { ChainInfo } from '../chains'
+import { isPositiveBase } from './amount'
 
-async function connect(chain: ChainInfo, signer: OfflineDirectSigner) {
-  return SigningStargateClient.connectWithSigner(chain.rpc, signer, {
-    gasPrice: GasPrice.fromString(chain.gasPrice),
-  })
-}
+// Message builders only. Simulation and broadcast (with a chain-id preflight and
+// a fixed, reviewed fee) live in ./tx.ts, so every staking action can flow through
+// the same simulate -> review -> confirm -> broadcast path as Send.
 
-async function broadcast(
-  chain: ChainInfo,
-  signer: OfflineDirectSigner,
-  sender: string,
-  messages: EncodeObject[],
-  memo = '',
-): Promise<string> {
-  const client = await connect(chain, signer)
-  try {
-    const res = await client.signAndBroadcast(sender, messages, 'auto', memo)
-    if (res.code !== 0) {
-      throw new Error(res.rawLog || `Transaction failed (code ${res.code})`)
-    }
-    return res.transactionHash
-  } finally {
-    client.disconnect()
-  }
+export interface TxMessages {
+  messages: EncodeObject[]
+  memo: string
 }
 
 // Whether a non-Beehive delegation carries a configured service fee.
@@ -41,13 +25,17 @@ export function isFree(chain: ChainInfo, validator: string): boolean {
   return chain.freeValidators.includes(validator)
 }
 
-export async function delegate(
+/** Whether a delegation to this validator bundles a service-fee bank send. */
+export function delegationHasServiceFee(chain: ChainInfo, validator: string): boolean {
+  return !isFree(chain, validator) && serviceFeeActive(chain)
+}
+
+export function buildDelegate(
   chain: ChainInfo,
-  signer: OfflineDirectSigner,
   delegator: string,
   validator: string,
   amount: string,
-): Promise<string> {
+): TxMessages {
   const messages: EncodeObject[] = [
     {
       typeUrl: '/cosmos.staking.v1beta1.MsgDelegate',
@@ -58,9 +46,8 @@ export async function delegate(
       },
     },
   ]
-
   // Free to the free-validator set; a bundled service fee elsewhere when set.
-  if (!isFree(chain, validator) && serviceFeeActive(chain)) {
+  if (delegationHasServiceFee(chain, validator)) {
     messages.push({
       typeUrl: '/cosmos.bank.v1beta1.MsgSend',
       value: {
@@ -70,52 +57,37 @@ export async function delegate(
       },
     })
   }
-
-  return broadcast(chain, signer, delegator, messages, 'Beehive Wallet: delegate')
+  return { messages, memo: 'Beehive Wallet: delegate' }
 }
 
-export async function undelegate(
+export function buildUndelegate(
   chain: ChainInfo,
-  signer: OfflineDirectSigner,
   delegator: string,
   validator: string,
   amount: string,
-): Promise<string> {
-  const messages: EncodeObject[] = [
-    {
-      typeUrl: '/cosmos.staking.v1beta1.MsgUndelegate',
-      value: {
-        delegatorAddress: delegator,
-        validatorAddress: validator,
-        amount: { denom: chain.denom, amount },
+): TxMessages {
+  return {
+    messages: [
+      {
+        typeUrl: '/cosmos.staking.v1beta1.MsgUndelegate',
+        value: {
+          delegatorAddress: delegator,
+          validatorAddress: validator,
+          amount: { denom: chain.denom, amount },
+        },
       },
-    },
-  ]
-  return broadcast(chain, signer, delegator, messages, 'Beehive Wallet: undelegate')
-}
-
-export async function claimRewards(
-  chain: ChainInfo,
-  signer: OfflineDirectSigner,
-  delegator: string,
-  validators: string[],
-): Promise<string> {
-  const messages: EncodeObject[] = validators.map((validatorAddress) => ({
-    typeUrl: '/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward',
-    value: { delegatorAddress: delegator, validatorAddress },
-  }))
-  return broadcast(chain, signer, delegator, messages, 'Beehive Wallet: claim rewards')
+    ],
+    memo: 'Beehive Wallet: undelegate',
+  }
 }
 
 // Claims delegator rewards (per validator) and, if commissionValoper is given,
 // validator commission - all in one signed transaction for this address.
-export async function claimEarnings(
-  chain: ChainInfo,
-  signer: OfflineDirectSigner,
+export function buildClaim(
   address: string,
   rewardValidators: string[],
   commissionValoper: string | null,
-): Promise<string> {
+): TxMessages {
   const messages: EncodeObject[] = rewardValidators.map((validatorAddress) => ({
     typeUrl: '/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward',
     value: { delegatorAddress: address, validatorAddress },
@@ -127,21 +99,20 @@ export async function claimEarnings(
     })
   }
   if (messages.length === 0) throw new Error('Nothing to claim')
-  return broadcast(chain, signer, address, messages, 'Beehive Wallet: claim')
+  return { messages, memo: 'Beehive Wallet: claim' }
 }
 
 // Compound: withdraw each validator's rewards and delegate that amount straight
 // back to the same validator, in one signed transaction. The network fee comes
 // from the wallet's available balance.
-export async function restakeEarnings(
+export function buildRestake(
   chain: ChainInfo,
-  signer: OfflineDirectSigner,
   address: string,
   rewardsByValidator: { validator: string; amount: string }[],
-): Promise<string> {
+): TxMessages {
   const messages: EncodeObject[] = []
   for (const { validator, amount } of rewardsByValidator) {
-    if (Number(amount) <= 0) continue
+    if (!isPositiveBase(amount)) continue
     messages.push({
       typeUrl: '/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward',
       value: { delegatorAddress: address, validatorAddress: validator },
@@ -156,5 +127,5 @@ export async function restakeEarnings(
     })
   }
   if (messages.length === 0) throw new Error('No rewards to restake')
-  return broadcast(chain, signer, address, messages, 'Beehive Wallet: restake')
+  return { messages, memo: 'Beehive Wallet: restake' }
 }
