@@ -25,6 +25,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/lcd\/medibloc/, ''),
       },
+      '/rpc/medibloc': {
+        target: 'https://rpc.gopanacea.org',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/rpc\/medibloc/, ''),
+      },
     },
   },
 })
