@@ -40,8 +40,36 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
   return data as T
 }
 
+export interface AdminOverview {
+  stats: {
+    users: number
+    watched_addresses: number
+    alerts_total: number
+    alerts_24h: number
+    watcher_last_run: string | null
+    watcher_age_seconds: number | null
+  }
+  users: {
+    id: number
+    email: string
+    is_admin: number
+    created_at: string
+    watched_count: number
+  }[]
+  recent_alerts: {
+    id: number
+    tx_hash: string
+    amount: string
+    denom: string
+    detected_at: string
+    chain_key: string
+    address: string
+    label: string
+  }[]
+}
+
 export const api = {
-  me: () => call<{ logged_in: boolean; email?: string }>('me.php'),
+  me: () => call<{ logged_in: boolean; email?: string; is_admin?: boolean }>('me.php'),
   register: (email: string, password: string) => call('register.php', { email, password }),
   login: (email: string, password: string) => call('login.php', { email, password }),
   logout: () => call('logout.php', {}),
@@ -52,4 +80,5 @@ export const api = {
   watchedToggle: (id: number, enabled: boolean) => call('watched_toggle.php', { id, enabled }),
   alertsList: () => call<{ unread: number; alerts: WalletAlert[] }>('alerts_list.php'),
   alertsMarkRead: () => call('alerts_mark_read.php', {}),
+  adminOverview: () => call<AdminOverview & { ok: boolean }>('admin_overview.php'),
 }

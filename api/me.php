@@ -6,7 +6,7 @@ if (empty($_SESSION['user_id'])) {
 }
 
 $db = get_db();
-$stmt = $db->prepare('SELECT email FROM users WHERE id = ?');
+$stmt = $db->prepare('SELECT email, is_admin FROM users WHERE id = ?');
 $stmt->execute([(int) $_SESSION['user_id']]);
 $user = $stmt->fetch();
 
@@ -16,4 +16,9 @@ if (!$user) {
     json_out(['ok' => true, 'logged_in' => false]);
 }
 
-json_out(['ok' => true, 'logged_in' => true, 'email' => $user['email']]);
+json_out([
+    'ok' => true,
+    'logged_in' => true,
+    'email' => $user['email'],
+    'is_admin' => (int) $user['is_admin'] === 1,
+]);

@@ -49,6 +49,18 @@ function require_user(): int
     return (int) $_SESSION['user_id'];
 }
 
+function require_admin(PDO $db): int
+{
+    $userId = require_user();
+    $stmt = $db->prepare('SELECT is_admin FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $row = $stmt->fetch();
+    if (!$row || (int) $row['is_admin'] !== 1) {
+        json_error('Admins only', 403);
+    }
+    return $userId;
+}
+
 // Basic bech32 shape check (not full checksum validation - the watcher
 // verifies addresses against the chain before first poll).
 function looks_like_address(string $address, string $prefix): bool
