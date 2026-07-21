@@ -5,11 +5,74 @@
 
 declare(strict_types=1);
 
-session_start();
-header('Content-Type: application/json; charset=utf-8');
-
 ini_set('display_errors', '0');
 error_reporting(E_ALL);
+
+// --- Session hardening -----------------------------------------------------
+// Cookie flags MUST be set before session_start().
+const SESSION_IDLE_SECONDS = 3600;           // sign out after 1h of inactivity
+const SESSION_ABSOLUTE_SECONDS = 7 * 86400;  // hard cap regardless of activity
+
+$__https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+    || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+
+ini_set('session.use_strict_mode', '1'); // reject attacker-supplied session ids
+ini_set('session.use_only_cookies', '1');
+ini_set('session.cookie_httponly', '1');
+session_set_cookie_params([
+    'lifetime' => 0,
+    'path' => '/',
+    'secure' => $__https,
+    'httponly' => true,
+    'samesite' => 'Strict',
+]);
+session_start();
+
+header('Content-Type: application/json; charset=utf-8');
+// Authenticated JSON must never be stored by browser or shared caches.
+header('Cache-Control: no-store');
+
+// Enforce idle + absolute timeout on every request.
+if (!empty($_SESSION['user_id'])) {
+    $__now = time();
+    $__started = (int) ($_SESSION['auth_started_at'] ?? $__now);
+    $__last = (int) ($_SESSION['last_seen_at'] ?? $__now);
+    if (($__now - $__last) > SESSION_IDLE_SECONDS || ($__now - $__started) > SESSION_ABSOLUTE_SECONDS) {
+        session_logout();
+    } else {
+        $_SESSION['last_seen_at'] = $__now;
+    }
+}
+
+// Establish an authenticated session (call on successful login). Rotates the
+// session id to defeat fixation and stamps the timeout clocks.
+function session_login(int $userId): void
+{
+    session_regenerate_id(true);
+    $_SESSION['user_id'] = $userId;
+    $_SESSION['auth_started_at'] = time();
+    $_SESSION['last_seen_at'] = time();
+}
+
+// Fully invalidate the session and delete its cookie.
+function session_logout(): void
+{
+    $_SESSION = [];
+    if (ini_get('session.use_cookies')) {
+        $p = session_get_cookie_params();
+        setcookie(session_name(), '', [
+            'expires' => time() - 42000,
+            'path' => $p['path'],
+            'domain' => $p['domain'],
+            'secure' => $p['secure'],
+            'httponly' => $p['httponly'],
+            'samesite' => $p['samesite'] ?? 'Strict',
+        ]);
+    }
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_destroy();
+    }
+}
 
 function json_out(array $data, int $status = 200): void
 {
@@ -41,8 +104,35 @@ function get_db(): PDO
     return $pdo;
 }
 
+// CSRF defense for cookie-authenticated requests. `Sec-Fetch-Site` is set by the
+// browser and cannot be forged by a cross-site attacker; `none` covers a user
+// typing the URL / a bookmark. We fall back to Origin-host comparison for the
+// rare client that omits Sec-Fetch-Site. CosmJS RPC/LCD proxy traffic is
+// unauthenticated (no session cookie) so it never reaches this check.
+function require_same_origin(): void
+{
+    $site = $_SERVER['HTTP_SEC_FETCH_SITE'] ?? '';
+    if ($site !== '') {
+        if (in_array($site, ['same-origin', 'same-site', 'none'], true)) {
+            return;
+        }
+        json_error('Cross-site request blocked', 403);
+    }
+    $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+    if ($origin === '') {
+        return; // no Origin (e.g. same-origin GET / legacy client)
+    }
+    $originHost = parse_url($origin, PHP_URL_HOST);
+    $host = preg_replace('/:\d+$/', '', $_SERVER['HTTP_HOST'] ?? '');
+    if ($originHost === null || strcasecmp($originHost, (string) $host) !== 0) {
+        json_error('Cross-origin request blocked', 403);
+    }
+}
+
 function require_user(PDO $db): int
 {
+    // Every authenticated endpoint (read or write) is same-origin only.
+    require_same_origin();
     if (empty($_SESSION['user_id'])) {
         json_error('Not logged in', 401);
     }
@@ -62,7 +152,16 @@ function require_user(PDO $db): int
 }
 
 // Admin features that can be granted individually. Super admins have all.
-const ADMIN_FEATURES = ['users', 'chains', 'announcements'];
+const ADMIN_FEATURES = ['users', 'chains', 'announcements', 'uptime'];
+
+// Read a global setting from app_settings, with a default fallback.
+function get_setting(PDO $db, string $key, string $default = ''): string
+{
+    $stmt = $db->prepare('SELECT setting_value FROM app_settings WHERE setting_key = ?');
+    $stmt->execute([$key]);
+    $val = $stmt->fetchColumn();
+    return $val === false ? $default : (string) $val;
+}
 
 function admin_context(PDO $db, int $userId): array
 {
@@ -121,16 +220,110 @@ function looks_like_address(string $address, string $prefix): bool
     return (bool) preg_match('/^' . preg_quote($prefix, '/') . '1[a-z0-9]{20,80}$/', $address);
 }
 
-// Real client IP. Behind Cloudflare, CF-Connecting-IP is set by Cloudflare and
-// is the user's address; fall back to the socket peer otherwise.
+// Direct socket peers we trust to set a real forwarded-client-IP header. With
+// DNS-only Cloudflare (grey cloud, no proxy in the request path) this stays
+// empty, so we always use REMOTE_ADDR - which a client cannot forge. If the
+// orange cloud is later enabled, add Cloudflare's edge IPs here.
+const TRUSTED_PROXIES = [];
+
+// Real client IP. Only honors CF-Connecting-IP when the direct peer is a trusted
+// proxy; otherwise uses the socket peer. Prevents rate-limit bypass via a spoofed
+// CF-Connecting-IP header when the request reaches PHP directly.
 function client_ip(): string
 {
-    foreach (['HTTP_CF_CONNECTING_IP', 'REMOTE_ADDR'] as $key) {
-        if (!empty($_SERVER[$key])) {
-            return substr(trim($_SERVER[$key]), 0, 45);
+    $peer = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    if (
+        in_array($peer, TRUSTED_PROXIES, true)
+        && !empty($_SERVER['HTTP_CF_CONNECTING_IP'])
+    ) {
+        return substr(trim($_SERVER['HTTP_CF_CONNECTING_IP']), 0, 45);
+    }
+    return substr((string) $peer, 0, 45);
+}
+
+// --- SSRF guards -----------------------------------------------------------
+// A public routable IP: rejects private (10/8, 172.16/12, 192.168/16, fc00::/7),
+// reserved/loopback (127/8, ::1), link-local (169.254/16 incl. the 169.254.169.254
+// metadata address, fe80::/10) and other reserved ranges.
+function is_public_ip(string $ip): bool
+{
+    return (bool) filter_var(
+        $ip,
+        FILTER_VALIDATE_IP,
+        FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
+    );
+}
+
+// Full validation for admin-configured node URLs (used at save time): must be
+// HTTPS and resolve only to public IPs. Rejects unresolvable hosts.
+function is_safe_public_url(string $url): bool
+{
+    $p = parse_url($url);
+    if ($p === false || ($p['scheme'] ?? '') !== 'https' || empty($p['host'])) {
+        return false;
+    }
+    $host = $p['host'];
+    if (filter_var($host, FILTER_VALIDATE_IP)) {
+        return is_public_ip($host);
+    }
+    $ips = [];
+    $records = @dns_get_record($host, DNS_A | DNS_AAAA) ?: [];
+    foreach ($records as $r) {
+        if (!empty($r['ip'])) {
+            $ips[] = $r['ip'];
+        }
+        if (!empty($r['ipv6'])) {
+            $ips[] = $r['ipv6'];
         }
     }
-    return 'unknown';
+    if (!$ips) {
+        $v4 = @gethostbyname($host);
+        if ($v4 && $v4 !== $host) {
+            $ips[] = $v4;
+        }
+    }
+    if (!$ips) {
+        return false;
+    }
+    foreach ($ips as $ip) {
+        if (!is_public_ip($ip)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Cheap request-time guard for the proxies: HTTPS only and, for IP-literal hosts,
+// must be public. Hostnames are trusted here because they were validated with a
+// full DNS check when the admin saved them (see admin_endpoint_save.php).
+function proxy_url_ok(string $url): bool
+{
+    $p = parse_url($url);
+    if (!$p || ($p['scheme'] ?? '') !== 'https' || empty($p['host'])) {
+        return false;
+    }
+    if (filter_var($p['host'], FILTER_VALIDATE_IP) && !is_public_ip($p['host'])) {
+        return false;
+    }
+    return true;
+}
+
+// Best-effort per-IP + global rate limit for the public proxies, using APCu when
+// available (in-memory, no DB write per request). A no-op if APCu is absent - the
+// size/timeout caps still apply. Emits 429 and exits when exceeded.
+function proxy_rate_limit(string $ip, int $perIpPerMin = 300, int $globalPerMin = 3000): void
+{
+    if (!function_exists('apcu_fetch') || !@apcu_enabled()) {
+        return;
+    }
+    $bucket = (int) floor(time() / 60);
+    foreach ([["proxy_ip_{$ip}_{$bucket}", $perIpPerMin], ["proxy_all_{$bucket}", $globalPerMin]] as [$key, $limit]) {
+        $n = apcu_inc($key, 1, $ok, 90);
+        if ($n !== false && $n > $limit) {
+            header('Retry-After: 60');
+            json_out(['error' => 'Rate limit exceeded. Please slow down.'], 429);
+        }
+    }
 }
 
 // Rolling-window rate limit config.

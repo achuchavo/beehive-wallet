@@ -12,12 +12,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     json_out(['error' => 'POST only'], 405);
 }
 
+proxy_rate_limit(client_ip());
+
 $chainKey = preg_replace('/[^a-z0-9_-]/', '', $_GET['chain'] ?? '');
 if ($chainKey === '') {
     json_out(['error' => 'Missing chain'], 400);
 }
 
 $raw = file_get_contents('php://input');
+if ($raw !== false && strlen($raw) > 262144) { // 256 KB
+    json_out(['error' => 'Request body too large'], 413);
+}
 $req = json_decode($raw === false ? '' : $raw, true);
 
 $allowedMethods = [
@@ -44,16 +49,20 @@ if (!$endpoints) {
 }
 
 foreach ($endpoints as $base) {
+    if (!proxy_url_ok($base)) {
+        continue; // never fetch a non-HTTPS or private-IP endpoint (SSRF guard)
+    }
     $ctx = stream_context_create([
         'http' => [
             'method' => 'POST',
             'header' => "Content-Type: application/json\r\n",
             'content' => $raw,
-            'timeout' => 60,
+            'timeout' => 20,
             'ignore_errors' => true,
         ],
     ]);
-    $body = @file_get_contents(rtrim($base, '/'), false, $ctx);
+    // Cap the response we read into memory (4 MB) against a hostile/huge upstream.
+    $body = @file_get_contents(rtrim($base, '/'), false, $ctx, 0, 4 * 1024 * 1024);
     if ($body === false) {
         continue;
     }

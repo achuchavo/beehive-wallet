@@ -1,7 +1,6 @@
 <?php
 require __DIR__ . '/common.php';
 
-$_SESSION = [];
-session_destroy();
+session_logout();
 
 json_out(['ok' => true]);

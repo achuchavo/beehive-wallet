@@ -1,16 +1,25 @@
 <?php
 require __DIR__ . '/common.php';
 
+require_same_origin();
 $body = read_body();
 $email = strtolower(trim($body['email'] ?? ''));
-$password = $body['password'] ?? '';
+$password = (string) ($body['password'] ?? '');
 $mainAddress = trim($body['main_address'] ?? '');
 
-if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+// Bound input sizes: email fits the column; password has a sane ceiling so a
+// megabyte string can't be forced through Argon2id (a hashing-cost DoS).
+if (strlen($email) > 190 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
     json_error('Enter a valid email address');
 }
 if (strlen($password) < 10) {
     json_error('Password must be at least 10 characters');
+}
+if (strlen($password) > 200) {
+    json_error('Password is too long (200 characters max)');
+}
+if (strlen($mainAddress) > 120) {
+    json_error('Address is too long');
 }
 
 // Main address is optional, but if given it must be a valid, unused address.

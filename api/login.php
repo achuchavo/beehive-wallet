@@ -1,6 +1,7 @@
 <?php
 require __DIR__ . '/common.php';
 
+require_same_origin();
 $body = read_body();
 // Accept either an email or a wallet address as the identifier. The address
 // is only a username here - the password is still the credential.
@@ -33,7 +34,6 @@ record_attempt($db, $ip, $email, 'login', true);
 $db->prepare("DELETE FROM login_attempts WHERE identifier = ? AND kind = 'login' AND success = 0")
     ->execute([$email]);
 
-$_SESSION['user_id'] = (int) $user['id'];
-session_regenerate_id(true);
+session_login((int) $user['id']);
 
 json_out(['ok' => true]);
