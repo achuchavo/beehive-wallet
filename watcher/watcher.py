@@ -123,17 +123,25 @@ def process_address(cursor, db, chains: list, row: dict) -> None:
             break
         new_txs.append(tx)
 
-    if not txs:
-        return
-
     if last_seen is None:
-        # First poll for this address: set the baseline, do not alert on history.
+        # First poll: baseline to the newest historic tx so we don't alert on
+        # history. An address with NO outgoing history gets the '' sentinel -
+        # its first ever outgoing tx (e.g. theft from a cold wallet) DOES alert.
+        baseline = txs[0]["hash"] if txs else ""
         cursor.execute(
             "UPDATE watched_addresses SET last_seen_tx_hash = %s, last_checked_at = NOW() WHERE id = %s",
-            (txs[0]["hash"], row["id"]),
+            (baseline, row["id"]),
         )
         db.commit()
-        log("INFO", f"Baseline set for {row['address']} at {txs[0]['hash'][:12]}")
+        log("INFO", f"Baseline set for {row['address']} at {baseline[:12] or '<empty>'}")
+        return
+
+    if not txs:
+        cursor.execute(
+            "UPDATE watched_addresses SET last_checked_at = NOW() WHERE id = %s",
+            (row["id"],),
+        )
+        db.commit()
         return
 
     for tx in reversed(new_txs):
