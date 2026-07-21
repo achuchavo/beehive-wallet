@@ -4,10 +4,13 @@ import { api, type AdminOverview, type UserAction, ADMIN_FEATURES } from '../api
 import { CHAINS, DEFAULT_CHAIN, formatAmount } from '../chains'
 import ChainManager from './ChainManager'
 
+type Tab = 'overview' | 'users' | 'access' | 'chains' | 'announcements'
+
 export default function Admin() {
   const [data, setData] = useState<AdminOverview | null>(null)
   const [features, setFeatures] = useState<string[]>([])
   const [isSuper, setIsSuper] = useState(false)
+  const [tab, setTab] = useState<Tab>('overview')
   const [error, setError] = useState('')
 
   const load = useCallback(
@@ -62,46 +65,107 @@ export default function Admin() {
   const { stats } = data
   const watcherHealthy = stats.watcher_age_seconds !== null && stats.watcher_age_seconds < 300
 
+  const allTabs: { id: Tab; label: string; show: boolean }[] = [
+    { id: 'overview', label: 'Overview', show: true },
+    { id: 'users', label: 'Users', show: can('users') },
+    { id: 'access', label: 'Access', show: isSuper },
+    { id: 'chains', label: 'Chains', show: can('chains') },
+    { id: 'announcements', label: 'Announcements', show: can('announcements') },
+  ]
+  const tabs = allTabs.filter((t) => t.show)
+
+  const activeTab = tabs.some((t) => t.id === tab) ? tab : 'overview'
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <h1 className="text-xl font-semibold">Admin</h1>
+
+      <div className="flex flex-wrap gap-1 border-b border-slate-200">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm ${
+              activeTab === t.id
+                ? 'border-amber-500 font-medium text-amber-700'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
       {error && (
         <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Users" value={stats.users} />
-        <StatCard label="Watched addresses" value={stats.watched_addresses} />
-        <StatCard label="Alerts (24h)" value={stats.alerts_24h} />
-        <StatCard label="Failed logins (24h)" value={stats.failed_logins_24h} />
-      </div>
+      {activeTab === 'overview' && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatCard label="Users" value={stats.users} />
+            <StatCard label="Watched addresses" value={stats.watched_addresses} />
+            <StatCard label="Alerts (24h)" value={stats.alerts_24h} />
+            <StatCard label="Failed logins (24h)" value={stats.failed_logins_24h} />
+          </div>
 
-      <div
-        className={`flex items-center justify-between rounded-xl border px-4 py-3 text-sm ${
-          watcherHealthy
-            ? 'border-green-200 bg-green-50 text-green-800'
-            : 'border-red-200 bg-red-50 text-red-800'
-        }`}
-      >
-        <span className="font-medium">
-          Watcher: {watcherHealthy ? 'healthy' : 'not running or stale'}
-        </span>
-        <span>
-          Last check:{' '}
-          {stats.watcher_last_run
-            ? `${stats.watcher_last_run} (${stats.watcher_age_seconds}s ago)`
-            : 'never'}
-        </span>
-      </div>
+          <div
+            className={`flex items-center justify-between rounded-xl border px-4 py-3 text-sm ${
+              watcherHealthy
+                ? 'border-green-200 bg-green-50 text-green-800'
+                : 'border-red-200 bg-red-50 text-red-800'
+            }`}
+          >
+            <span className="font-medium">
+              Watcher: {watcherHealthy ? 'healthy' : 'not running or stale'}
+            </span>
+            <span>
+              Last check:{' '}
+              {stats.watcher_last_run
+                ? `${stats.watcher_last_run} (${stats.watcher_age_seconds}s ago)`
+                : 'never'}
+            </span>
+          </div>
 
-      {can('announcements') && <AnnouncementEditor onChanged={load} />}
+          <section className="space-y-2">
+            <h2 className="font-medium">Recent alerts (all users)</h2>
+            {data.recent_alerts.length === 0 ? (
+              <p className="text-sm text-slate-500">No alerts yet.</p>
+            ) : (
+              <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
+                {data.recent_alerts.map((a) => {
+                  const chain = CHAINS.find((c) => c.key === a.chain_key) ?? DEFAULT_CHAIN
+                  return (
+                    <li key={a.id} className="flex items-center justify-between px-4 py-2 text-sm">
+                      <span className="truncate">
+                        {a.label || `${a.address.slice(0, 14)}...`}
+                        {a.amount && (
+                          <span className="ml-2 text-slate-500">
+                            {formatAmount(a.amount, chain)} {chain.displayDenom}
+                          </span>
+                        )}
+                      </span>
+                      <span className="ml-2 shrink-0 text-xs text-slate-400">{a.detected_at}</span>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </section>
+        </div>
+      )}
 
-      {can('chains') && <ChainManager onError={setError} />}
+      {activeTab === 'announcements' && can('announcements') && (
+        <AnnouncementEditor onChanged={load} />
+      )}
 
-      {isSuper && <RoleManager users={data.users} onChanged={load} onError={setError} />}
+      {activeTab === 'chains' && can('chains') && <ChainManager onError={setError} />}
 
-      {can('users') && (
+      {activeTab === 'access' && isSuper && (
+        <RoleManager users={data.users} onChanged={load} onError={setError} />
+      )}
+
+      {activeTab === 'users' && can('users') && (
       <section className="space-y-2">
         <h2 className="font-medium">Users</h2>
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
@@ -179,32 +243,6 @@ export default function Admin() {
         </p>
       </section>
       )}
-
-      <section className="space-y-2">
-        <h2 className="font-medium">Recent alerts (all users)</h2>
-        {data.recent_alerts.length === 0 ? (
-          <p className="text-sm text-slate-500">No alerts yet.</p>
-        ) : (
-          <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
-            {data.recent_alerts.map((a) => {
-              const chain = CHAINS.find((c) => c.key === a.chain_key) ?? DEFAULT_CHAIN
-              return (
-                <li key={a.id} className="flex items-center justify-between px-4 py-2 text-sm">
-                  <span className="truncate">
-                    {a.label || `${a.address.slice(0, 14)}...`}
-                    {a.amount && (
-                      <span className="ml-2 text-slate-500">
-                        {formatAmount(a.amount, chain)} {chain.displayDenom}
-                      </span>
-                    )}
-                  </span>
-                  <span className="ml-2 shrink-0 text-xs text-slate-400">{a.detected_at}</span>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </section>
     </div>
   )
 }
