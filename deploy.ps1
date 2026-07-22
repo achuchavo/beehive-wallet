@@ -29,16 +29,21 @@ if ($Sub) {
   if ($LASTEXITCODE -ne 0) { throw "subdomain build failed" }
   New-Item -ItemType Directory -Force -Path $subDest | Out-Null
   Deploy $subDest
-  # SPA fallback for root base (overrides the /wallet/ .htaccess from public/)
-  Set-Content -Path "$subDest\.htaccess" -Encoding ascii -Value @"
-DirectoryIndex index.html index.php
-RewriteEngine On
-RewriteBase /
-RewriteCond %{REQUEST_URI} !^/\.well-known/acme-challenge/ [NC]
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule . index.html [L]
-"@
+  # SPA fallback for root base. app/public/.htaccess ships RewriteBase /wallet/,
+  # which on this host makes every deep link 500 while / still returns 200 - so
+  # it must be rewritten after the copy, and a deep link (not just /) is what
+  # proves it worked.
+  #
+  # Derived from the deployed file rather than written from scratch: that file
+  # also carries the security headers verify-deployment.ps1 asserts, and an
+  # earlier version of this block replaced the whole thing and dropped them.
+  $htaccess = Get-Content "$pathDest\.htaccess" -Raw
+  if ($htaccess -notmatch 'RewriteBase /wallet/') { throw "unexpected .htaccess in $pathDest" }
+  $htaccess = $htaccess -replace 'RewriteBase /wallet/', 'RewriteBase /'
+  $htaccess = $htaccess -replace '(?m)^(RewriteCond %\{REQUEST_FILENAME\} !-f)',
+    "RewriteCond %{REQUEST_URI} !^/\.well-known/acme-challenge/ [NC]`r`n`$1"
+  # No BOM: Apache reads it as part of the first directive.
+  [IO.File]::WriteAllText("$subDest\.htaccess", $htaccess, (New-Object Text.UTF8Encoding $false))
   # db_config.php is created once by hand on the server; keep the path build's copy
   if (Test-Path "$pathDest\api\db_config.php") {
     Copy-Item "$pathDest\api\db_config.php" "$subDest\api\db_config.php" -Force

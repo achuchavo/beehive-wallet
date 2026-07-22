@@ -369,3 +369,27 @@ requests `/distribution/.../validators/<valoper>/commission` unconditionally:
 the result is discarded for non-validators, but on Chihuahua the request itself
 cost 32s and blocked the dashboard behind it. Only ask once the validator lookup
 has confirmed the address actually is one.
+
+### Trap: the subdomain `.htaccess` is clobbered by every deploy
+
+`app/public/.htaccess` ships `RewriteBase /wallet/`, and `robocopy /MIR` copies
+it into the subdomain docroot along with the bundle. On `wallet.achumuamah.com`
+that base is wrong, so **every deep link returns 500 while `/` still returns
+200** — a root-only smoke test passes and the breakage ships unnoticed. This
+happened on 2026-07-23 and survived several deploys for exactly that reason.
+
+After any subdomain deploy, rewrite `walletapp\.htaccess` and then curl a real
+deep link (`/settings`, `/rewards?chain=medibloc`), not just `/`.
+
+The correct file is the `/wallet/` one with two edits, **keeping the
+`<IfModule mod_headers.c>` block**:
+
+- `RewriteBase /wallet/` → `RewriteBase /`
+- insert `RewriteCond %{REQUEST_URI} !^/\.well-known/acme-challenge/ [NC]`
+  before the `!-f` condition, so certbot renewals are not swallowed by the SPA
+  fallback
+
+Do not write the file from scratch: the headers section lives in it, and
+`verify-deployment.ps1` asserts every one of those headers. `deploy.ps1` now
+derives the subdomain file from the deployed path-build copy for this reason.
+Write it without a BOM — Apache parses a BOM as part of the first directive.
