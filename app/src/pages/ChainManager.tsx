@@ -77,14 +77,14 @@ export default function ChainManager({ onError }: { onError: (m: string) => void
     <section className="space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="flex items-center gap-2 font-medium">
-          <Server className="h-4 w-4 text-slate-400" /> Chains
+          <Server className="h-4 w-4 text-slate-500" /> Chains
         </h2>
         <button
           onClick={() => {
             setManaging({ ...BLANK })
             setIsNew(true)
           }}
-          className="flex items-center gap-1 rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-600"
+          className="flex items-center gap-1 rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-amber-600"
         >
           <Plus className="h-4 w-4" /> Add chain
         </button>
@@ -100,7 +100,7 @@ export default function ChainManager({ onError }: { onError: (m: string) => void
               <div className="min-w-0">
                 <div className="flex items-center gap-2 text-sm font-medium">
                   {c.chain_name}
-                  <span className="font-mono text-xs text-slate-400">{c.chain_key}</span>
+                  <span className="font-mono text-xs text-slate-500">{c.chain_key}</span>
                   {c.is_active !== 1 && (
                     <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">
                       inactive
@@ -223,7 +223,7 @@ function ChainForm({
       </label>
       <button
         onClick={() => onSave(form)}
-        className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
+        className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600"
       >
         Save chain details
       </button>
@@ -274,19 +274,19 @@ function EndpointList({
     <div className="space-y-2 border-t border-slate-200 pt-4">
       <div className="flex items-center gap-1.5 text-sm font-medium">
         Endpoints
-        <span className="font-normal text-slate-400">(tried in order; failover on outage)</span>
+        <span className="font-normal text-slate-500">(tried in order; failover on outage)</span>
       </div>
       <div className="flex gap-4 text-xs text-slate-500">
         <span className="flex items-center gap-1">LCD <HelpTip text={LCD_HELP} /></span>
         <span className="flex items-center gap-1">RPC <HelpTip text={RPC_HELP} /></span>
       </div>
-      {endpoints.length === 0 && <div className="text-xs text-slate-400">No endpoints yet.</div>}
+      {endpoints.length === 0 && <div className="text-xs text-slate-500">No endpoints yet.</div>}
       {endpoints.map((ep) => (
         <div key={ep.id} className="flex items-center gap-2 text-xs">
           <span className="w-9 shrink-0 rounded bg-slate-100 px-1 py-0.5 text-center font-medium uppercase text-slate-600">
             {ep.kind}
           </span>
-          <span className={`flex-1 truncate font-mono ${ep.is_active === 1 ? '' : 'text-slate-400 line-through'}`}>
+          <span className={`flex-1 truncate font-mono ${ep.is_active === 1 ? '' : 'text-slate-500 line-through'}`}>
             {ep.url}
           </span>
           <button onClick={() => toggle(ep)} className="text-amber-700 hover:underline">
@@ -315,7 +315,7 @@ function EndpointList({
         <button
           onClick={add}
           disabled={busy || !url}
-          className="rounded-lg bg-amber-500 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+          className="rounded-lg bg-amber-500 px-2.5 py-1.5 text-xs font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
         >
           Add
         </button>
@@ -363,7 +363,7 @@ function FreeValidatorList({
         Free-staking validators <HelpTip text={FREE_HELP} />
       </div>
       {freeValidators.length === 0 && (
-        <div className="text-xs text-slate-400">None yet - no validators are free.</div>
+        <div className="text-xs text-slate-500">None yet - no validators are free.</div>
       )}
       {freeValidators.map((f) => (
         <div key={f.id} className="flex items-center gap-2 text-xs">
@@ -383,7 +383,7 @@ function FreeValidatorList({
         <button
           onClick={add}
           disabled={busy || !valoper}
-          className="rounded-lg bg-amber-500 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+          className="rounded-lg bg-amber-500 px-2.5 py-1.5 text-xs font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
         >
           Add
         </button>

@@ -128,7 +128,7 @@ function UptimePanel() {
     <div className="space-y-6">
       <div>
         <h1 className="flex items-center gap-2 text-xl font-semibold">
-          <Activity className="h-5 w-5 text-amber-600" /> {t('uptime.title')}
+          <Activity className="h-5 w-5 text-amber-700" /> {t('uptime.title')}
         </h1>
         <p className="mt-1 text-sm text-slate-500">{t('uptime.intro')}</p>
       </div>
@@ -161,7 +161,7 @@ function UptimePanel() {
         />
         <button
           disabled={busy || !validator}
-          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
         >
           {t('uptime.apply')}
         </button>
@@ -208,13 +208,13 @@ function UptimePanel() {
                       {down ? (
                         <TriangleAlert className="h-4 w-4 text-red-500" />
                       ) : (
-                        <CircleCheck className="h-4 w-4 text-green-600" />
+                        <CircleCheck className="h-4 w-4 text-green-700" />
                       )}
                       {down
                         ? t('uptime.alertDown', { moniker: name, n: a.missed_blocks })
                         : t('uptime.alertRecovered', { moniker: name })}
                     </span>
-                    <span className="text-xs text-slate-400">{a.detected_at}</span>
+                    <span className="text-xs text-slate-500">{a.detected_at}</span>
                   </div>
                 </li>
               )
@@ -261,7 +261,7 @@ function SubRow({
             href={`${chain.explorerValidatorUrl}${sub.validator_address}`}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 truncate font-mono text-xs text-slate-400 hover:text-amber-700"
+            className="inline-flex items-center gap-1 truncate font-mono text-xs text-slate-500 hover:text-amber-700"
           >
             {sub.validator_address.slice(0, 20)}...
             <ExternalLink className="h-3 w-3" />
@@ -269,7 +269,7 @@ function SubRow({
         </div>
         <button
           onClick={() => api.uptimeCancel(sub.id).then(onChange)}
-          className="shrink-0 text-slate-400 hover:text-red-600"
+          className="shrink-0 text-slate-500 hover:text-red-600"
           aria-label={t('uptime.remove')}
         >
           <Trash2 className="h-4 w-4" />
@@ -288,7 +288,7 @@ function SubRow({
             <span className={`flex items-center gap-1 font-medium ${down ? 'text-red-600' : 'text-green-700'}`}>
               {down ? <TriangleAlert className="h-3.5 w-3.5" /> : <CircleCheck className="h-3.5 w-3.5" />}
               {down ? t('uptime.down') : t('uptime.ok')}
-              <span className="font-normal text-slate-400">
+              <span className="font-normal text-slate-500">
                 ({t('uptime.missedNow', { n: sub.last_missed })})
               </span>
             </span>
@@ -330,7 +330,7 @@ function SubRow({
             )}
           </div>
           {snoozed && sub.snooze_until && (
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-500">
               {t('uptime.snoozedUntil', { date: sub.snooze_until.slice(0, 16) })}
             </p>
           )}

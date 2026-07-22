@@ -142,6 +142,41 @@ Watch `cursor_gaps` in the cycle metrics afterwards; it should stay `0`.
 
 ---
 
+## Colour contrast (WCAG AA)
+
+Audited by measuring the **rendered DOM**, not by reading the palette: for every
+element with a text node, take the computed colour, walk up for the first opaque
+background, blend any alpha, and compute the WCAG 2.1 ratio (4.5:1 normal text,
+3:1 for ≥24px or ≥18.66px bold).
+
+Two traps worth knowing if you re-run this:
+
+1. **Tailwind v4 emits `oklch()`.** A naive `rgb()` regex silently returns null
+   and the audit reports nonsense (an amber button measured as white-on-white).
+   Resolve colours by painting them to a 1×1 canvas and reading the pixel back —
+   that handles any syntax the browser supports.
+2. **Probing a utility class only works if that class exists in the output.**
+   `bg-amber-600` is used exclusively as `hover:bg-amber-600`, so a probe element
+   with `class="bg-amber-600"` has *no* background and measures as black (a
+   bogus 21:1). Read Tailwind's theme variables instead:
+   `getComputedStyle(document.documentElement).getPropertyValue('--color-amber-600')`.
+
+Fixes applied (all measured before/after):
+
+| Was | Ratio | Now | Ratio |
+|---|---|---|---|
+| `text-white` on `bg-amber-500` (primary button) | **2.13** | `text-slate-900` on `bg-amber-500` | **8.35** |
+| `text-slate-400` (muted, 66 uses) | **2.63** | `text-slate-500` | **4.76** |
+| `text-amber-600` (wordmark/links) | **3.06** | `text-amber-700` | **4.81** |
+| `text-green-600` (status) | **3.22** | `text-green-700` | **4.95** |
+
+The brand amber was deliberately **kept** — darkening buttons to `amber-700`
+would also pass (5.03) but changes the brand colour; dark text on the vivid
+amber scores far higher and preserves it.
+
+Current state: **0 failures** across dashboard, docs, settings, alarms, staking,
+rewards, history and send.
+
 ## Authentication notes
 
 - **Remember-me** issues a rotating selector/verifier token (`remember_tokens`),

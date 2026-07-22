@@ -22,7 +22,7 @@ export default function EmptyState({
 }) {
   return (
     <div className="mx-auto mt-6 max-w-md rounded-2xl border border-slate-200 bg-white px-6 py-10 text-center shadow-sm">
-      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700">
         <Icon className="h-7 w-7" strokeWidth={1.8} />
       </div>
       <h2 className="text-lg font-semibold">{title}</h2>
@@ -37,7 +37,7 @@ export default function EmptyState({
               to={a.to}
               className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium ${
                 primary
-                  ? 'bg-amber-500 text-white hover:bg-amber-600'
+                  ? 'bg-amber-500 text-slate-900 hover:bg-amber-600'
                   : 'border border-slate-300 bg-white text-slate-700 hover:border-amber-500'
               }`}
             >

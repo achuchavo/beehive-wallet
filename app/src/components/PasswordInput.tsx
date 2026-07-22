@@ -19,7 +19,7 @@ export default function PasswordInput({ className = '', ...props }: Props) {
         type="button"
         onClick={() => setShow((s) => !s)}
         aria-label={show ? t('common.hidePassword') : t('common.showPassword')}
-        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"
       >
         {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
       </button>

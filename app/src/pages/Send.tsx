@@ -61,7 +61,7 @@ export default function Send() {
             key={tb}
             onClick={() => setTab(tb)}
             className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm ${
-              tab === tb ? 'bg-amber-500 font-medium text-white' : 'bg-slate-100 text-slate-600'
+              tab === tb ? 'bg-amber-500 font-medium text-slate-900' : 'bg-slate-100 text-slate-600'
             }`}
           >
             {tb === 'send' ? <SendHorizontal className="h-3.5 w-3.5" /> : <QrCode className="h-3.5 w-3.5" />}
@@ -103,7 +103,7 @@ function Receive() {
         onClick={copy}
         className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:border-amber-500"
       >
-        {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+        {copied ? <Check className="h-3.5 w-3.5 text-green-700" /> : <Copy className="h-3.5 w-3.5" />}
         {copied ? t('send.copied') : t('send.copyAddress')}
       </button>
     </div>
@@ -262,7 +262,7 @@ function SendForm() {
         <CopyAddress
           address={active.address}
           display={`${active.address.slice(0, 14)}...${active.address.slice(-6)}`}
-          className="ml-2 align-middle text-xs text-slate-400"
+          className="ml-2 align-middle text-xs text-slate-500"
         />
         {balance !== null && (
           <span className="ml-2 text-xs">
@@ -314,7 +314,7 @@ function SendForm() {
       <div>
         <div className="mb-1.5 flex items-baseline justify-between">
           <span className="text-xs font-medium text-slate-500">{t('send.speed')}</span>
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-slate-500">
             {scaledGasPrice(chain, speedMult)} · {gasPriceInDisplay(chain, speedMult)} {chain.displayDenom}
           </span>
         </div>
@@ -335,7 +335,7 @@ function SendForm() {
             </button>
           ))}
         </div>
-        <p className="mt-1 text-xs text-slate-400">{t('send.speedHint')}</p>
+        <p className="mt-1 text-xs text-slate-500">{t('send.speedHint')}</p>
       </div>
       <PasswordInput
         name="beehive-sign-password"
@@ -346,7 +346,7 @@ function SendForm() {
         autoComplete="new-password"
         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
       />
-      <p className="text-xs text-slate-400">
+      <p className="text-xs text-slate-500">
         {t('send.feeNote', {
           denom: chain.displayDenom,
           gas: scaledGasPrice(chain, speedMult),
@@ -383,7 +383,7 @@ function SendForm() {
       )}
       <button
         disabled={busy}
-        className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+        className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
       >
         <SendHorizontal className="h-4 w-4" />
         {busy ? t('send.simulating') : t('send.review')}

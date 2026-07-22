@@ -164,7 +164,7 @@ export default function Admin() {
                           </span>
                         )}
                       </span>
-                      <span className="ml-2 shrink-0 text-xs text-slate-400">{a.detected_at}</span>
+                      <span className="ml-2 shrink-0 text-xs text-slate-500">{a.detected_at}</span>
                     </li>
                   )
                 })}
@@ -209,7 +209,7 @@ export default function Admin() {
                   <td className="px-4 py-2">
                     {u.email}
                     {u.main_address && (
-                      <div className="font-mono text-xs text-slate-400">
+                      <div className="font-mono text-xs text-slate-500">
                         {u.main_address.slice(0, 12)}...{u.main_address.slice(-6)}
                       </div>
                     )}
@@ -225,7 +225,7 @@ export default function Admin() {
                         admin
                       </span>
                     ) : (
-                      <span className="text-xs text-slate-400">user</span>
+                      <span className="text-xs text-slate-500">user</span>
                     )}
                   </td>
                   <td className="px-4 py-2">
@@ -234,7 +234,7 @@ export default function Admin() {
                         disabled
                       </span>
                     ) : (
-                      <span className="text-xs text-green-600">active</span>
+                      <span className="text-xs text-green-700">active</span>
                     )}
                   </td>
                   <td className="px-4 py-2 text-xs text-slate-500">{u.created_at}</td>
@@ -261,7 +261,7 @@ export default function Admin() {
             </tbody>
           </table>
         </div>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-slate-500">
           Actions on your own account are blocked server-side.
         </p>
       </section>
@@ -379,7 +379,7 @@ function RoleManager({
                 <button
                   onClick={() => save(u.id)}
                   disabled={busy}
-                  className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+                  className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
                 >
                   {busy ? 'Saving...' : 'Save access'}
                 </button>
@@ -388,7 +388,7 @@ function RoleManager({
           </div>
         ))}
       </div>
-      <p className="text-xs text-slate-400">Your own role can't be changed here.</p>
+      <p className="text-xs text-slate-500">Your own role can't be changed here.</p>
     </section>
   )
 }
@@ -489,7 +489,7 @@ function AnnouncementEditor({ onChanged }: { onChanged: () => void }) {
         </select>
         <button
           disabled={busy}
-          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
         >
           Publish
         </button>
@@ -584,7 +584,7 @@ function UptimeManager({ isSuper, onError }: { isSuper: boolean; onError: (m: st
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="truncate font-medium">{s.moniker || s.validator_address}</div>
-                    <div className="truncate text-xs text-slate-400">
+                    <div className="truncate text-xs text-slate-500">
                       {s.email} · <span className="font-mono">{s.validator_address.slice(0, 20)}...</span>
                     </div>
                   </div>
@@ -598,7 +598,7 @@ function UptimeManager({ isSuper, onError }: { isSuper: boolean; onError: (m: st
                   <div className="flex flex-wrap gap-1.5">
                     <button
                       onClick={() => decide(s.id, 'approve', 30)}
-                      className="rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-600"
+                      className="rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-medium text-slate-900 hover:bg-amber-600"
                     >
                       Approve 30d
                     </button>

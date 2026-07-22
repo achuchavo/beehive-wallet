@@ -233,7 +233,7 @@ export default function Dashboard() {
             </div>
             <div className="text-3xl font-semibold">
               {formatAmount(g.total, g.chain)}{' '}
-              <span className="text-base font-normal text-slate-400">{g.chain.displayDenom}</span>
+              <span className="text-base font-normal text-slate-500">{g.chain.displayDenom}</span>
             </div>
             {fiatFor(g.chain, g.total) && (
               <div className="text-sm font-medium text-slate-500">≈ {fiatFor(g.chain, g.total)}</div>
@@ -276,7 +276,7 @@ export default function Dashboard() {
             <h2 className="font-medium">
               {t('dash.yourWallets')}
               {groups.length > 1 && (
-                <span className="ml-2 text-sm font-normal text-slate-400">{g.chain.chainName}</span>
+                <span className="ml-2 text-sm font-normal text-slate-500">{g.chain.chainName}</span>
               )}
             </h2>
             <div className="space-y-2">
@@ -299,7 +299,7 @@ export default function Dashboard() {
       <div className="flex gap-2">
         <Link
           to="/send"
-          className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
+          className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600"
         >
           <SendHorizontal className="h-4 w-4" /> {t('dash.send')}
         </Link>
@@ -390,7 +390,7 @@ function WalletRow({
           <CopyAddress
             address={p.address}
             display={`${p.address.slice(0, 16)}...${p.address.slice(-6)}`}
-            className="max-w-full text-xs text-slate-400"
+            className="max-w-full text-xs text-slate-500"
           />
           {/* Never present a failed fetch as a real zero balance. */}
           {failed && (
@@ -406,16 +406,16 @@ function WalletRow({
         >
           <span className="text-right">
             <span className="block text-sm font-semibold">{formatAmount(total, chain)}</span>
-            <span className="block text-xs text-slate-400">
+            <span className="block text-xs text-slate-500">
               {price !== null
                 ? formatFiat(fiatValue(total, chain.decimals, price), currency)
                 : chain.displayDenom}
             </span>
           </span>
           {open ? (
-            <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+            <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" />
           ) : (
-            <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+            <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
           )}
         </button>
       </div>
@@ -457,7 +457,7 @@ function WalletRow({
               </ul>
             </div>
           ) : (
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-500">
               {t('dash.notStaked')}{' '}
               <Link to="/staking" className="text-amber-700 hover:underline">
                 {t('dash.stakeToBeehive')}

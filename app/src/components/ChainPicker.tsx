@@ -47,7 +47,7 @@ export default function ChainPicker({
         ))}
       </Select>
       {selected && (
-        <p id={`${id}-detail`} className="mt-1 font-mono text-xs text-slate-400">
+        <p id={`${id}-detail`} className="mt-1 font-mono text-xs text-slate-500">
           {selected.chainId} · {selected.bech32Prefix}1… · {selected.displayDenom} ·{' '}
           {selected.decimals} decimals
         </p>

@@ -228,7 +228,7 @@ export default function History() {
         />
         <button
           disabled={loading}
-          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
         >
           {loading ? t('common.loading') : t('history.load')}
         </button>
@@ -260,7 +260,7 @@ export default function History() {
       )}
 
       {loadedAddress && (
-        <p className="font-mono text-xs text-slate-400">{t('history.showing', { addr: shortAddr(loadedAddress) })}</p>
+        <p className="font-mono text-xs text-slate-500">{t('history.showing', { addr: shortAddr(loadedAddress) })}</p>
       )}
 
       {loading && <p className="text-sm text-slate-500">{t('history.querying')}</p>}
@@ -277,7 +277,7 @@ export default function History() {
                   setPage(0)
                 }}
                 className={`rounded-full px-3 py-1 text-xs ${
-                  filter === f ? 'bg-amber-500 font-medium text-white' : 'bg-slate-100 text-slate-600'
+                  filter === f ? 'bg-amber-500 font-medium text-slate-900' : 'bg-slate-100 text-slate-600'
                 }`}
               >
                 {filterLabel[f]}
@@ -297,7 +297,7 @@ export default function History() {
                       >
                         {dirLabel[r.direction]}
                       </span>
-                      <span className="text-xs text-slate-400">{r.time}</span>
+                      <span className="text-xs text-slate-500">{r.time}</span>
                     </div>
                     <div className="mt-1 text-sm">{r.summary}</div>
                     <a

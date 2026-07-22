@@ -272,7 +272,7 @@ export default function Staking() {
           <CopyAddress
             address={active.address}
             display={`${active.address.slice(0, 18)}...${active.address.slice(-6)}`}
-            className="max-w-full text-xs text-slate-400"
+            className="max-w-full text-xs text-slate-500"
           />
         </div>
         {wallets.length > 1 ? (
@@ -305,7 +305,7 @@ export default function Staking() {
           </div>
           <div className="text-xl font-semibold">
             {data ? formatAmount(staked, chain) : '...'}{' '}
-            <span className="text-xs font-normal text-slate-400">{chain.displayDenom}</span>
+            <span className="text-xs font-normal text-slate-500">{chain.displayDenom}</span>
           </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-3">
@@ -314,7 +314,7 @@ export default function Staking() {
           </div>
           <div className="text-xl font-semibold">
             {data ? formatAmount(data.totalReward, chain) : '...'}{' '}
-            <span className="text-xs font-normal text-slate-400">{chain.displayDenom}</span>
+            <span className="text-xs font-normal text-slate-500">{chain.displayDenom}</span>
           </div>
         </div>
       </div>
@@ -331,7 +331,7 @@ export default function Staking() {
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+          <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
           <input
             name="beehive-validator-search"
             value={query}
@@ -351,7 +351,7 @@ export default function Staking() {
             }`}
           >
             <span className="h-2 w-2 rounded-full bg-green-500" /> {t('staking.active')}
-            <span className="text-xs text-slate-400">{activeCount}</span>
+            <span className="text-xs text-slate-500">{activeCount}</span>
           </button>
           <button
             type="button"
@@ -362,7 +362,7 @@ export default function Staking() {
             }`}
           >
             <span className="h-2 w-2 rounded-full bg-red-500" /> {t('staking.jailedInactive')}
-            <span className="text-xs text-slate-400">{jailedCount}</span>
+            <span className="text-xs text-slate-500">{jailedCount}</span>
           </button>
         </div>
       </div>
@@ -536,7 +536,7 @@ function ValidatorRow({
             onClick={() => setAction(action === 'delegate' ? 'none' : 'delegate')}
             className={`rounded-lg px-2.5 py-1 text-xs font-medium ${
               free
-                ? 'bg-amber-500 text-white hover:bg-amber-600'
+                ? 'bg-amber-500 text-slate-900 hover:bg-amber-600'
                 : 'border border-slate-300 hover:border-amber-500'
             }`}
           >
@@ -687,7 +687,7 @@ function ActionForm({
       />
       <button
         disabled={busy}
-        className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+        className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
       >
         {busy ? t('rewards.signing') : submitLabel}
       </button>

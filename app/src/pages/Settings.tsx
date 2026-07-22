@@ -25,7 +25,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
       onClick={copy}
       className="flex items-center gap-1 text-xs text-amber-700 hover:underline"
     >
-      {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? <Check className="h-3.5 w-3.5 text-green-700" /> : <Copy className="h-3.5 w-3.5" />}
       {copied ? t('send.copied') : label}
     </button>
   )
@@ -137,7 +137,7 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
                   />
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium">{w.name}</div>
-                    <CopyAddress address={w.address} className="max-w-full text-xs text-slate-400" />
+                    <CopyAddress address={w.address} className="max-w-full text-xs text-slate-500" />
                   </div>
                   <button
                     onClick={() => (revealFor === w.address ? closeReveal() : setRevealFor(w.address))}
@@ -173,7 +173,7 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
                           </div>
                         </div>
                         <p className="break-all rounded bg-white p-2 font-mono text-sm">{secret}</p>
-                        <p className="text-xs text-slate-400">{t('settings.autoHide')}</p>
+                        <p className="text-xs text-slate-500">{t('settings.autoHide')}</p>
                         <p className="text-xs text-amber-700">{t('settings.clipboardWarn')}</p>
                       </>
                     ) : (
@@ -188,7 +188,7 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
                         />
                         <button
                           onClick={() => reveal(w.address)}
-                          className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-white hover:bg-amber-600"
+                          className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600"
                         >
                           {t('settings.reveal')}
                         </button>
@@ -205,7 +205,7 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
       <div className="flex gap-2">
         <button
           onClick={onCreate}
-          className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
+          className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600"
         >
           <Plus className="h-4 w-4" /> {t('settings.createNew')}
         </button>
@@ -352,7 +352,7 @@ function CreateWallet({ onDone }: { onDone: () => void }) {
           <button
             onClick={start}
             disabled={!chain}
-            className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+            className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
           >
             {t('settings.generateSeed')}
           </button>
@@ -401,7 +401,7 @@ function CreateWallet({ onDone }: { onDone: () => void }) {
               it change underneath an already-derived wallet. */}
           <p className="text-xs text-slate-500">
             {t('settings.network')}: <span className="font-medium">{chain?.chainName}</span>{' '}
-            <span className="font-mono text-slate-400">({chain?.chainId})</span>
+            <span className="font-mono text-slate-500">({chain?.chainId})</span>
           </p>
           <div>
             <label htmlFor="create-name" className="mb-1 block text-xs font-medium text-slate-600">
@@ -430,7 +430,7 @@ function CreateWallet({ onDone }: { onDone: () => void }) {
           <div className="flex gap-2">
             <button
               disabled={busy || !verified}
-              className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+              className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
             >
               {busy ? t('settings.encrypting') : t('settings.saveWallet')}
             </button>
@@ -516,7 +516,7 @@ function ImportWallet({ onDone }: { onDone: () => void }) {
               setError('')
             }}
             className={`rounded-full px-4 py-1.5 text-sm ${
-              kind === k ? 'bg-amber-500 font-medium text-white' : 'bg-slate-100 text-slate-600'
+              kind === k ? 'bg-amber-500 font-medium text-slate-900' : 'bg-slate-100 text-slate-600'
             }`}
           >
             {label}
@@ -567,7 +567,7 @@ function ImportWallet({ onDone }: { onDone: () => void }) {
       <div className="flex gap-2">
         <button
           disabled={busy}
-          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
         >
           {busy ? t('settings.encrypting') : t('settings.import')}
         </button>

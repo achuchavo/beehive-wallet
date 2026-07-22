@@ -40,8 +40,8 @@ const KIND_META: Record<
   { Icon: typeof ArrowUpRight; color: string; titleKey: string; arrow: string }
 > = {
   sent: { Icon: ArrowUpRight, color: 'text-red-500', titleKey: 'alarms.outgoingFrom', arrow: '→' },
-  received: { Icon: ArrowDownLeft, color: 'text-green-600', titleKey: 'alarms.incomingTo', arrow: '←' },
-  unbond: { Icon: Undo2, color: 'text-amber-600', titleKey: 'alarms.unbondingFrom', arrow: '' },
+  received: { Icon: ArrowDownLeft, color: 'text-green-700', titleKey: 'alarms.incomingTo', arrow: '←' },
+  unbond: { Icon: Undo2, color: 'text-amber-700', titleKey: 'alarms.unbondingFrom', arrow: '' },
 }
 
 function urlB64ToUint8Array(base64: string): Uint8Array {
@@ -132,7 +132,7 @@ function PushSettings() {
         {state === 'off' && (
           <button
             onClick={enable}
-            className="shrink-0 rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-600"
+            className="shrink-0 rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-amber-600"
           >
             {t('alarms.enable')}
           </button>
@@ -147,7 +147,7 @@ function PushSettings() {
         )}
       </div>
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
-      <p className="mt-1 text-xs text-slate-400">{t('alarms.pushIphone')}</p>
+      <p className="mt-1 text-xs text-slate-500">{t('alarms.pushIphone')}</p>
     </div>
   )
 }
@@ -225,13 +225,13 @@ function AuthForm() {
       {registeredEmail && (
         <Modal title={t('alarms.accountCreated')} onClose={goSignIn}>
           <div className="text-center">
-            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-green-600">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-green-700">
               <CircleCheck className="h-6 w-6" />
             </div>
             <p className="text-sm text-slate-600">{t('alarms.accountReady', { email: registeredEmail ?? '' })}</p>
             <button
               onClick={goSignIn}
-              className="mt-5 w-full rounded-lg bg-amber-500 py-2 text-sm font-medium text-white hover:bg-amber-600"
+              className="mt-5 w-full rounded-lg bg-amber-500 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600"
             >
               {t('account.signIn')}
             </button>
@@ -263,7 +263,7 @@ function AuthForm() {
             />
             {/* No address field at sign-up: the server ignores an unproven
                 address. It is linked after sign-in by signing a challenge. */}
-            <p className="text-xs text-slate-400">{t('alarms.linkAddressAfter')}</p>
+            <p className="text-xs text-slate-500">{t('alarms.linkAddressAfter')}</p>
           </>
         )}
         <PasswordInput
@@ -295,7 +295,7 @@ function AuthForm() {
         )}
         <button
           disabled={busy}
-          className="w-full rounded-lg bg-amber-500 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+          className="w-full rounded-lg bg-amber-500 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
         >
           {busy ? t('alarms.working') : mode === 'register' ? t('alarms.createAccount') : t('account.signIn')}
         </button>
@@ -418,7 +418,7 @@ function MainAddressCard() {
               <button
                 onClick={unlink}
                 disabled={busy}
-                className="text-xs text-slate-400 hover:text-red-600"
+                className="text-xs text-slate-500 hover:text-red-600"
               >
                 {t('alarms.unlink')}
               </button>
@@ -464,7 +464,7 @@ function MainAddressCard() {
                 <button
                   onClick={link}
                   disabled={busy || !pick || !password}
-                  className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+                  className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
                 >
                   {busy ? t('alarms.verifying') : t('alarms.verifyAndLink')}
                 </button>
@@ -477,7 +477,7 @@ function MainAddressCard() {
                   </button>
                 )}
               </div>
-              <p className="text-xs text-slate-400">{t('alarms.ownershipNote')}</p>
+              <p className="text-xs text-slate-500">{t('alarms.ownershipNote')}</p>
             </>
           )}
           {error && (
@@ -578,7 +578,7 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="flex items-center gap-2 font-medium">
-            <Eye className="h-4 w-4 text-slate-400" /> {t('alarms.watched')}
+            <Eye className="h-4 w-4 text-slate-500" /> {t('alarms.watched')}
           </h2>
           <button
             type="button"
@@ -623,7 +623,7 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
             </label>
             {wallets.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-xs text-slate-400">{t('alarms.yourWallets')}</span>
+                <span className="text-xs text-slate-500">{t('alarms.yourWallets')}</span>
                 {wallets.map((w) => (
                   <button
                     key={w.address}
@@ -641,7 +641,7 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
             )}
             <button
               disabled={busy}
-              className="w-full rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50 sm:w-auto"
+              className="w-full rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50 sm:w-auto"
             >
               {t('alarms.watch')}
             </button>
@@ -662,12 +662,12 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
                         {chainName(w.chain_key)}
                       </span>
                     </div>
-                    <CopyAddress address={w.address} className="max-w-full text-xs text-slate-400" />
+                    <CopyAddress address={w.address} className="max-w-full text-xs text-slate-500" />
                   </div>
                   <button
                     onClick={() => api.watchedRemove(w.id).then(refresh)}
                     aria-label={t('common.remove')}
-                    className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                    className="shrink-0 rounded-lg p-1 text-slate-500 hover:bg-red-50 hover:text-red-600"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -739,7 +739,7 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
                       <KindIcon className={`h-4 w-4 ${meta.color}`} />
                       {t(meta.titleKey, { label: a.label || shortAddr(a.address) })}
                     </span>
-                    <span className="text-xs text-slate-400">{a.detected_at}</span>
+                    <span className="text-xs text-slate-500">{a.detected_at}</span>
                   </div>
                   <div className="mt-1 text-sm text-slate-600">
                     {a.amount

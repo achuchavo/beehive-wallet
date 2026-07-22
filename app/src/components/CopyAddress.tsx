@@ -35,7 +35,7 @@ export default function CopyAddress({
     >
       <span className="truncate">{display ?? address}</span>
       {copied ? (
-        <Check className="h-3.5 w-3.5 shrink-0 text-green-600" />
+        <Check className="h-3.5 w-3.5 shrink-0 text-green-700" />
       ) : (
         <Copy className="h-3.5 w-3.5 shrink-0" />
       )}

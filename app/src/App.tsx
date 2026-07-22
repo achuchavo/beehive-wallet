@@ -116,7 +116,7 @@ function App() {
       {auth.status === 'in' ? (
         <div className="px-3">
           <div className="flex items-center gap-2 text-sm">
-            <UserCircle className="h-5 w-5 shrink-0 text-slate-400" strokeWidth={1.8} />
+            <UserCircle className="h-5 w-5 shrink-0 text-slate-500" strokeWidth={1.8} />
             <span className="truncate text-slate-700" title={auth.email ?? ''}>
               {auth.email}
             </span>
@@ -159,7 +159,7 @@ function App() {
     <div className="min-h-screen md:flex">
       {/* Desktop sidebar */}
       <nav className="hidden md:flex md:w-56 md:shrink-0 md:flex-col md:border-r md:border-slate-200 md:px-3 md:py-6">
-        <div className="flex items-center gap-2 px-3 pb-4 font-semibold text-amber-600">
+        <div className="flex items-center gap-2 px-3 pb-4 font-semibold text-amber-700">
           <img src={`${import.meta.env.BASE_URL}beehive.ico`} alt="" className="h-6 w-6" />
           Beehive Wallet
         </div>
@@ -190,14 +190,14 @@ function App() {
         aria-hidden={!menuOpen}
       >
         <div className="flex items-center justify-between px-4 py-4">
-          <span className="flex items-center gap-2 font-semibold text-amber-600">
+          <span className="flex items-center gap-2 font-semibold text-amber-700">
             <img src={`${import.meta.env.BASE_URL}beehive.ico`} alt="" className="h-6 w-6" />
             Beehive Wallet
           </span>
           <button
             onClick={() => setMenuOpen(false)}
             aria-label={t('common.close')}
-            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-600"
           >
             <X className="h-5 w-5" />
           </button>

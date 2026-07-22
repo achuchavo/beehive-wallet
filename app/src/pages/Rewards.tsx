@@ -193,7 +193,7 @@ export default function Rewards() {
           <div className="text-2xl font-semibold">
             {rows ? formatAmount(totalRewards, displayChain) : '...'}
           </div>
-          <div className="text-xs text-slate-400">
+          <div className="text-xs text-slate-500">
             {displayChain.displayDenom} · {t('rewards.acrossWallets', { count: wallets.length })}
           </div>
         </div>
@@ -204,7 +204,7 @@ export default function Rewards() {
           <div className="text-2xl font-semibold">
             {rows ? formatAmount(totalCommission, displayChain) : '...'}
           </div>
-          <div className="text-xs text-slate-400">{displayChain.displayDenom} · {t('rewards.validatorWallets')}</div>
+          <div className="text-xs text-slate-500">{displayChain.displayDenom} · {t('rewards.validatorWallets')}</div>
         </div>
       </div>
 
@@ -237,7 +237,7 @@ export default function Rewards() {
 
       {isPositiveBase(avgMonthly) && (
         <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600">
-          <TrendingUp className="h-4 w-4 shrink-0 text-green-600" />
+          <TrendingUp className="h-4 w-4 shrink-0 text-green-700" />
           <span>
             {monthsSpan > 1
               ? t('rewards.averagingOver', {
@@ -276,7 +276,7 @@ export default function Rewards() {
                   href={`${displayChain.explorerTxUrl}${h.hash}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-amber-700"
+                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-amber-700"
                 >
                   {h.time.slice(0, 10)} <ExternalLink className="h-3 w-3" />
                 </a>
@@ -421,7 +421,7 @@ function WalletCard({
               </span>
             )}
           </div>
-          <div className="truncate font-mono text-xs text-slate-400">{earnings.address}</div>
+          <div className="truncate font-mono text-xs text-slate-500">{earnings.address}</div>
           <div className="mt-1 text-xs">
             <span className="text-green-700">
               {formatAmount(earnings.rewards, chain)} {chain.displayDenom} {t('rewards.rewardsWord')}
@@ -445,7 +445,7 @@ function WalletCard({
           {hasSomething && (
             <button
               onClick={() => setAction(action === 'claim' ? 'none' : 'claim')}
-              className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-600"
+              className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-amber-600"
             >
               {t('rewards.claim')}
             </button>
@@ -544,12 +544,12 @@ function ClaimForm({
         />
         <button
           disabled={busy}
-          className="shrink-0 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+          className="shrink-0 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
         >
           {busy ? t('rewards.signing') : submitLabel}
         </button>
       </div>
-      {hint && <p className="text-xs text-slate-400">{hint}</p>}
+      {hint && <p className="text-xs text-slate-500">{hint}</p>}
     </form>
   )
 }

@@ -89,7 +89,7 @@ export default function Modal({
             onClick={onClose}
             disabled={!dismissible}
             aria-label="Close"
-            className="rounded text-slate-400 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-slate-400"
+            className="rounded text-slate-500 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-slate-500"
           >
             <X className="h-5 w-5" />
           </button>

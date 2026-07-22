@@ -65,7 +65,7 @@ export default function TxReview({
         <button
           onClick={onConfirm}
           disabled={busy}
-          className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-amber-500 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+          className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-amber-500 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
         >
           <LockKeyhole className="h-4 w-4" /> {busy ? t('review.broadcasting') : confirmLabel}
         </button>
