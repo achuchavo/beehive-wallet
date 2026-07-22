@@ -38,7 +38,7 @@ export const en: Record<string, string> = {
   'dash.title': 'Dashboard',
   'dash.welcome': 'Welcome to Beehive Wallet',
   'dash.welcomeDesc':
-    'Create a new wallet or import an existing one. It stays in your browser, encrypted with your password - we never see your keys.',
+    'Create a new wallet or import an existing one. It stays on your device, encrypted with your password - we never see your keys.',
   'dash.createWallet': 'Create wallet',
   'dash.importWallet': 'Import wallet',
   'dash.watchAddress': 'Watch an address',
@@ -122,7 +122,7 @@ export const en: Record<string, string> = {
   'send.title': 'Send / receive',
   'send.noWallet': 'No wallet yet',
   'send.noWalletDesc':
-    'Add a wallet to send and receive tokens. Your keys stay encrypted in this browser.',
+    'Add a wallet to send and receive tokens. Your keys stay encrypted on this device.',
   'send.tabSend': 'Send',
   'send.tabReceive': 'Receive',
   'send.copied': 'Copied',
@@ -133,7 +133,7 @@ export const en: Record<string, string> = {
   'send.amount': 'Amount',
   'send.memoOptional': 'Memo (optional)',
   'send.signPassword': 'Wallet password to sign',
-  'send.feeNote': 'The transaction is signed in your browser. Network fee is paid in {denom} (gas price {gas} ≈ {gasMed} {denom} per gas unit).',
+  'send.feeNote': 'The transaction is signed on your device. Network fee is paid in {denom} (gas price {gas} ≈ {gasMed} {denom} per gas unit).',
   'send.speed': 'Transaction speed',
   'send.speedLow': 'Low',
   'send.speedMedium': 'Medium',
@@ -279,7 +279,7 @@ export const en: Record<string, string> = {
   'settings.title': 'Settings',
   'settings.yourWallets': 'Your wallets',
   'settings.walletsDesc':
-    'Wallets live only in this browser, encrypted with your password. The Beehive server never sees your seed phrase or keys.',
+    'Wallets live only on this device, encrypted with your password. The Beehive server never sees your seed phrase or keys.',
   'settings.noWallets': 'No wallets yet.',
   'settings.activeWallet': 'Active wallet',
   'settings.showKey': 'Show key',
@@ -290,13 +290,13 @@ export const en: Record<string, string> = {
   'settings.walletPassword': 'Wallet password',
   'settings.reveal': 'Reveal',
   'settings.removeConfirm':
-    'Remove this wallet from this browser? Make sure you have the seed phrase written down - without it the wallet cannot be restored.',
+    'Remove this wallet from this device? Make sure you have the seed phrase written down - without it the wallet cannot be restored.',
   'settings.createNew': 'Create new wallet',
   'settings.import': 'Import wallet',
   'settings.newPassword': 'Wallet password (10+ characters)',
   'settings.repeatPassword': 'Repeat password',
   'settings.createDesc':
-    'A new 24-word seed phrase will be generated in your browser. You must write it down on paper and keep it safe - it is the only way to recover the wallet.',
+    'A new 24-word seed phrase will be generated on your device. You must write it down on paper and keep it safe - it is the only way to recover the wallet.',
   'settings.generateSeed': 'Generate seed phrase',
   'settings.seedWarning':
     'Write these 24 words down on paper, in order. Never store them digitally or share them. Anyone with these words controls your funds.',
@@ -308,9 +308,9 @@ export const en: Record<string, string> = {
   'settings.seedPhrase': 'Seed phrase',
   'settings.privateKey': 'Private key',
   'settings.importMnemonicDesc':
-    'Enter your 12 or 24 word seed phrase. It is encrypted with your password and stored only in this browser.',
+    'Enter your 12 or 24 word seed phrase. It is encrypted with your password and stored only on this device.',
   'settings.importPrivkeyDesc':
-    'Enter your private key as 64 hex characters (with or without 0x). It is encrypted with your password and stored only in this browser.',
+    'Enter your private key as 64 hex characters (with or without 0x). It is encrypted with your password and stored only on this device.',
   'settings.mnemonicPlaceholder': 'word1 word2 word3 ...',
   'settings.privkeyPlaceholder': '0x... or plain hex',
   'settings.errFailed': 'Failed',
@@ -318,7 +318,7 @@ export const en: Record<string, string> = {
   'settings.errInvalidKey': 'Invalid private key',
   'settings.errInvalidSeed': 'Invalid seed phrase',
   'settings.seedBackupNote':
-    'If you lose this phrase you lose access - your wallet password does NOT replace it, and Beehive cannot recover it. The encrypted copy in this browser is not a backup.',
+    'If you lose this phrase you lose access - your wallet password does NOT replace it, and Beehive cannot recover it. The encrypted copy on this device is not a backup.',
   'settings.verifyPrompt': 'Confirm your backup - type these words from your written copy:',
   'settings.wordN': 'Word #{n}',
   'settings.verifyOk': 'Seed phrase confirmed.',

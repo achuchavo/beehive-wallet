@@ -52,7 +52,7 @@ const DOCS: Record<Lang, Content> = {
     services: [
       {
         title: 'Non-custodial wallet',
-        body: 'Create or import wallets that live only in your browser. Send and receive MED and other Cosmos assets.',
+        body: 'Create or import wallets that live only on your device. Send and receive MED and other Cosmos assets.',
       },
       {
         title: 'Staking',
@@ -75,11 +75,11 @@ const DOCS: Record<Lang, Content> = {
     tutorials: [
       {
         q: 'Create a new wallet',
-        a: 'Go to Settings → Create new wallet. A 24-word seed phrase is generated in your browser. Write it on paper, confirm you saved it, set a password, and save. The password encrypts the wallet on this device.',
+        a: 'Go to Settings → Create new wallet. A 24-word seed phrase is generated on your device. Write it on paper, confirm you saved it, set a password, and save. The password encrypts the wallet on this device.',
       },
       {
         q: 'Import an existing wallet',
-        a: 'Settings → Import wallet. Paste a 12 or 24-word seed phrase or a private key, name it, and set a password. It is encrypted and stored only in this browser.',
+        a: 'Settings → Import wallet. Paste a 12 or 24-word seed phrase or a private key, name it, and set a password. It is encrypted and stored only on this device.',
       },
       {
         q: 'Send tokens',
@@ -100,7 +100,7 @@ const DOCS: Record<Lang, Content> = {
     ],
     securityTitle: 'Security & risks',
     securityLead:
-      'Beehive is non-custodial. Your seed phrase and private keys are encrypted with your password and never leave your browser — we cannot see them, move your funds, or recover them for you.',
+      'Beehive is non-custodial. Your seed phrase and private keys are encrypted with your password and never leave your device — we cannot see them, move your funds, or recover them for you.',
     securityPoints: [
       {
         title: 'Your seed phrase is everything',
@@ -125,12 +125,12 @@ const DOCS: Record<Lang, Content> = {
     ],
     dataTitle: 'Data & privacy',
     dataIntro:
-      'We keep two things completely separate: your keys, which stay in your browser, and your alarm account, which lives on our server and only ever holds public data.',
+      'We keep two things completely separate: your keys, which stay on your device, and your alarm account, which lives on our server and only ever holds public data.',
     dataNeverTitle: 'What we never see or store',
     dataNever: [
       'Your seed phrase or private keys',
       'Your wallet password',
-      'Your signing — transactions are signed locally in your browser',
+      'Your signing — transactions are signed locally on your device',
     ],
     dataCollectTitle: 'What our server stores (only if you create an alarm account)',
     dataCollect: [
@@ -161,7 +161,7 @@ const DOCS: Record<Lang, Content> = {
     services: [
       {
         title: '비수탁 지갑',
-        body: '브라우저에만 저장되는 지갑을 만들거나 가져오세요. MED 및 기타 Cosmos 자산을 보내고 받을 수 있습니다.',
+        body: '기기에만 저장되는 지갑을 만들거나 가져오세요. MED 및 기타 Cosmos 자산을 보내고 받을 수 있습니다.',
       },
       {
         title: '스테이킹',
@@ -184,11 +184,11 @@ const DOCS: Record<Lang, Content> = {
     tutorials: [
       {
         q: '새 지갑 만들기',
-        a: '설정 → 새 지갑 생성. 브라우저에서 24단어 시드 문구가 생성됩니다. 종이에 적고 저장을 확인한 뒤 비밀번호를 설정하고 저장하세요. 비밀번호는 이 기기에서 지갑을 암호화합니다.',
+        a: '설정 → 새 지갑 생성. 기기에서 24단어 시드 문구가 생성됩니다. 종이에 적고 저장을 확인한 뒤 비밀번호를 설정하고 저장하세요. 비밀번호는 이 기기에서 지갑을 암호화합니다.',
       },
       {
         q: '기존 지갑 가져오기',
-        a: '설정 → 지갑 가져오기. 12 또는 24단어 시드 문구나 개인 키를 붙여넣고 이름과 비밀번호를 설정하세요. 이 브라우저에만 암호화되어 저장됩니다.',
+        a: '설정 → 지갑 가져오기. 12 또는 24단어 시드 문구나 개인 키를 붙여넣고 이름과 비밀번호를 설정하세요. 이 기기에만 암호화되어 저장됩니다.',
       },
       {
         q: '토큰 보내기',
@@ -209,7 +209,7 @@ const DOCS: Record<Lang, Content> = {
     ],
     securityTitle: '보안 및 위험',
     securityLead:
-      'Beehive는 비수탁형입니다. 시드 문구와 개인 키는 비밀번호로 암호화되어 브라우저를 절대 벗어나지 않습니다 — 저희는 이를 볼 수도, 자금을 옮길 수도, 복구해 드릴 수도 없습니다.',
+      'Beehive는 비수탁형입니다. 시드 문구와 개인 키는 비밀번호로 암호화되어 기기를 절대 벗어나지 않습니다 — 저희는 이를 볼 수도, 자금을 옮길 수도, 복구해 드릴 수도 없습니다.',
     securityPoints: [
       {
         title: '시드 문구가 전부입니다',
@@ -234,12 +234,12 @@ const DOCS: Record<Lang, Content> = {
     ],
     dataTitle: '데이터 및 개인정보',
     dataIntro:
-      '저희는 두 가지를 완전히 분리합니다: 브라우저에 남는 키와, 서버에 저장되며 오직 공개 데이터만 담는 알림 계정.',
+      '저희는 두 가지를 완전히 분리합니다: 기기에 남는 키와, 서버에 저장되며 오직 공개 데이터만 담는 알림 계정.',
     dataNeverTitle: '저희가 절대 보거나 저장하지 않는 것',
     dataNever: [
       '시드 문구 또는 개인 키',
       '지갑 비밀번호',
-      '서명 — 거래는 브라우저에서 로컬로 서명됩니다',
+      '서명 — 거래는 기기에서 로컬로 서명됩니다',
     ],
     dataCollectTitle: '알림 계정을 만들 때 서버에 저장되는 것',
     dataCollect: [

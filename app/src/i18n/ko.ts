@@ -38,7 +38,7 @@ export const ko: Record<string, string> = {
   'dash.title': '대시보드',
   'dash.welcome': 'Beehive 지갑에 오신 것을 환영합니다',
   'dash.welcomeDesc':
-    '새 지갑을 만들거나 기존 지갑을 가져오세요. 지갑은 비밀번호로 암호화되어 브라우저에만 저장되며, 키는 저희가 볼 수 없습니다.',
+    '새 지갑을 만들거나 기존 지갑을 가져오세요. 지갑은 비밀번호로 암호화되어 기기에만 저장되며, 키는 저희가 볼 수 없습니다.',
   'dash.createWallet': '지갑 생성',
   'dash.importWallet': '지갑 가져오기',
   'dash.watchAddress': '주소 감시',
@@ -121,7 +121,7 @@ export const ko: Record<string, string> = {
   // Send / receive
   'send.title': '보내기 / 받기',
   'send.noWallet': '지갑이 없습니다',
-  'send.noWalletDesc': '토큰을 보내고 받으려면 지갑을 추가하세요. 키는 이 브라우저에 암호화되어 저장됩니다.',
+  'send.noWalletDesc': '토큰을 보내고 받으려면 지갑을 추가하세요. 키는 이 기기에 암호화되어 저장됩니다.',
   'send.tabSend': '보내기',
   'send.tabReceive': '받기',
   'send.copied': '복사됨',
@@ -132,7 +132,7 @@ export const ko: Record<string, string> = {
   'send.amount': '금액',
   'send.memoOptional': '메모 (선택)',
   'send.signPassword': '서명할 지갑 비밀번호',
-  'send.feeNote': '거래는 브라우저에서 서명됩니다. 네트워크 수수료는 {denom}으로 지불됩니다 (가스 가격 {gas} ≈ 가스 단위당 {gasMed} {denom}).',
+  'send.feeNote': '거래는 기기에서 서명됩니다. 네트워크 수수료는 {denom}으로 지불됩니다 (가스 가격 {gas} ≈ 가스 단위당 {gasMed} {denom}).',
   'send.speed': '전송 속도',
   'send.speedLow': '낮음',
   'send.speedMedium': '보통',
@@ -275,7 +275,7 @@ export const ko: Record<string, string> = {
   'settings.title': '설정',
   'settings.yourWallets': '내 지갑',
   'settings.walletsDesc':
-    '지갑은 비밀번호로 암호화되어 이 브라우저에만 저장됩니다. Beehive 서버는 시드 문구나 키를 절대 볼 수 없습니다.',
+    '지갑은 비밀번호로 암호화되어 이 기기에만 저장됩니다. Beehive 서버는 시드 문구나 키를 절대 볼 수 없습니다.',
   'settings.noWallets': '아직 지갑이 없습니다.',
   'settings.activeWallet': '활성 지갑',
   'settings.showKey': '키 보기',
@@ -286,13 +286,13 @@ export const ko: Record<string, string> = {
   'settings.walletPassword': '지갑 비밀번호',
   'settings.reveal': '표시',
   'settings.removeConfirm':
-    '이 지갑을 브라우저에서 삭제하시겠습니까? 시드 문구를 적어 두었는지 확인하세요. 시드 문구가 없으면 지갑을 복구할 수 없습니다.',
+    '이 지갑을 이 기기에서 삭제하시겠습니까? 시드 문구를 적어 두었는지 확인하세요. 시드 문구가 없으면 지갑을 복구할 수 없습니다.',
   'settings.createNew': '새 지갑 생성',
   'settings.import': '지갑 가져오기',
   'settings.newPassword': '지갑 비밀번호 (10자 이상)',
   'settings.repeatPassword': '비밀번호 재입력',
   'settings.createDesc':
-    '새 24단어 시드 문구가 브라우저에서 생성됩니다. 반드시 종이에 적어 안전하게 보관하세요. 이것이 지갑을 복구할 수 있는 유일한 방법입니다.',
+    '새 24단어 시드 문구가 기기에서 생성됩니다. 반드시 종이에 적어 안전하게 보관하세요. 이것이 지갑을 복구할 수 있는 유일한 방법입니다.',
   'settings.generateSeed': '시드 문구 생성',
   'settings.seedWarning':
     '이 24개 단어를 순서대로 종이에 적으세요. 절대 디지털로 저장하거나 공유하지 마세요. 이 단어를 아는 사람은 누구나 자금을 제어할 수 있습니다.',
@@ -304,9 +304,9 @@ export const ko: Record<string, string> = {
   'settings.seedPhrase': '시드 문구',
   'settings.privateKey': '개인 키',
   'settings.importMnemonicDesc':
-    '12 또는 24단어 시드 문구를 입력하세요. 비밀번호로 암호화되어 이 브라우저에만 저장됩니다.',
+    '12 또는 24단어 시드 문구를 입력하세요. 비밀번호로 암호화되어 이 기기에만 저장됩니다.',
   'settings.importPrivkeyDesc':
-    '개인 키를 64자리 16진수(0x 포함 또는 미포함)로 입력하세요. 비밀번호로 암호화되어 이 브라우저에만 저장됩니다.',
+    '개인 키를 64자리 16진수(0x 포함 또는 미포함)로 입력하세요. 비밀번호로 암호화되어 이 기기에만 저장됩니다.',
   'settings.mnemonicPlaceholder': 'word1 word2 word3 ...',
   'settings.privkeyPlaceholder': '0x... 또는 일반 16진수',
   'settings.errFailed': '실패',
@@ -314,7 +314,7 @@ export const ko: Record<string, string> = {
   'settings.errInvalidKey': '잘못된 개인 키',
   'settings.errInvalidSeed': '잘못된 시드 문구',
   'settings.seedBackupNote':
-    '이 문구를 잃어버리면 접근 권한을 잃습니다 - 지갑 비밀번호로 대체할 수 없으며, Beehive는 복구할 수 없습니다. 브라우저의 암호화된 사본은 백업이 아닙니다.',
+    '이 문구를 잃어버리면 접근 권한을 잃습니다 - 지갑 비밀번호로 대체할 수 없으며, Beehive는 복구할 수 없습니다. 기기의 암호화된 사본은 백업이 아닙니다.',
   'settings.verifyPrompt': '백업을 확인하세요 - 적어 둔 문구에서 다음 단어를 입력하세요:',
   'settings.wordN': '{n}번째 단어',
   'settings.verifyOk': '시드 문구가 확인되었습니다.',
