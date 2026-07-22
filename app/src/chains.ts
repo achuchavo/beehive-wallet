@@ -140,18 +140,66 @@ export function toBaseUnits(display: string, chain: ChainInfo): string {
   return amountToBaseUnits(display, chain.decimals)
 }
 
-// Rough fee to hold back from a "Max" spend so the tx can still pay gas.
-// Fees are auto-estimated at broadcast; this is a safe over-estimate (~1.5x),
-// computed with integer math so no float creeps into a spend total.
-export function feeReserve(chain: ChainInfo, gasLimit: number): string {
-  const gasNum = BigInt(parseInt(chain.gasPrice, 10) || 0)
-  return ((gasNum * BigInt(Math.floor(gasLimit)) * 3n) / 2n).toString()
+// An exact decimal held as integer mantissa + power-of-ten scale, so that
+// value === mantissa / 10^scale. Gas prices are decimal on almost every Cosmos
+// chain ("0.025uatom"), and every one of them feeds a spendable amount, so none
+// of the maths below is allowed to go through a float.
+interface ScaledDecimal {
+  mantissa: bigint
+  scale: number
 }
 
-// Split a gas price like "5umed" into its numeric amount and denom.
-export function parseGasPrice(chain: ChainInfo): { amount: number; denom: string } {
-  const m = chain.gasPrice.match(/^([0-9.]+)(.*)$/)
-  return { amount: m ? parseFloat(m[1]) : 0, denom: m ? m[2] : chain.denom }
+const ONE: ScaledDecimal = { mantissa: 1n, scale: 0 }
+
+/** Parse a plain decimal string ("5", "0.025") exactly. Null if malformed. */
+function parseDecimal(text: string): ScaledDecimal | null {
+  const m = text.trim().match(/^(\d+)(?:\.(\d+))?$/)
+  if (!m) return null
+  const frac = m[2] ?? ''
+  return { mantissa: BigInt(m[1] + frac), scale: frac.length }
+}
+
+/** Exact product: mantissas multiply, scales add. */
+function multiplyScaled(a: ScaledDecimal, b: ScaledDecimal): ScaledDecimal {
+  return { mantissa: a.mantissa * b.mantissa, scale: a.scale + b.scale }
+}
+
+/** Render as a compact decimal string - fromBaseUnits is already exact. */
+function renderScaled({ mantissa, scale }: ScaledDecimal): string {
+  return amountFromBaseUnits(mantissa.toString(), scale)
+}
+
+/**
+ * Split a gas price like "5umed" or "0.025uatom" into an exact amount and denom.
+ * The denom pattern matches the server-side validation in admin_chain_save.php,
+ * so anything an admin can save here parses identically on both sides.
+ */
+export function parseGasPrice(chain: ChainInfo): { amount: ScaledDecimal; denom: string } {
+  const m = chain.gasPrice.trim().match(/^(\d+(?:\.\d+)?)([a-zA-Z][a-zA-Z0-9/:._-]*)$/)
+  const amount = m ? parseDecimal(m[1]) : null
+  return { amount: amount ?? { mantissa: 0n, scale: 0 }, denom: m ? m[2] : chain.denom }
+}
+
+/**
+ * Fee to hold back from a "Max" spend so the tx can still pay gas: the chain's
+ * gas price x gas limit x 1.5, since fees are auto-estimated at broadcast and a
+ * reserve that is even one base unit short fails the whole transaction.
+ *
+ * Exact, and rounded UP. The previous implementation read the gas price with
+ * parseInt, which truncated "0.025uatom" to 0 and so reserved nothing at all on
+ * any chain with a fractional minimum gas price - i.e. every Cosmos chain except
+ * Medibloc, whose integer "5umed" is what kept this hidden.
+ */
+export function feeReserve(chain: ChainInfo, gasLimit: number): string {
+  const { amount } = parseGasPrice(chain)
+  if (amount.mantissa <= 0n || !Number.isFinite(gasLimit) || gasLimit <= 0) return '0'
+
+  const gas = BigInt(Math.floor(gasLimit))
+  const numerator = amount.mantissa * gas * 3n
+  const denominator = 2n * 10n ** BigInt(amount.scale)
+  // Ceiling division: under-reserving is a failed broadcast, over-reserving by
+  // one base unit is invisible.
+  return ((numerator + denominator - 1n) / denominator).toString()
 }
 
 // Scale the chain's minimum gas price by a speed multiplier, returning a
@@ -159,8 +207,7 @@ export function parseGasPrice(chain: ChainInfo): { amount: number; denom: string
 // higher gas price is what gets a transaction picked up faster by validators.
 export function scaledGasPrice(chain: ChainInfo, multiplier: number): string {
   const { amount, denom } = parseGasPrice(chain)
-  const scaled = Math.round(amount * multiplier * 1e6) / 1e6
-  return `${scaled}${denom}`
+  return `${renderScaled(multiplyScaled(amount, scaleMultiplier(multiplier)))}${denom}`
 }
 
 // The same scaled gas price expressed in the display denom (MED), as a compact
@@ -168,6 +215,15 @@ export function scaledGasPrice(chain: ChainInfo, multiplier: number): string {
 // with exact Decimal math by CosmJS.
 export function gasPriceInDisplay(chain: ChainInfo, multiplier: number): string {
   const { amount } = parseGasPrice(chain)
-  const med = (amount * multiplier) / Math.pow(10, chain.decimals)
-  return med.toFixed(chain.decimals + 2).replace(/\.?0+$/, '')
+  const scaled = multiplyScaled(amount, scaleMultiplier(multiplier))
+  // Dividing by 10^decimals is just a scale shift, so this stays exact.
+  return renderScaled({ mantissa: scaled.mantissa, scale: scaled.scale + chain.decimals })
+}
+
+// Speed multipliers are UI constants (1, 1.5, 2). Anything unparseable - a
+// negative, NaN or Infinity - falls back to the chain minimum rather than
+// silently producing a nonsense price.
+function scaleMultiplier(multiplier: number): ScaledDecimal {
+  if (!Number.isFinite(multiplier) || multiplier <= 0) return ONE
+  return parseDecimal(String(multiplier)) ?? ONE
 }
