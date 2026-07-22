@@ -15,21 +15,27 @@
     <title>Beehive Wallet</title>
     <meta
       name="description"
-      content="Non-custodial Cosmos wallet with outgoing-transaction alarms. Your keys never leave your browser."
+      content="Non-custodial Cosmos wallet with outgoing-transaction alarms. Your keys never leave your device."
     />
-    <link rel="canonical" href="https://wallet.achumuamah.com/" />
+    <link rel="canonical" href="%VITE_SITE_URL%/" />
 
-    <!-- Open Graph / social sharing. Absolute URLs (crawlers ignore relative
-         ones), pinned to the canonical subdomain that the path build redirects to. -->
+    <!-- Open Graph / social sharing.
+         The host comes from VITE_SITE_URL (see app/.env) rather than being
+         hardcoded, so moving to the official domain is one value + a rebuild.
+         It cannot be derived at runtime: social crawlers fetch the raw HTML and
+         do not execute JavaScript, so these must be correct as served.
+         Absolute URLs are required - crawlers ignore relative ones.
+         Copy is deliberately platform-neutral ("device", no domain, no "web
+         app") so the same card holds up on the App Store / Google Play. -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Beehive Wallet" />
     <meta property="og:title" content="Beehive Wallet" />
     <meta
       property="og:description"
-      content="Non-custodial Cosmos wallet with outgoing-transaction alarms. Your keys never leave your browser."
+      content="Non-custodial Cosmos wallet with outgoing-transaction alarms. Your keys never leave your device."
     />
-    <meta property="og:url" content="https://wallet.achumuamah.com/" />
-    <meta property="og:image" content="https://wallet.achumuamah.com/og-image.png" />
+    <meta property="og:url" content="%VITE_SITE_URL%/" />
+    <meta property="og:image" content="%VITE_SITE_URL%/og-image.png" />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
@@ -42,9 +48,9 @@
     <meta name="twitter:title" content="Beehive Wallet" />
     <meta
       name="twitter:description"
-      content="Non-custodial Cosmos wallet with outgoing-transaction alarms. Your keys never leave your browser."
+      content="Non-custodial Cosmos wallet with outgoing-transaction alarms. Your keys never leave your device."
     />
-    <meta name="twitter:image" content="https://wallet.achumuamah.com/og-image.png" />
+    <meta name="twitter:image" content="%VITE_SITE_URL%/og-image.png" />
     <meta
       name="twitter:image:alt"
       content="Beehive Wallet — non-custodial Cosmos wallet with transaction alarms"

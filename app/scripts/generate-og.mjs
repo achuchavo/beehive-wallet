@@ -52,18 +52,19 @@ const svg = `<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http:/
     <path fill="#ffffff" d="${MARK}"/>
   </svg>
 
-  <!-- copy -->
-  <text x="368" y="252" font-family="${font}" font-size="88" font-weight="700" fill="#ffffff">Beehive Wallet</text>
-  <text x="370" y="322" font-family="${font}" font-size="37" fill="#ffffff" fill-opacity="0.92">Non-custodial Cosmos wallet with</text>
-  <text x="370" y="368" font-family="${font}" font-size="37" fill="#ffffff" fill-opacity="0.92">outgoing-transaction alarms</text>
+  <!-- Copy. Deliberately carries no domain and no platform wording: this card
+       has to stay correct across the dev host, the eventual official domain,
+       and the iOS/Android store listings, so it names no URL and says "device"
+       rather than "browser". -->
+  <text x="368" y="272" font-family="${font}" font-size="88" font-weight="700" fill="#ffffff">Beehive Wallet</text>
+  <text x="370" y="342" font-family="${font}" font-size="37" fill="#ffffff" fill-opacity="0.92">Non-custodial Cosmos wallet with</text>
+  <text x="370" y="388" font-family="${font}" font-size="37" fill="#ffffff" fill-opacity="0.92">outgoing-transaction alarms</text>
 
-  <g transform="translate(370,406)">
-    <rect width="512" height="58" rx="29" fill="#ffffff" fill-opacity="0.15"/>
+  <g transform="translate(370,428)">
+    <rect width="500" height="58" rx="29" fill="#ffffff" fill-opacity="0.15"/>
     <circle cx="35" cy="29" r="7" fill="#facc15"/>
-    <text x="60" y="38" font-family="${font}" font-size="27" font-weight="600" fill="#ffffff">Your keys never leave your browser</text>
+    <text x="60" y="38" font-family="${font}" font-size="27" font-weight="600" fill="#ffffff">Your keys never leave your device</text>
   </g>
-
-  <text x="370" y="520" font-family="${font}" font-size="29" font-weight="600" fill="#ffffff" fill-opacity="0.78">wallet.achumuamah.com</text>
 </svg>`
 
 await sharp(Buffer.from(svg)).png().toFile(out)

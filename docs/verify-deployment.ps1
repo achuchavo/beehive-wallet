@@ -72,7 +72,12 @@ try {
     Warn "HTTP check inconclusive: $($_.Exception.Message)"
 }
 
-Write-Host "`n=== Required PHP extensions ===" -ForegroundColor Cyan
+Write-Host "`n=== Required PHP extensions (CLI SAPI) ===" -ForegroundColor Cyan
+# CAUTION: this inspects the CLI SAPI. Apache (mod_php) loads php.ini at ITS
+# start, so the two can disagree - ext/curl is listed by the CLI here but fails
+# to load in the running Apache ("Unable to load dynamic library 'php_curl.dll'"
+# in logs\error.log), which is why api/common.php uses the HTTPS stream wrapper
+# rather than curl_*(). Grep the Apache error log for the authoritative answer.
 if (Test-Path $PhpExe) {
     $out = & $PhpExe -m 2>&1 | Out-String
     # The startup warning itself is a finding (audit #17).
@@ -81,8 +86,20 @@ if (Test-Path $PhpExe) {
         Bad "PHP emits a startup warning loading '$lib' - remove/disable it in php.ini"
     } else { Ok "no PHP startup extension warnings" }
 
-    foreach ($ext in @('pdo_mysql', 'openssl', 'json', 'mbstring', 'curl')) {
+    # Extensions the app genuinely depends on. curl is deliberately NOT required.
+    foreach ($ext in @('pdo_mysql', 'openssl', 'json', 'mbstring')) {
         if ($out -match "(?im)^\s*$ext\s*$") { Ok "ext $ext" } else { Bad "ext $ext MISSING" }
+    }
+
+    # Report what Apache actually managed to load, which is what matters.
+    $apacheLog = "D:\WebServer\Apache24\logs\error.log"
+    if (Test-Path $apacheLog) {
+        $recent = Get-Content $apacheLog -Tail 200 | Select-String 'Unable to load dynamic library'
+        if ($recent) {
+            $libs = ($recent | ForEach-Object { ([regex]::Match($_, "library '([^']+)'")).Groups[1].Value }) |
+                Sort-Object -Unique
+            Warn ("Apache SAPI failed to load: " + ($libs -join ', ') + " (restart Apache after php.ini changes)")
+        } else { Ok "Apache SAPI loaded all configured extensions" }
     }
     # Rate-limit backend: APCu preferred, DB fallback otherwise (see audit #4).
     if ($out -match '(?im)^\s*apcu\s*$') { Ok "ext apcu (in-memory rate limiting)" }
