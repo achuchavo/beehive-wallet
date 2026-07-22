@@ -16,6 +16,7 @@ import {
 import { useT } from '../i18n/I18nContext'
 import type { Lang } from '../i18n/i18n'
 import Collapsible from '../components/Collapsible'
+import Tabs, { TabPanel } from '../components/Tabs'
 
 interface Point {
   title: string
@@ -299,23 +300,15 @@ export default function Docs() {
       </div>
 
       {/* Section tabs - keeps each topic on its own screen instead of one scroll */}
-      <div className="flex flex-wrap gap-1 border-b border-slate-200">
-        {tabs.map((tb) => (
-          <button
-            key={tb.id}
-            onClick={() => setTab(tb.id)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm ${
-              tab === tb.id
-                ? 'border-amber-500 font-medium text-amber-700'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            {tb.label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        items={tabs.map((tb) => ({ id: tb.id, label: tb.label }))}
+        activeId={tab}
+        onChange={(id) => setTab(id as Tab)}
+        idPrefix="docs"
+        label={t('nav.docs')}
+      />
 
-      {tab === 'start' && (
+      <TabPanel id="start" activeId={tab} idPrefix="docs">
         <div className="space-y-2">
           {d.tutorials.map((tut, i) => (
             <Collapsible key={tut.q} title={tut.q}>
@@ -333,9 +326,9 @@ export default function Docs() {
             </Collapsible>
           ))}
         </div>
-      )}
+      </TabPanel>
 
-      {tab === 'services' && (
+      <TabPanel id="services" activeId={tab} idPrefix="docs">
         <div className="grid gap-2 sm:grid-cols-2">
           {d.services.map((s, i) => {
             const Icon = SERVICE_ICONS[i] ?? Wallet
@@ -349,9 +342,9 @@ export default function Docs() {
             )
           })}
         </div>
-      )}
+      </TabPanel>
 
-      {tab === 'security' && (
+      <TabPanel id="security" activeId={tab} idPrefix="docs">
         <div className="space-y-3">
           <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
             <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
@@ -368,9 +361,9 @@ export default function Docs() {
             ))}
           </ul>
         </div>
-      )}
+      </TabPanel>
 
-      {tab === 'data' && (
+      <TabPanel id="data" activeId={tab} idPrefix="docs">
         <div className="space-y-3">
           <p className="text-sm text-slate-500">{d.dataIntro}</p>
           <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -400,7 +393,7 @@ export default function Docs() {
           </div>
           <p className="text-xs text-slate-400">{d.disclaimer}</p>
         </div>
-      )}
+      </TabPanel>
     </div>
   )
 }

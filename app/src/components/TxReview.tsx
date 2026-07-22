@@ -28,7 +28,20 @@ export default function TxReview({
 }) {
   const { t } = useT()
   return (
-    <Modal title={t('review.title')} onClose={busy ? () => {} : onClose}>
+    // While broadcasting, the dialog is genuinely non-dismissible (Escape,
+    // backdrop and X are all disabled and visibly dimmed) rather than offering
+    // controls that silently do nothing mid-broadcast.
+    <Modal title={t('review.title')} onClose={onClose} dismissible={!busy}>
+      {busy && (
+        <div
+          role="status"
+          aria-live="assertive"
+          className="mb-3 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900"
+        >
+          <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
+          {t('review.inProgress')}
+        </div>
+      )}
       <dl className="space-y-2 text-sm">
         {rows.map((r) => (
           <div key={r.label} className="flex items-start justify-between gap-3">

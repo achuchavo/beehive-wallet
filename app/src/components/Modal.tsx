@@ -9,11 +9,19 @@ export default function Modal({
   onClose,
   children,
   wide = false,
+  dismissible = true,
 }: {
   title: string
   onClose: () => void
   children: React.ReactNode
   wide?: boolean
+  /**
+   * When false the dialog cannot be dismissed at all - Escape, the backdrop and
+   * the X are inert AND the X is visibly disabled. Used while an irreversible
+   * action (a broadcast) is in flight, so the UI never offers an exit that
+   * silently does nothing.
+   */
+  dismissible?: boolean
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
 
@@ -28,7 +36,8 @@ export default function Modal({
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose()
+        // Escape must not abandon an in-flight irreversible action.
+        if (dismissible) onClose()
         return
       }
       if (e.key === 'Tab') {
@@ -58,12 +67,12 @@ export default function Modal({
       // Restore focus to whatever opened the dialog.
       previouslyFocused?.focus?.()
     }
-  }, [onClose])
+  }, [onClose, dismissible])
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 py-10"
-      onClick={onClose}
+      onClick={dismissible ? onClose : undefined}
     >
       <div
         ref={panelRef}
@@ -78,8 +87,9 @@ export default function Modal({
           <h2 className="font-medium">{title}</h2>
           <button
             onClick={onClose}
+            disabled={!dismissible}
             aria-label="Close"
-            className="rounded text-slate-400 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500"
+            className="rounded text-slate-400 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-slate-400"
           >
             <X className="h-5 w-5" />
           </button>
