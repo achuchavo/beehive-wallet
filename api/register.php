@@ -6,7 +6,13 @@ require_same_origin();
 $body = read_body();
 $email = strtolower(trim($body['email'] ?? ''));
 $password = (string) ($body['password'] ?? '');
-$mainAddress = trim($body['main_address'] ?? '');
+
+// A wallet address is NOT accepted at registration (audit #19). Proving control
+// of an address requires signing a challenge bound to an account, and there is
+// no authenticated account yet at this point. Any main_address in the request
+// is ignored; the user links it after signing in, via address_challenge.php +
+// account_set_address.php, which verifies an ADR-036 signature.
+$mainAddress = '';
 
 // Bound input sizes: email fits the column; password has a sane ceiling so a
 // megabyte string can't be forced through Argon2id (a hashing-cost DoS).

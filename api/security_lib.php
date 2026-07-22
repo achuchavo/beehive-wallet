@@ -146,6 +146,180 @@ function is_valcons_address(string $addr, string $prefix): bool
     return bech32_address_ok($addr, $prefix . 'valcons', [20, 32]);
 }
 
+/** Encode raw bytes as a bech32 address with the given HRP. */
+function bech32_encode(string $hrp, array $bytes): string
+{
+    $data = bech32_convert_bits($bytes, 8, 5, true);
+    if ($data === null) {
+        return '';
+    }
+    $chk = bech32_polymod(array_merge(bech32_hrp_expand($hrp), $data, [0, 0, 0, 0, 0, 0])) ^ 1;
+    for ($i = 0; $i < 6; $i++) {
+        $data[] = ($chk >> (5 * (5 - $i))) & 31;
+    }
+    $out = $hrp . '1';
+    foreach ($data as $d) {
+        $out .= BECH32_CHARSET[$d];
+    }
+    return $out;
+}
+
+// --- secp256k1 / ADR-036 address-ownership proof (audit #19) ----------------
+// Verifies that whoever asks to link an address actually holds its private key.
+// No GMP on this host, so BCMath is used for the (cheap) on-curve check; the
+// client submits the UNCOMPRESSED public key, which lets us derive the address
+// by compressing it rather than computing a modular square root.
+
+const SECP256K1_P =
+    '115792089237316195423570985008687907853269984665640564039457584007908834671663';
+
+/** Big-endian hex -> decimal string, for BCMath (which has no hex input). */
+function bc_hex2dec(string $hex): string
+{
+    $dec = '0';
+    $len = strlen($hex);
+    for ($i = 0; $i < $len; $i++) {
+        $dec = bcadd(bcmul($dec, '16'), (string) hexdec($hex[$i]));
+    }
+    return $dec;
+}
+
+/**
+ * Is the 65-byte uncompressed point actually on secp256k1 (y^2 == x^3 + 7)?
+ * Rejects garbage before it ever reaches OpenSSL.
+ */
+function secp256k1_point_on_curve(string $pub65): bool
+{
+    if (strlen($pub65) !== 65 || $pub65[0] !== "\x04") {
+        return false;
+    }
+    $p = SECP256K1_P;
+    $x = bc_hex2dec(bin2hex(substr($pub65, 1, 32)));
+    $y = bc_hex2dec(bin2hex(substr($pub65, 33, 32)));
+    if (bccomp($x, $p) >= 0 || bccomp($y, $p) >= 0) {
+        return false;
+    }
+    $lhs = bcmod(bcmul($y, $y), $p);
+    $x2 = bcmod(bcmul($x, $x), $p);
+    $rhs = bcmod(bcadd(bcmod(bcmul($x2, $x), $p), '7'), $p);
+    return bccomp($lhs, $rhs) === 0;
+}
+
+/** Uncompressed (65B) -> compressed (33B) SEC1 public key. */
+function secp256k1_compress(string $pub65): string
+{
+    $prefix = (ord($pub65[64]) & 1) === 0 ? "\x02" : "\x03";
+    return $prefix . substr($pub65, 1, 32);
+}
+
+/** Cosmos address for a compressed pubkey: bech32(ripemd160(sha256(pk))). */
+function cosmos_address_from_pubkey(string $compressed33, string $prefix): string
+{
+    $hash = hash('ripemd160', hash('sha256', $compressed33, true), true);
+    return bech32_encode($prefix, array_values(unpack('C*', $hash)));
+}
+
+/** Wrap an uncompressed point in a DER SubjectPublicKeyInfo PEM for OpenSSL. */
+function secp256k1_pubkey_pem(string $pub65): string
+{
+    // SEQUENCE { SEQUENCE { OID ecPublicKey, OID secp256k1 }, BIT STRING point }
+    $der = hex2bin('3056301006072a8648ce3d020106052b8104000a034200') . $pub65;
+    return "-----BEGIN PUBLIC KEY-----\n"
+        . chunk_split(base64_encode($der), 64, "\n")
+        . "-----END PUBLIC KEY-----\n";
+}
+
+/** DER INTEGER, minimally encoded with a sign-padding byte when needed. */
+function der_integer(string $be): string
+{
+    $be = ltrim($be, "\x00");
+    if ($be === '') {
+        $be = "\x00";
+    }
+    if (ord($be[0]) & 0x80) {
+        $be = "\x00" . $be;
+    }
+    return "\x02" . chr(strlen($be)) . $be;
+}
+
+/** 64-byte compact (r||s) signature -> DER ECDSA signature. */
+function compact_sig_to_der(string $sig64): string
+{
+    $r = der_integer(substr($sig64, 0, 32));
+    $s = der_integer(substr($sig64, 32, 32));
+    return "\x30" . chr(strlen($r . $s)) . $r . $s;
+}
+
+/**
+ * The exact ADR-036 amino StdSignDoc bytes for an arbitrary message.
+ * Keys are emitted in alphabetical order and slashes are NOT escaped, so this
+ * matches JSON.stringify on the client byte-for-byte (base64 can contain '/').
+ */
+function adr36_sign_doc(string $message, string $signer): string
+{
+    return json_encode([
+        'account_number' => '0',
+        'chain_id' => '',
+        'fee' => ['amount' => [], 'gas' => '0'],
+        'memo' => '',
+        'msgs' => [[
+            'type' => 'sign/MsgSignData',
+            'value' => ['data' => base64_encode($message), 'signer' => $signer],
+        ]],
+        'sequence' => '0',
+    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * Verify an ADR-036 signature over $message and confirm the signer really owns
+ * $address. The message is rebuilt server-side by the caller - never trust a
+ * client-supplied sign doc.
+ *
+ * Returns '' on success, else a deny reason.
+ */
+function verify_address_ownership(
+    string $message,
+    string $address,
+    string $prefix,
+    string $pubkeyB64,
+    string $signatureB64
+): string {
+    $pub = base64_decode($pubkeyB64, true);
+    $sig = base64_decode($signatureB64, true);
+    if ($pub === false || $sig === false) {
+        return 'bad_encoding';
+    }
+    if (strlen($sig) !== 64) {
+        return 'bad_signature_length';
+    }
+    if (strlen($pub) !== 65 || $pub[0] !== "\x04") {
+        return 'bad_pubkey_format';
+    }
+    if (!secp256k1_point_on_curve($pub)) {
+        return 'pubkey_not_on_curve';
+    }
+
+    // The address must be derived from THIS key, otherwise a valid signature
+    // from an unrelated key would authorise linking someone else's address.
+    $derived = cosmos_address_from_pubkey(secp256k1_compress($pub), $prefix);
+    if ($derived === '' || !hash_equals($derived, $address)) {
+        return 'address_mismatch';
+    }
+
+    $pem = secp256k1_pubkey_pem($pub);
+    $key = @openssl_pkey_get_public($pem);
+    if ($key === false) {
+        return 'pubkey_rejected';
+    }
+    $ok = openssl_verify(
+        adr36_sign_doc($message, $address),
+        compact_sig_to_der($sig),
+        $key,
+        OPENSSL_ALGO_SHA256
+    );
+    return $ok === 1 ? '' : 'signature_invalid';
+}
+
 // --- CSRF / origin policy ---------------------------------------------------
 // See common.php require_same_origin() for how these are applied.
 

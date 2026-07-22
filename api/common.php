@@ -279,6 +279,56 @@ function looks_like_address(string $address, string $prefix): bool
     return is_account_address($address, $prefix);
 }
 
+// --- Address ownership challenges (audit #19) -------------------------------
+const ADDRESS_CHALLENGE_TTL = 300;                  // 5 minutes
+const ADDRESS_CHALLENGE_ACTION = 'link-address';
+
+/** One chain's public config from chains.json, or null if unknown. */
+function chain_config(string $chainKey): ?array
+{
+    static $chains = null;
+    if ($chains === null) {
+        $raw = @file_get_contents(__DIR__ . '/chains.json');
+        $chains = $raw === false ? [] : (json_decode($raw, true) ?: []);
+    }
+    if ($chainKey === '') {
+        return $chains[0] ?? null;
+    }
+    foreach ($chains as $c) {
+        if (($c['key'] ?? '') === $chainKey) {
+            return $c;
+        }
+    }
+    return null;
+}
+
+/**
+ * The exact human-readable text a user signs to prove they control an address.
+ *
+ * Every field the signature must be bound to appears here: the domain (so a
+ * signature cannot be replayed against another deployment), the action (so it
+ * cannot be reused for a different operation), the account, the address, the
+ * single-use nonce, and the expiry. The server rebuilds this from its own
+ * stored row at redemption - a client-supplied version is never trusted.
+ */
+function address_challenge_message(
+    int $userId,
+    string $address,
+    string $nonce,
+    string $domain,
+    string $expiresIso
+): string {
+    return "Beehive Wallet - address ownership proof\n"
+        . "Domain: {$domain}\n"
+        . 'Action: ' . ADDRESS_CHALLENGE_ACTION . "\n"
+        . "Address: {$address}\n"
+        . "Account: {$userId}\n"
+        . "Nonce: {$nonce}\n"
+        . "Expires: {$expiresIso}\n"
+        . "\nSigning this proves you hold the key for this address. "
+        . 'It authorises nothing else and moves no funds.';
+}
+
 // Direct socket peers we trust to set a real forwarded-client-IP header. With
 // DNS-only Cloudflare (grey cloud, no proxy in the request path) this stays
 // empty, so we always use REMOTE_ADDR - which a client cannot forge. If the
