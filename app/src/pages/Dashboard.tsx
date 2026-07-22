@@ -16,6 +16,7 @@ import {
   TrendingUp,
 } from 'lucide-react'
 import { DEFAULT_CHAIN, findChain, formatAmount, type ChainInfo } from '../chains'
+import { useChains } from '../chainStore'
 import { addBase, sumBase, isPositiveBase } from '../wallet/amount'
 import { useWallet } from '../wallet/WalletContext'
 import EmptyState from '../components/EmptyState'
@@ -44,6 +45,11 @@ interface Row {
 export default function Dashboard() {
   const { t } = useT()
   const { wallets } = useWallet()
+  // Subscribing keeps this component re-rendering as the registry resolves.
+  // 'error' counts as settled: we then fall back to the bootstrap chain rather
+  // than spinning forever, and App already shows the load-failure banner.
+  const { status: chainsStatus } = useChains()
+  const chainsSettled = chainsStatus !== 'loading'
   const [rows, setRows] = useState<Row[] | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -91,6 +97,16 @@ export default function Dashboard() {
 
   const load = useCallback(async () => {
     if (wallets.length === 0) return
+    // Wait for the real registry before resolving any wallet's chain.
+    //
+    // chains.ts ships a bootstrap array containing only Medibloc; every other
+    // chain arrives from chains_public.php. Loading against the bootstrap would
+    // resolve those wallets to "network not configured" - and because this
+    // callback is memoised, it would never retry once the registry landed, so
+    // the row stayed permanently wrong. Medibloc masked this by being the one
+    // hardcoded chain. chainsSettled is in the dependency list, so the load
+    // re-runs exactly once the registry resolves.
+    if (!chainsSettled) return
     setLoading(true)
     setError('')
     // Per-wallet: resolve that wallet's own chain and query its endpoints. One
@@ -132,7 +148,7 @@ export default function Dashboard() {
     } finally {
       setLoading(false)
     }
-  }, [wallets, t])
+  }, [wallets, t, chainsSettled])
 
   useEffect(() => {
     setRows(null)
@@ -145,6 +161,9 @@ export default function Dashboard() {
   useEffect(() => {
     let cancelled = false
     if (wallets.length === 0) return
+    // Same registry gate as the balance load: the `continue` below would skip
+    // every chain that has not arrived yet, and this effect would not re-run.
+    if (!chainsSettled) return
     const byChain = new Map<string, string[]>()
     for (const w of wallets) {
       if (!findChain(w.chainKey)) continue
@@ -166,7 +185,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true
     }
-  }, [wallets])
+  }, [wallets, chainsSettled])
 
   if (wallets.length === 0) {
     return (
@@ -258,7 +277,9 @@ export default function Dashboard() {
       {/* Only on the FIRST load, when there is nothing on screen yet. A
           background refresh must not throw an overlay over figures the user is
           already reading. */}
-      {!rows && loading && (
+      {/* Also covers the pre-load window while the registry is still resolving,
+          so the gate above reads as "loading" rather than an empty screen. */}
+      {!rows && (loading || !chainsSettled) && (
         <LoadingOverlay title={t('dash.loadingWallets')} subtitle={t('dash.loadingWalletsHint')} />
       )}
 
@@ -595,8 +616,12 @@ function WalletRow({
           ) : (
             <p className="text-xs text-slate-500">
               {t('dash.notStaked')}{' '}
+              {/* Only offer "stake to Beehive" where a Beehive validator
+                  actually exists. On a chain we do not validate on, the CTA is
+                  neutral rather than advertising a validator the user cannot
+                  find in the list. */}
               <Link to="/staking" className="text-amber-700 hover:underline">
-                {t('dash.stakeToBeehive')}
+                {t(chain.beehiveValidator ? 'dash.stakeToBeehive' : 'dash.startStaking')}
               </Link>
             </p>
           )}

@@ -65,6 +65,7 @@ export const en: Record<string, string> = {
   'dash.stakedWith': 'Staked with',
   'dash.notStaked': 'Not staked yet.',
   'dash.stakeToBeehive': 'Stake to Beehive',
+  'dash.startStaking': 'Start staking',
   'dash.loadingWallets': 'Loading your wallets from the chain...',
   'dash.loadingWalletsHint': 'Fetching balances, staking and rewards. This can take a few seconds.',
   'dash.send': 'Send / receive',
