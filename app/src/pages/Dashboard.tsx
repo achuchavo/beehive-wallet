@@ -3,8 +3,6 @@ import { Link } from 'react-router-dom'
 import {
   Wallet,
   Coins,
-  Copy,
-  Check,
   SendHorizontal,
   History as HistoryIcon,
   Plus,
@@ -17,8 +15,11 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 import { DEFAULT_CHAIN, CHAINS, formatAmount } from '../chains'
+import { addBase } from '../wallet/amount'
 import { useWallet } from '../wallet/WalletContext'
 import EmptyState from '../components/EmptyState'
+import CopyAddress from '../components/CopyAddress'
+import Select from '../components/Select'
 import { CURRENCIES, getCurrency, setCurrency, fetchPrice, fiatValue, formatFiat } from '../currency'
 import { useT } from '../i18n/I18nContext'
 import {
@@ -112,28 +113,20 @@ export default function Dashboard() {
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-xl font-semibold">{t('dash.title')}</h1>
         <div className="flex gap-2">
-          <select
-            value={currency}
-            onChange={(e) => changeCurrency(e.target.value)}
-            className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-          >
+          <Select value={currency} onChange={(e) => changeCurrency(e.target.value)} aria-label="Currency">
             {CURRENCIES.map((c) => (
               <option key={c.code} value={c.code}>
                 {c.label}
               </option>
             ))}
-          </select>
-          <select
-            value={chain.key}
-            disabled={CHAINS.length < 2}
-            className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm disabled:text-slate-500"
-          >
+          </Select>
+          <Select value={chain.key} disabled={CHAINS.length < 2} aria-label="Chain">
             {CHAINS.map((c) => (
               <option key={c.key} value={c.key}>
                 {c.chainName}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
       </div>
 
@@ -247,56 +240,58 @@ function WalletRow({
   const chain = DEFAULT_CHAIN
   const { t } = useT()
   const [open, setOpen] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const total = Number(p.available) + Number(p.staked)
-
-  async function copy(e: React.MouseEvent) {
-    e.stopPropagation()
-    await navigator.clipboard.writeText(p.address)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
+  const total = addBase(p.available, p.staked)
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left"
-      >
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+      <div className="flex items-center gap-3 px-4 py-3">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-label={name}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700"
+        >
           <Wallet className="h-4.5 w-4.5" strokeWidth={1.8} />
-        </div>
+        </button>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 text-sm font-medium">
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            className="flex items-center gap-1.5 text-left text-sm font-medium"
+          >
             {name}
             {p.isValidator && (
               <span className="flex items-center gap-0.5 rounded bg-amber-100 px-1 text-[11px] text-amber-700">
-                <ShieldCheck className="h-2.5 w-2.5" /> validator
+                <ShieldCheck className="h-2.5 w-2.5" /> {t('dash.validator')}
               </span>
             )}
-          </div>
-          <span
-            onClick={copy}
-            className="flex items-center gap-1 truncate font-mono text-xs text-slate-400 hover:text-amber-700"
-          >
-            {p.address.slice(0, 16)}...{p.address.slice(-6)}
-            {copied ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
+          </button>
+          <CopyAddress
+            address={p.address}
+            display={`${p.address.slice(0, 16)}...${p.address.slice(-6)}`}
+            className="max-w-full text-xs text-slate-400"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex shrink-0 items-center gap-2"
+        >
+          <span className="text-right">
+            <span className="block text-sm font-semibold">{formatAmount(total, chain)}</span>
+            <span className="block text-xs text-slate-400">
+              {price !== null
+                ? formatFiat(fiatValue(total, chain.decimals, price), currency)
+                : chain.displayDenom}
+            </span>
           </span>
-        </div>
-        <div className="shrink-0 text-right">
-          <div className="text-sm font-semibold">{formatAmount(String(total), chain)}</div>
-          <div className="text-xs text-slate-400">
-            {price !== null
-              ? formatFiat(fiatValue(total, chain.decimals, price), currency)
-              : chain.displayDenom}
-          </div>
-        </div>
-        {open ? (
-          <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
-        ) : (
-          <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
-        )}
-      </button>
+          {open ? (
+            <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+          ) : (
+            <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+          )}
+        </button>
+      </div>
 
       {open && (
         <div className="space-y-3 border-t border-slate-100 px-4 py-3 text-sm">

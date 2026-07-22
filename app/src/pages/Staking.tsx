@@ -16,6 +16,7 @@ import type { ReviewRow } from '../components/TxReview'
 import EmptyState from '../components/EmptyState'
 import PercentButtons from '../components/PercentButtons'
 import CopyAddress from '../components/CopyAddress'
+import Select from '../components/Select'
 import { useT } from '../i18n/I18nContext'
 
 interface Validator {
@@ -160,7 +161,7 @@ export default function Staking() {
   const [loading, setLoading] = useState(false)
   const [notice, setNotice] = useState('')
   const [query, setQuery] = useState('')
-  const [showInactive, setShowInactive] = useState(false)
+  const [view, setView] = useState<'active' | 'jailed'>('active')
   const { prepare, modal } = useTxReview()
 
   const load = useCallback(async () => {
@@ -241,11 +242,13 @@ export default function Staking() {
   }
 
   const q = query.trim().toLowerCase()
-  const inactiveCount = data ? data.validators.filter((v) => !isUp(v) && !data.delegations[v.operator]).length : 0
+  const activeCount = data ? data.validators.filter((v) => isUp(v)).length : 0
+  const jailedCount = data ? data.validators.filter((v) => !isUp(v)).length : 0
   const ordered = data
     ? [...data.validators]
-        // Active validators + any you're staked with; inactive/jailed hidden unless toggled.
-        .filter((v) => isUp(v) || data.delegations[v.operator] || showInactive)
+        // Show exactly one set: the online (active) validators, or the jailed/
+        // inactive ones - never a mix.
+        .filter((v) => (view === 'active' ? isUp(v) : !isUp(v)))
         .filter((v) => q === '' || v.moniker.toLowerCase().includes(q))
         .sort((a, b) => {
           const af = isFree(chain, a.operator)
@@ -273,17 +276,18 @@ export default function Staking() {
           />
         </div>
         {wallets.length > 1 ? (
-          <select
+          <Select
             value={active.address}
             onChange={(e) => setActive(e.target.value)}
-            className="shrink-0 rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+            aria-label={t('staking.stakingFrom')}
+            className="shrink-0"
           >
             {wallets.map((w) => (
               <option key={w.address} value={w.address}>
                 {w.name}
               </option>
             ))}
-          </select>
+          </Select>
         ) : (
           <span className="shrink-0 text-sm font-medium">{active.name}</span>
         )}
@@ -325,7 +329,7 @@ export default function Staking() {
         />
       )}
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
           <input
@@ -337,25 +341,30 @@ export default function Staking() {
             className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm focus:border-amber-500 focus:outline-none"
           />
         </div>
-        {inactiveCount > 0 && (
-          <label className="flex shrink-0 items-center gap-1.5 text-xs text-slate-500">
-            <input
-              type="checkbox"
-              checked={showInactive}
-              onChange={(e) => setShowInactive(e.target.checked)}
-            />
-            {t('staking.showInactive', { count: inactiveCount })}
-          </label>
-        )}
-      </div>
-
-      <div className="flex items-center gap-3 text-xs text-slate-400">
-        <span className="flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-green-500" /> {t('staking.active')}
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-red-500" /> {t('staking.jailedInactive')}
-        </span>
+        <div className="inline-flex shrink-0 rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-sm">
+          <button
+            type="button"
+            aria-pressed={view === 'active'}
+            onClick={() => setView('active')}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 transition-colors ${
+              view === 'active' ? 'bg-white font-medium text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <span className="h-2 w-2 rounded-full bg-green-500" /> {t('staking.active')}
+            <span className="text-xs text-slate-400">{activeCount}</span>
+          </button>
+          <button
+            type="button"
+            aria-pressed={view === 'jailed'}
+            onClick={() => setView('jailed')}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 transition-colors ${
+              view === 'jailed' ? 'bg-white font-medium text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <span className="h-2 w-2 rounded-full bg-red-500" /> {t('staking.jailedInactive')}
+            <span className="text-xs text-slate-400">{jailedCount}</span>
+          </button>
+        </div>
       </div>
 
       {loading && !data && <p className="text-sm text-slate-500">{t('staking.loading')}</p>}
