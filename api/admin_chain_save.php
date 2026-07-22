@@ -1,5 +1,6 @@
-<?php
+﻿<?php
 require __DIR__ . '/common.php';
+require_post();
 
 $db = get_db();
 require_permission($db, 'chains');

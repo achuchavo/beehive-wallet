@@ -1,5 +1,6 @@
-<?php
+﻿<?php
 require __DIR__ . '/common.php';
+require_post();
 
 $db = get_db();
 $userId = require_user($db);

@@ -1,5 +1,6 @@
-<?php
+﻿<?php
 require __DIR__ . '/common.php';
+require_post();
 
 require_same_origin();
 $body = read_body();
@@ -41,18 +42,34 @@ if (count_recent_failures($db, 'ip', $ip, 'register') >= RATE_MAX_REGISTER_PER_I
     rate_limited();
 }
 
+// Account enumeration: the caller gets one identical message whether the email
+// or the wallet address was the conflict (or neither). The precise cause is
+// recorded server-side only. Registration is rate-limited per IP above, which
+// is what keeps this from becoming an oracle by brute force.
+const REGISTER_GENERIC_ERROR =
+    'We could not complete that registration. If you already have an account, try signing in instead.';
+
+$conflict = '';
+
 $stmt = $db->prepare('SELECT id FROM users WHERE email = ?');
 $stmt->execute([$email]);
 if ($stmt->fetch()) {
-    json_error('That email is already registered');
+    $conflict = 'email';
 }
 
-if ($storeAddress !== null) {
+if ($conflict === '' && $storeAddress !== null) {
     $stmt = $db->prepare('SELECT id FROM users WHERE main_address = ?');
     $stmt->execute([$storeAddress]);
     if ($stmt->fetch()) {
-        json_error('That address is already linked to another account');
+        $conflict = 'main_address';
     }
+}
+
+if ($conflict !== '') {
+    error_log("register: conflict on {$conflict} from ip {$ip}");
+    // Count the attempt so repeated probing trips the per-IP cap.
+    record_attempt($db, $ip, $email, 'register', false);
+    json_error(REGISTER_GENERIC_ERROR, 409);
 }
 
 $hash = password_hash($password, PASSWORD_ARGON2ID);
