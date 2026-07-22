@@ -13,6 +13,7 @@ import {
   ChevronDown,
   ChevronRight,
   ShieldCheck,
+  TrendingUp,
 } from 'lucide-react'
 import { DEFAULT_CHAIN, findChain, formatAmount, type ChainInfo } from '../chains'
 import { addBase, sumBase, isPositiveBase } from '../wallet/amount'
@@ -27,6 +28,7 @@ import {
   fetchWalletPortfolio,
   type WalletPortfolio,
 } from '../wallet/portfolio'
+import { fetchClaimHistory, averageMonthly } from '../wallet/rewards'
 
 interface Row {
   name: string
@@ -49,6 +51,10 @@ export default function Dashboard() {
   const [prices, setPrices] = useState<Record<string, number | null>>({})
   // '' = show every chain.
   const [chainFilter, setChainFilter] = useState('')
+  // Average claimed per month, per chain. Derived from claim history, which is
+  // a separate (and slower) set of tx queries - kept out of the balance load so
+  // it can never delay the numbers people actually come here for.
+  const [monthly, setMonthly] = useState<Record<string, { amount: string; months: number }>>({})
 
   // The distinct chains actually represented by the user's wallets.
   const walletChains = Array.from(new Set(wallets.map((w) => w.chainKey)))
@@ -131,6 +137,35 @@ export default function Dashboard() {
     setRows(null)
     load()
   }, [load])
+
+  // Claim history -> average monthly income, per chain. Deliberately a separate
+  // effect: it is extra tx queries and must not hold up the balance render.
+  // Grouped per chain because averaging across chains would mix denoms.
+  useEffect(() => {
+    let cancelled = false
+    if (wallets.length === 0) return
+    const byChain = new Map<string, string[]>()
+    for (const w of wallets) {
+      if (!findChain(w.chainKey)) continue
+      byChain.set(w.chainKey, [...(byChain.get(w.chainKey) ?? []), w.address])
+    }
+    Promise.all(
+      [...byChain.entries()].map(async ([key, addrs]) => {
+        const chain = findChain(key)!
+        try {
+          const history = await fetchClaimHistory(chain, addrs)
+          return [key, averageMonthly(history, key)] as const
+        } catch {
+          return [key, { amount: '0', months: 0 }] as const
+        }
+      }),
+    ).then((entries) => {
+      if (!cancelled) setMonthly(Object.fromEntries(entries))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [wallets])
 
   if (wallets.length === 0) {
     return (
@@ -255,6 +290,29 @@ export default function Dashboard() {
               )}
             </div>
           </div>
+
+          {/* Average monthly income. Only shown once there is claim history to
+              average - with no past claims there is nothing to report. */}
+          {isPositiveBase(monthly[g.chain.key]?.amount ?? '0') && (
+            <Link
+              to="/rewards"
+              className="flex items-center gap-2 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600 hover:bg-slate-100"
+            >
+              <TrendingUp className="h-4 w-4 shrink-0 text-green-700" />
+              <span>
+                {(monthly[g.chain.key]!.months > 1
+                  ? t('rewards.averagingOver', {
+                      amount: formatAmount(monthly[g.chain.key]!.amount, g.chain),
+                      denom: g.chain.displayDenom,
+                      months: monthly[g.chain.key]!.months,
+                    })
+                  : t('rewards.averaging', {
+                      amount: formatAmount(monthly[g.chain.key]!.amount, g.chain),
+                      denom: g.chain.displayDenom,
+                    }))}
+              </span>
+            </Link>
+          )}
 
           {isPositiveBase(g.claimable) && (
             <Link

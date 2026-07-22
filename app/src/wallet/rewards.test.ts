@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseDenomAmount, monthlyTotals, type ClaimRecord } from './rewards'
+import { parseDenomAmount, monthlyTotals, averageMonthly, type ClaimRecord } from './rewards'
 import { fiatValue } from '../currency'
 
 // Base-unit amounts on chain routinely exceed Number.MAX_SAFE_INTEGER
@@ -101,6 +101,71 @@ describe('monthlyTotals', () => {
 
   it('handles an empty history', () => {
     expect(monthlyTotals([])).toEqual([])
+  })
+})
+
+describe('averageMonthly', () => {
+  // Records arrive newest-first, as fetchClaimHistory returns them.
+  const rec = (time: string, rewards: string, chainKey = 'medibloc'): ClaimRecord => ({
+    hash: 'h' + time,
+    time,
+    address: 'panacea1x',
+    rewards,
+    commission: '0',
+    denom: chainKey === 'medibloc' ? 'umed' : 'uatom',
+    chainKey,
+  })
+
+  it('divides the total by the calendar span it covers', () => {
+    // Mar + Feb + Jan = 3 months, 300 total.
+    const out = averageMonthly(
+      [rec('2026-03-10T00:00:00Z', '100'), rec('2026-02-10T00:00:00Z', '100'), rec('2026-01-10T00:00:00Z', '100')],
+      'medibloc',
+    )
+    expect(out).toEqual({ amount: '100', months: 3 })
+  })
+
+  it('counts a single month as one, not zero', () => {
+    const out = averageMonthly([rec('2026-03-10T00:00:00Z', '250')], 'medibloc')
+    expect(out).toEqual({ amount: '250', months: 1 })
+  })
+
+  it('includes commission in the average', () => {
+    const r = { ...rec('2026-03-10T00:00:00Z', '100'), commission: '50' }
+    expect(averageMonthly([r], 'medibloc').amount).toBe('150')
+  })
+
+  it('ignores other chains entirely - averaging across denoms is meaningless', () => {
+    const out = averageMonthly(
+      [rec('2026-03-10T00:00:00Z', '100'), rec('2026-03-11T00:00:00Z', '999999', 'cosmoshub')],
+      'medibloc',
+    )
+    expect(out).toEqual({ amount: '100', months: 1 })
+  })
+
+  it('returns zero with no history, so the UI can hide it', () => {
+    expect(averageMonthly([], 'medibloc')).toEqual({ amount: '0', months: 0 })
+    expect(averageMonthly([rec('2026-03-10T00:00:00Z', '100', 'cosmoshub')], 'medibloc'))
+      .toEqual({ amount: '0', months: 0 })
+  })
+
+  it('stays exact beyond Number.MAX_SAFE_INTEGER', () => {
+    // 2 months, so the average is half the total - computed with BigInt.
+    const out = averageMonthly(
+      [rec('2026-03-01T00:00:00Z', HUGE), rec('2026-02-01T00:00:00Z', HUGE)],
+      'medibloc',
+    )
+    expect(out.months).toBe(2)
+    expect(out.amount).toBe(HUGE) // (HUGE + HUGE) / 2 === HUGE, exactly
+  })
+
+  it('spans a year boundary correctly', () => {
+    const out = averageMonthly(
+      [rec('2026-01-15T00:00:00Z', '120'), rec('2025-12-15T00:00:00Z', '120')],
+      'medibloc',
+    )
+    expect(out.months).toBe(2)
+    expect(out.amount).toBe('120')
   })
 })
 

@@ -11,6 +11,7 @@ import TxReview, { type ReviewRow } from '../components/TxReview'
 import {
   fetchWalletEarnings,
   fetchClaimHistory,
+  averageMonthly,
   type WalletEarnings,
   type ClaimRecord,
 } from '../wallet/rewards'
@@ -154,22 +155,11 @@ export default function Rewards() {
     ]
   }
 
-  // Average monthly income: total claimed over the calendar span it covers.
-  // Scoped to the displayed chain's own records so two assets are never summed.
+  // Average monthly income for the displayed chain. Shared with the Dashboard
+  // via averageMonthly() so the two views cannot report different figures.
   const HISTORY_PER_PAGE = 10
   const chainOf = (h: { chainKey: string }) => resolveChain(h.chainKey)
-  const displayHistory = history.filter((h) => h.chainKey === displayChain.key)
-  // Exact: base units can exceed Number.MAX_SAFE_INTEGER.
-  const totalClaimed = sumBase(displayHistory.flatMap((h) => [h.rewards, h.commission]))
-  let monthsSpan = 0
-  if (displayHistory.length > 0) {
-    const [ly, lm] = displayHistory[0].time.slice(0, 7).split('-').map(Number)
-    const [ey, em] = displayHistory[displayHistory.length - 1].time.slice(0, 7).split('-').map(Number)
-    monthsSpan = (ly - ey) * 12 + (lm - em) + 1
-  }
-  // Integer base-unit division; the quotient is still a base-unit string.
-  const avgMonthly =
-    monthsSpan > 0 ? (BigInt(totalClaimed) / BigInt(monthsSpan)).toString() : '0'
+  const { amount: avgMonthly, months: monthsSpan } = averageMonthly(history, displayChain.key)
   const historyPageCount = Math.max(1, Math.ceil(history.length / HISTORY_PER_PAGE))
   const historyRows = history.slice(
     historyPage * HISTORY_PER_PAGE,

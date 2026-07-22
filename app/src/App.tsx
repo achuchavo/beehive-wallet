@@ -19,6 +19,8 @@ import {
   UserCircle,
   Menu as MenuIcon,
   X,
+  Plus,
+  Import,
 } from 'lucide-react'
 import { api, type Announcement } from './api'
 import { useAuth } from './auth/AuthContext'
@@ -139,6 +141,31 @@ function App() {
     </>
   )
 
+  // Quick actions, kept OUT of the NAV array: every nav entry is a page, and
+  // these are deep links into a form on one. Rendered as a separate block so
+  // the navigation's meaning stays "places you can be".
+  const quickActions = (
+    <div className="px-3 pt-4">
+      <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+        {t('dash.manage')}
+      </div>
+      <div className="space-y-0.5">
+        <Link
+          to="/settings?action=create"
+          className="flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+        >
+          <Plus className="h-4 w-4" strokeWidth={1.8} /> {t('dash.createWallet')}
+        </Link>
+        <Link
+          to="/settings?action=import"
+          className="flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+        >
+          <Import className="h-4 w-4" strokeWidth={1.8} /> {t('dash.importWallet')}
+        </Link>
+      </div>
+    </div>
+  )
+
   const langSwitcher = (
     <Select
       full
@@ -172,6 +199,7 @@ function App() {
             </NavLink>
           ))}
         </div>
+        {quickActions}
         <div className="mt-auto px-3 pt-4">{langSwitcher}</div>
       </nav>
 
@@ -216,6 +244,11 @@ function App() {
               {t(item.key)}
             </NavLink>
           ))}
+        </div>
+        {/* Same quick actions in the drawer; closing it on tap matches the
+            behaviour of every other link in here. */}
+        <div className="px-2" onClick={() => setMenuOpen(false)}>
+          {quickActions}
         </div>
         <div className="mt-auto px-4 py-4">{langSwitcher}</div>
       </aside>

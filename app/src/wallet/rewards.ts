@@ -1,6 +1,6 @@
 import { fromBech32, toBech32 } from '@cosmjs/encoding'
 import type { ChainInfo } from '../chains'
-import { floorBaseUnits, isPositiveBase } from './amount'
+import { floorBaseUnits, isPositiveBase, sumBase } from './amount'
 
 // An account address and its validator (valoper) address share the same key
 // bytes, only the bech32 prefix differs.
@@ -156,6 +156,37 @@ export interface MonthTotal {
   commission: string
   denom: string
   chainKey: string
+}
+
+/**
+ * Average claimed per month for ONE chain: everything claimed on that chain
+ * divided by the calendar span it covers.
+ *
+ * Scoped to a single chainKey on purpose - averaging across chains would sum
+ * different assets with different decimals. Returns base units as an exact
+ * integer string, plus the span it was measured over (so the caller can say
+ * "over the last N months" rather than implying a longer history than exists).
+ *
+ * Shared by the Rewards page and the Dashboard so the two cannot drift.
+ */
+export function averageMonthly(
+  records: ClaimRecord[],
+  chainKey: string,
+): { amount: string; months: number } {
+  const forChain = records.filter((r) => r.chainKey === chainKey)
+  if (forChain.length === 0) return { amount: '0', months: 0 }
+
+  // Exact: base units can exceed Number.MAX_SAFE_INTEGER.
+  const total = sumBase(forChain.flatMap((r) => [r.rewards, r.commission]))
+
+  // Records arrive newest-first.
+  const [ly, lm] = forChain[0].time.slice(0, 7).split('-').map(Number)
+  const [ey, em] = forChain[forChain.length - 1].time.slice(0, 7).split('-').map(Number)
+  const months = (ly - ey) * 12 + (lm - em) + 1
+  if (!Number.isFinite(months) || months <= 0) return { amount: '0', months: 0 }
+
+  // Integer base-unit division; the quotient is still a base-unit string.
+  return { amount: (BigInt(total) / BigInt(months)).toString(), months }
 }
 
 /**
