@@ -46,4 +46,13 @@ body {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+
+  /* One exception: progress spinners. The blanket rule above would freeze them
+     part-way through a rotation, which reads as a hung app rather than a
+     respected preference. A small rotating indicator is not a vestibular
+     trigger — the preference targets large motion, parallax and auto-play. */
+  [data-spinner] {
+    animation-duration: 1s !important;
+    animation-iteration-count: infinite !important;
+  }
 }

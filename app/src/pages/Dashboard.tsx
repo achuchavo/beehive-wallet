@@ -20,6 +20,7 @@ import { addBase, sumBase, isPositiveBase } from '../wallet/amount'
 import { useWallet } from '../wallet/WalletContext'
 import EmptyState from '../components/EmptyState'
 import CopyAddress from '../components/CopyAddress'
+import LoadingOverlay from '../components/LoadingOverlay'
 import Select from '../components/Select'
 import { CURRENCIES, getCurrency, setCurrency, fetchPrice, fiatValue, formatFiat } from '../currency'
 import { useT } from '../i18n/I18nContext'
@@ -254,33 +255,40 @@ export default function Dashboard() {
 
       {/* One totals card per chain. Amounts from different networks are never
           added together - they are different assets with different decimals. */}
-      {!rows && loading && <p className="text-sm text-slate-500">{t('dash.loadingWallets')}</p>}
+      {/* Only on the FIRST load, when there is nothing on screen yet. A
+          background refresh must not throw an overlay over figures the user is
+          already reading. */}
+      {!rows && loading && (
+        <LoadingOverlay title={t('dash.loadingWallets')} subtitle={t('dash.loadingWalletsHint')} />
+      )}
 
       {groups.map((g) => (
         <div key={g.chain.key} className="space-y-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>
+          {/* Hero card. Tinted with the brand amber so the headline figure
+              reads as the primary surface rather than one more white card;
+              the income card below uses green, so the two are distinguishable
+              at a glance without relying on position alone. */}
+          <div className="rounded-xl border-2 border-amber-200 bg-amber-50 p-4">
+            <div className="flex items-center justify-between text-xs text-amber-800">
+              <span className="font-medium">
                 {t('dash.totalValue')} ·{' '}
                 {t(g.rows.length > 1 ? 'dash.wallets' : 'dash.wallet', { count: g.rows.length })}
               </span>
-              {/* slate-600, not the inherited slate-500: on a slate-100 chip
-                  that only reaches 4.35:1, just under the 4.5 AA threshold. */}
-              <span className="rounded bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">
+              <span className="rounded bg-white/70 px-1.5 py-0.5 font-medium text-amber-900">
                 {g.chain.chainName}
               </span>
             </div>
-            <div className="text-3xl font-semibold">
+            <div className="text-3xl font-bold text-amber-950">
               {formatAmount(g.total, g.chain)}{' '}
-              <span className="text-base font-normal text-slate-500">{g.chain.displayDenom}</span>
+              <span className="text-base font-semibold text-amber-800">{g.chain.displayDenom}</span>
             </div>
             {fiatFor(g.chain, g.total) && (
-              <div className="text-sm font-medium text-slate-500">≈ {fiatFor(g.chain, g.total)}</div>
+              <div className="text-sm font-medium text-amber-800">≈ {fiatFor(g.chain, g.total)}</div>
             )}
 
             {/* Partial failure: say so rather than presenting a short total as current. */}
             {g.failures.length > 0 && (
-              <div role="status" className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <div role="status" className="mt-2 rounded-lg bg-white/80 px-3 py-2 text-xs text-amber-900">
                 {t('dash.partialFailure', { count: g.failures.length })}
               </div>
             )}
@@ -446,13 +454,15 @@ export default function Dashboard() {
   )
 }
 
+// Used only inside the amber hero card, so it is coloured for that surface -
+// the previous slate tones do not hold contrast on a tinted background.
 function Stat({ icon: Icon, label, value }: { icon: typeof Wallet; label: string; value: string }) {
   return (
     <div>
-      <div className="flex items-center gap-1 text-xs text-slate-500">
-        <Icon className="h-3.5 w-3.5" /> {label}
+      <div className="flex items-center gap-1 text-xs text-amber-800">
+        <Icon className="h-3.5 w-3.5 shrink-0" /> {label}
       </div>
-      <div className="font-medium">{value}</div>
+      <div className="truncate font-semibold text-amber-950">{value}</div>
     </div>
   )
 }

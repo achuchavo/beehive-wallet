@@ -64,6 +64,7 @@ export const ko: Record<string, string> = {
   'dash.notStaked': '아직 스테이킹하지 않았습니다.',
   'dash.stakeToBeehive': 'Beehive에 스테이킹',
   'dash.loadingWallets': '체인에서 지갑을 불러오는 중...',
+  'dash.loadingWalletsHint': '잔액, 스테이킹, 보상을 가져오는 중입니다. 몇 초 정도 걸릴 수 있습니다.',
   'dash.send': '보내기 / 받기',
   'dash.stake': '스테이킹',
   'dash.history': '내역',
