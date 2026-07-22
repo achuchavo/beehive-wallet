@@ -6,3 +6,30 @@ RewriteBase /wallet/
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule . index.html [L]
+
+# --- Security headers ------------------------------------------------------
+# Deployed here rather than in the vhost so they ship with the app and need no
+# Apache restart. Mirrors docs/security-headers.conf - keep the two in sync.
+#
+# The built index.html loads a single external module script and has no inline
+# <script>, so script-src stays strict with no nonce/hash needed. 'unsafe-inline'
+# is used ONLY for style-src (React inline style attributes / Tailwind).
+# CoinGecko is absent on purpose: prices are fetched server-side by
+# api/price.php, so the browser never contacts it. Keybase is the one third
+# party (validator avatars).
+<IfModule mod_headers.c>
+  Header always set Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self' https://keybase.io; worker-src 'self'; manifest-src 'self'; upgrade-insecure-requests"
+
+  # HTTP already redirects to HTTPS on this host, so HSTS is safe to assert.
+  Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set X-Frame-Options "DENY"
+  Header always set Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=(), interest-cohort=()"
+  Header always set Cross-Origin-Opener-Policy "same-origin"
+  Header always set Cross-Origin-Resource-Policy "same-origin"
+
+  # Do not leak the exact PHP version.
+  Header always unset X-Powered-By
+</IfModule>
