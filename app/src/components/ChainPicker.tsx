@@ -1,4 +1,4 @@
-import Select from './Select'
+import OptionPicker from './OptionPicker'
 import { useChains } from '../chainStore'
 import type { ChainInfo } from '../chains'
 
@@ -31,21 +31,24 @@ export default function ChainPicker({
       <label htmlFor={id} className="mb-1 block text-xs font-medium text-slate-600">
         {label}
       </label>
-      <Select
+      {/* The chain id is repeated as a hint inside the dialog: picking the
+          wrong network is unrecoverable, so the confirming detail has to be
+          visible at the moment of choosing, not only after. */}
+      <OptionPicker
         id={id}
         full
+        label={label}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={onChange}
         disabled={disabled || status === 'loading'}
         className="py-2"
-        aria-describedby={`${id}-detail`}
-      >
-        {chains.map((c) => (
-          <option key={c.key} value={c.key}>
-            {c.chainName}
-          </option>
-        ))}
-      </Select>
+        describedBy={`${id}-detail`}
+        options={chains.map((c) => ({
+          value: c.key,
+          label: c.chainName,
+          hint: `${c.chainId} · ${c.displayDenom}`,
+        }))}
+      />
       {selected && (
         <p id={`${id}-detail`} className="mt-1 font-mono text-xs text-slate-500">
           {selected.chainId} · {selected.bech32Prefix}1… · {selected.displayDenom} ·{' '}

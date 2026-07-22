@@ -21,7 +21,7 @@ import { useT } from '../i18n/I18nContext'
 import PasswordInput from '../components/PasswordInput'
 import Modal from '../components/Modal'
 import CopyAddress from '../components/CopyAddress'
-import Select from '../components/Select'
+import OptionPicker from '../components/OptionPicker'
 import Toggle from '../components/Toggle'
 import Checkbox from '../components/Checkbox'
 
@@ -472,20 +472,23 @@ function MainAddressCard() {
               <label className="block text-xs text-slate-500" htmlFor="link-wallet">
                 {t('alarms.chooseWalletToVerify')}
               </label>
-              <Select
+              <OptionPicker
                 id="link-wallet"
                 full
+                label={t('alarms.pickWallet')}
                 value={pick}
-                onChange={(e) => setPick(e.target.value)}
+                onChange={setPick}
                 className="py-2"
-              >
-                <option value="">{t('alarms.pickWallet')}</option>
-                {wallets.map((w) => (
-                  <option key={w.address} value={w.address}>
-                    {w.name} — {w.address.slice(0, 14)}...{w.address.slice(-6)}
-                  </option>
-                ))}
-              </Select>
+                layout="list"
+                options={[
+                  { value: '', label: t('alarms.pickWallet') },
+                  ...wallets.map((w) => ({
+                    value: w.address,
+                    label: w.name,
+                    hint: `${w.address.slice(0, 14)}...${w.address.slice(-6)}`,
+                  })),
+                ]}
+              />
               <PasswordInput
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -644,17 +647,13 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
             />
             <label className="flex items-center gap-2 text-xs text-slate-500">
               {t('alarms.alarmType')}
-              <Select
+              <OptionPicker
+                label={t('alarms.alarmType')}
                 value={newType}
-                onChange={(e) => setNewType(e.target.value as AlarmType)}
+                onChange={(v) => setNewType(v as AlarmType)}
                 className="py-1 text-xs"
-              >
-                {ALARM_TYPES.map((ty) => (
-                  <option key={ty} value={ty}>
-                    {t(TYPE_KEY[ty])}
-                  </option>
-                ))}
-              </Select>
+                options={ALARM_TYPES.map((ty) => ({ value: ty, label: t(TYPE_KEY[ty]) }))}
+              />
             </label>
             {wallets.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5">
@@ -710,20 +709,13 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
                 <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-100 pt-3">
                   <label className="flex items-center gap-1.5 text-xs text-slate-500">
                     {t('alarms.alarmType')}
-                    <Select
+                    <OptionPicker
+                      label={t('alarms.alarmType')}
                       value={w.alarm_type}
-                      onChange={(e) =>
-                        api.watchedSetType(w.id, e.target.value as AlarmType).then(refresh)
-                      }
-                      aria-label={t('alarms.alarmType')}
+                      onChange={(v) => api.watchedSetType(w.id, v as AlarmType).then(refresh)}
                       className="py-1 text-xs"
-                    >
-                      {ALARM_TYPES.map((ty) => (
-                        <option key={ty} value={ty}>
-                          {t(TYPE_KEY[ty])}
-                        </option>
-                      ))}
-                    </Select>
+                      options={ALARM_TYPES.map((ty) => ({ value: ty, label: t(TYPE_KEY[ty]) }))}
+                    />
                   </label>
                   <div className="flex items-center gap-2 text-xs text-slate-500">
                     <Toggle

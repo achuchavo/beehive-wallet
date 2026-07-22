@@ -22,7 +22,15 @@ import { useWallet } from '../wallet/WalletContext'
 import EmptyState from '../components/EmptyState'
 import CopyAddress from '../components/CopyAddress'
 import LoadingOverlay from '../components/LoadingOverlay'
-import Select from '../components/Select'
+import OptionPicker from '../components/OptionPicker'
+import CountUp from '../components/CountUp'
+import DeltaFloat from '../components/DeltaFloat'
+import {
+  loadSnapshot,
+  saveSnapshot,
+  chainDelta,
+  type SnapshotRow,
+} from '../dashboardSnapshot'
 import { CURRENCIES, getCurrency, setCurrency, fetchPrice, fiatValue, formatFiat } from '../currency'
 import { useT } from '../i18n/I18nContext'
 import {
@@ -53,6 +61,14 @@ export default function Dashboard() {
   const [rows, setRows] = useState<Row[] | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  // Read once, at mount: the figures the user saw when they last left. Held in
+  // a ref as well so a re-render never re-reads a snapshot we have since
+  // overwritten with this session's own numbers.
+  const [snapshot] = useState(() => loadSnapshot())
+  // Per chain, the total to count up FROM, and the change to float. Populated
+  // when live data replaces the snapshot, then cleared once shown.
+  const [countFrom, setCountFrom] = useState<Record<string, string>>({})
+  const [deltas, setDeltas] = useState<Record<string, string>>({})
   const [currency, setCurrencyState] = useState(getCurrency())
   // Price per chain key - different chains have different coingecko ids.
   const [prices, setPrices] = useState<Record<string, number | null>>({})
@@ -93,6 +109,59 @@ export default function Dashboard() {
     return p !== null && p !== undefined
       ? formatFiat(fiatValue(base, c.decimals, p), currency)
       : null
+  }
+
+  /**
+   * Live data has landed: work out what to animate from, what changed since
+   * last time, and what is safe to persist as the next baseline.
+   */
+  function settleAgainstSnapshot(fresh: Row[]) {
+    const from: Record<string, string> = {}
+    const changed: Record<string, string> = {}
+    const keys = Array.from(new Set(fresh.map((r) => r.chain.key)))
+
+    for (const key of keys) {
+      const prevRows = (snapshot?.rows ?? []).filter((r) => r.chainKey === key)
+      const nowRows = fresh.filter((r) => r.chain.key === key && !r.failed)
+      if (prevRows.length === 0) continue
+
+      // Count up from the previous total regardless of the address-set check:
+      // animating between two figures is cosmetic and cannot misreport anything.
+      from[key] = sumBase(prevRows.map((r) => addBase(r.available, r.staked)))
+
+      // The delta is a claim about the user's money, so it only appears when
+      // the comparison is genuinely like-for-like.
+      const d = chainDelta(
+        prevRows,
+        nowRows.map((r) => ({
+          address: r.portfolio.address,
+          available: r.portfolio.available,
+          staked: r.portfolio.staked,
+        })),
+      )
+      if (d && d !== '0') changed[key] = d
+    }
+
+    setCountFrom(from)
+    setDeltas(changed)
+
+    // Persist only chains where EVERY wallet loaded cleanly. A chain with a
+    // failed row has an understated total; storing it would manufacture a fake
+    // gain the next time the dashboard opens.
+    const healthyKeys = keys.filter((k) => !fresh.some((r) => r.chain.key === k && r.failed))
+    const toStore: SnapshotRow[] = fresh
+      .filter((r) => healthyKeys.includes(r.chain.key) && !r.failed)
+      .map((r) => ({
+        name: r.name,
+        chainKey: r.chain.key,
+        address: r.portfolio.address,
+        available: r.portfolio.available,
+        staked: r.portfolio.staked,
+        rewards: r.portfolio.rewards,
+        commission: r.portfolio.commission,
+        isValidator: r.portfolio.isValidator,
+      }))
+    if (toStore.length > 0) saveSnapshot(toStore)
   }
 
   const load = useCallback(async () => {
@@ -142,12 +211,15 @@ export default function Dashboard() {
           }
         }),
       )
-      setRows(data.filter((r): r is Row => r !== null))
+      const fresh = data.filter((r): r is Row => r !== null)
+      setRows(fresh)
+      settleAgainstSnapshot(fresh)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load balances')
     } finally {
       setLoading(false)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wallets, t, chainsSettled])
 
   useEffect(() => {
@@ -205,7 +277,39 @@ export default function Dashboard() {
     )
   }
 
-  const visibleRows = (rows ?? []).filter((r) => !chainFilter || r.chain.key === chainFilter)
+  // Rehydrate the last-seen figures so returning to the dashboard shows the
+  // numbers you left instead of an empty screen. Needs the chain registry, so
+  // it waits on the same gate the live load does - that is one fast local API
+  // call, against many slow chain queries.
+  const snapshotRows: Row[] | null =
+    !chainsSettled || !snapshot
+      ? null
+      : snapshot.rows
+          .map((s): Row | null => {
+            const c = findChain(s.chainKey)
+            if (!c) return null // chain since removed - do not guess a network
+            return {
+              name: s.name,
+              chain: c,
+              portfolio: {
+                address: s.address,
+                available: s.available,
+                staked: s.staked,
+                rewards: s.rewards,
+                commission: s.commission,
+                isValidator: s.isValidator,
+                delegations: [], // not cached; the live load fills these in
+              },
+            }
+          })
+          .filter((r): r is Row => r !== null)
+
+  // Live data wins the moment it exists; until then the snapshot stands in, and
+  // `showingSnapshot` drives the badge that says so.
+  const displayRows = rows ?? snapshotRows
+  const showingSnapshot = rows === null && (snapshotRows?.length ?? 0) > 0
+
+  const visibleRows = (displayRows ?? []).filter((r) => !chainFilter || r.chain.key === chainFilter)
 
   // Totals are computed per chain and summed with exact BigInt arithmetic.
   // Base-unit balances routinely exceed Number.MAX_SAFE_INTEGER, and two chains
@@ -237,28 +341,45 @@ export default function Dashboard() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">{t('dash.title')}</h1>
-        <div className="flex gap-2">
-          <Select value={currency} onChange={(e) => changeCurrency(e.target.value)} aria-label="Currency">
-            {CURRENCIES.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.label}
-              </option>
-            ))}
-          </Select>
-          {walletChains.length > 1 && (
-            <Select
-              value={chainFilter}
-              onChange={(e) => setChainFilter(e.target.value)}
-              aria-label={t('dash.chainFilter')}
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold">{t('dash.title')}</h1>
+          {/* Never let cached figures pass as live. This says, in words, that
+              what is on screen is the last known state and is being refreshed. */}
+          {showingSnapshot && (
+            <p
+              role="status"
+              aria-live="polite"
+              className="flex items-center gap-1.5 text-xs text-slate-500"
             >
-              <option value="">{t('dash.allChains')}</option>
-              {walletChains.map((c) => (
-                <option key={c.key} value={c.key}>
-                  {c.chainName}
-                </option>
-              ))}
-            </Select>
+              <span
+                data-spinner
+                className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-amber-200 border-t-amber-600"
+              />
+              {t('dash.snapshotRefreshing', { when: relativeTime(snapshot!.savedAt, t) })}
+            </p>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <OptionPicker
+            label={t('dash.currency')}
+            value={currency}
+            onChange={changeCurrency}
+            options={CURRENCIES.map((c) => ({
+              value: c.code,
+              label: c.label,
+              hint: c.symbol,
+            }))}
+          />
+          {walletChains.length > 1 && (
+            <OptionPicker
+              label={t('dash.chainFilter')}
+              value={chainFilter}
+              onChange={setChainFilter}
+              options={[
+                { value: '', label: t('dash.allChains') },
+                ...walletChains.map((c) => ({ value: c.key, label: c.chainName })),
+              ]}
+            />
           )}
         </div>
       </div>
@@ -277,9 +398,10 @@ export default function Dashboard() {
       {/* Only on the FIRST load, when there is nothing on screen yet. A
           background refresh must not throw an overlay over figures the user is
           already reading. */}
-      {/* Also covers the pre-load window while the registry is still resolving,
-          so the gate above reads as "loading" rather than an empty screen. */}
-      {!rows && (loading || !chainsSettled) && (
+      {/* The blocking overlay is only for a genuinely empty screen. With a
+          snapshot on display there is something to read, so refreshing is
+          demoted to the quiet badge below rather than covering the figures. */}
+      {!rows && !showingSnapshot && (loading || !chainsSettled) && (
         <LoadingOverlay title={t('dash.loadingWallets')} subtitle={t('dash.loadingWalletsHint')} />
       )}
 
@@ -289,7 +411,7 @@ export default function Dashboard() {
               reads as the primary surface rather than one more white card;
               the income card below uses green, so the two are distinguishable
               at a glance without relying on position alone. */}
-          <div className="rounded-xl border-2 border-amber-200 bg-amber-50 p-4">
+          <div className="relative rounded-xl border-2 border-amber-200 bg-amber-50 p-4">
             <div className="flex items-center justify-between text-xs text-amber-800">
               <span className="font-medium">
                 {t('dash.totalValue')} ·{' '}
@@ -299,8 +421,31 @@ export default function Dashboard() {
                 {g.chain.chainName}
               </span>
             </div>
+
+            {/* Change since the last visit, drifting up out of the card's
+                top-right. Anchored to the card, so it never overlaps the
+                figure it refers to. */}
+            {deltas[g.chain.key] && (
+              <span className="absolute right-4 top-9 block h-5 w-0">
+                <DeltaFloat
+                  positive={!deltas[g.chain.key].startsWith('-')}
+                  text={`${deltas[g.chain.key].startsWith('-') ? '−' : '+'}${formatAmount(
+                    deltas[g.chain.key].replace('-', ''),
+                    g.chain,
+                  )} ${g.chain.displayDenom}`}
+                  onDone={() =>
+                    setDeltas((d) => {
+                      const next = { ...d }
+                      delete next[g.chain.key]
+                      return next
+                    })
+                  }
+                />
+              </span>
+            )}
+
             <div className="text-3xl font-bold text-amber-950">
-              {formatAmount(g.total, g.chain)}{' '}
+              <CountUp value={g.total} from={countFrom[g.chain.key]} format={(b) => formatAmount(b, g.chain)} />{' '}
               <span className="text-base font-semibold text-amber-800">{g.chain.displayDenom}</span>
             </div>
             {fiatFor(g.chain, g.total) && (
@@ -489,6 +634,21 @@ function Stat({ icon: Icon, label, value }: { icon: typeof Wallet; label: string
 }
 
 /** Placeholder used when a wallet's balances could not be fetched. */
+/**
+ * Coarse "how long ago" for the snapshot badge. Deliberately vague: the point
+ * is to signal that the figures are not live, not to imply the cache is precise.
+ */
+function relativeTime(iso: string, t: (key: string, vars?: Record<string, string | number>) => string): string {
+  const then = Date.parse(iso)
+  if (!Number.isFinite(then)) return t('dash.snapshotAgeUnknown')
+  const mins = Math.floor((Date.now() - then) / 60000)
+  if (mins < 1) return t('dash.snapshotJustNow')
+  if (mins < 60) return t('dash.snapshotMinutes', { count: mins })
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return t('dash.snapshotHours', { count: hours })
+  return t('dash.snapshotDays', { count: Math.floor(hours / 24) })
+}
+
 function emptyPortfolio(address: string): WalletPortfolio {
   return {
     address,

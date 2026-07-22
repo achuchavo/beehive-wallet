@@ -3,6 +3,7 @@ import { Server, Plus, Trash2, Settings2 } from 'lucide-react'
 import { api, type AdminChain, type AdminEndpoint, type AdminFreeValidator } from '../api'
 import Modal from '../components/Modal'
 import HelpTip from '../components/HelpTip'
+import OptionPicker from '../components/OptionPicker'
 
 const FREE_HELP =
   'Validators you offer for free staking (no service fee) to people using the wallet. They are pinned and badged Free on the staking list.'
@@ -298,14 +299,16 @@ function EndpointList({
         </div>
       ))}
       <div className="flex gap-1.5">
-        <select
+        <OptionPicker
+          label="Endpoint kind"
           value={kind}
-          onChange={(e) => setKind(e.target.value)}
-          className="rounded-lg border border-slate-300 px-2 text-xs"
-        >
-          <option value="lcd">LCD</option>
-          <option value="rpc">RPC</option>
-        </select>
+          onChange={setKind}
+          className="text-xs"
+          options={[
+            { value: 'lcd', label: 'LCD' },
+            { value: 'rpc', label: 'RPC' },
+          ]}
+        />
         <input
           value={url}
           onChange={(e) => setUrl(e.target.value.trim())}

@@ -10,6 +10,7 @@ export default function Modal({
   children,
   wide = false,
   dismissible = true,
+  initialFocus,
 }: {
   title: string
   onClose: () => void
@@ -22,6 +23,13 @@ export default function Modal({
    * silently does nothing.
    */
   dismissible?: boolean
+  /**
+   * Where to put focus on open. Without this the first focusable wins, and
+   * since the header precedes the body that is always the Close button - fine
+   * for a confirmation, wrong for a dialog whose whole purpose is a list the
+   * user came to operate.
+   */
+  initialFocus?: React.RefObject<HTMLElement | null>
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
 
@@ -32,7 +40,7 @@ export default function Modal({
       panel ? Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)) : []
 
     // Move focus into the dialog on open.
-    ;(focusables()[0] ?? panel)?.focus()
+    ;(initialFocus?.current ?? focusables()[0] ?? panel)?.focus()
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -67,7 +75,7 @@ export default function Modal({
       // Restore focus to whatever opened the dialog.
       previouslyFocused?.focus?.()
     }
-  }, [onClose, dismissible])
+  }, [onClose, dismissible, initialFocus])
 
   return (
     <div

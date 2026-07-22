@@ -16,7 +16,7 @@ import type { ReviewRow } from '../components/TxReview'
 import EmptyState from '../components/EmptyState'
 import PercentButtons from '../components/PercentButtons'
 import CopyAddress from '../components/CopyAddress'
-import Select from '../components/Select'
+import OptionPicker from '../components/OptionPicker'
 import { useT } from '../i18n/I18nContext'
 
 interface Validator {
@@ -276,18 +276,18 @@ export default function Staking() {
           />
         </div>
         {wallets.length > 1 ? (
-          <Select
+          <OptionPicker
+            label={t('staking.stakingFrom')}
             value={active.address}
-            onChange={(e) => setActive(e.target.value)}
-            aria-label={t('staking.stakingFrom')}
+            onChange={setActive}
             className="shrink-0"
-          >
-            {wallets.map((w) => (
-              <option key={w.address} value={w.address}>
-                {w.name}
-              </option>
-            ))}
-          </Select>
+            layout="list"
+            options={wallets.map((w) => ({
+              value: w.address,
+              label: w.name,
+              hint: `${w.address.slice(0, 16)}...${w.address.slice(-6)}`,
+            }))}
+          />
         ) : (
           <span className="shrink-0 text-sm font-medium">{active.name}</span>
         )}

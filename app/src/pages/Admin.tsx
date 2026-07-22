@@ -9,6 +9,7 @@ import {
 } from '../api'
 import { CHAINS, DEFAULT_CHAIN, formatAmount } from '../chains'
 import ChainManager from './ChainManager'
+import OptionPicker from '../components/OptionPicker'
 
 type Tab = 'overview' | 'users' | 'access' | 'chains' | 'announcements' | 'uptime'
 
@@ -469,25 +470,29 @@ function AnnouncementEditor({ onChanged }: { onChanged: () => void }) {
           maxLength={300}
           className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
         />
-        <select
+        <OptionPicker
+          label="Severity"
           value={severity}
-          onChange={(e) => setSeverity(e.target.value)}
-          className="rounded-lg border border-slate-300 px-2 py-2 text-sm"
-        >
-          <option value="info">Info</option>
-          <option value="warning">Warning</option>
-          <option value="danger">Danger</option>
-        </select>
-        <select
+          onChange={setSeverity}
+          className="py-2"
+          options={[
+            { value: 'info', label: 'Info' },
+            { value: 'warning', label: 'Warning' },
+            { value: 'danger', label: 'Danger' },
+          ]}
+        />
+        <OptionPicker
+          label="Expiry"
           value={hours}
-          onChange={(e) => setHours(e.target.value)}
-          className="rounded-lg border border-slate-300 px-2 py-2 text-sm"
-        >
-          <option value="0">No expiry</option>
-          <option value="6">6 hours</option>
-          <option value="24">24 hours</option>
-          <option value="72">3 days</option>
-        </select>
+          onChange={setHours}
+          className="py-2"
+          options={[
+            { value: '0', label: 'No expiry' },
+            { value: '6', label: '6 hours' },
+            { value: '24', label: '24 hours' },
+            { value: '72', label: '3 days' },
+          ]}
+        />
         <button
           disabled={busy}
           className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"

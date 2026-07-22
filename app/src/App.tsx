@@ -36,7 +36,7 @@ import UptimeAlerts from './pages/UptimeAlerts'
 import Admin from './pages/Admin'
 import { useT } from './i18n/I18nContext'
 import { LANGUAGES } from './i18n/i18n'
-import Select from './components/Select'
+import OptionPicker from './components/OptionPicker'
 import { useChains } from './chainStore'
 
 const NAV = [
@@ -167,19 +167,14 @@ function App() {
   )
 
   const langSwitcher = (
-    <Select
+    <OptionPicker
       full
+      label={t('common.language')}
       value={lang}
-      onChange={(e) => setLang(e.target.value as typeof lang)}
+      onChange={(v) => setLang(v as typeof lang)}
       className="text-xs"
-      aria-label={t('common.language')}
-    >
-      {LANGUAGES.map((l) => (
-        <option key={l.code} value={l.code}>
-          {l.label}
-        </option>
-      ))}
-    </Select>
+      options={LANGUAGES.map((l) => ({ value: l.code, label: l.label }))}
+    />
   )
 
   return (
