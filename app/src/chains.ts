@@ -45,7 +45,14 @@ export function proxyRpc(key: string): string {
   return `${API_ORIGIN}/rpc_proxy.php?chain=${key}`
 }
 
-export const CHAINS: ChainInfo[] = [
+// Bootstrap registry, replaced wholesale once the DB config loads.
+//
+// CHAINS and DEFAULT_CHAIN are `let` on purpose: ES module live bindings mean
+// every importer observes the replacement, so nothing has to be mutated in
+// place. chainStore.setChains() is the ONLY writer - it swaps in a brand new
+// array of brand new objects, so a component holding an old ChainInfo keeps a
+// stable, consistent snapshot rather than seeing fields change underneath it.
+export let CHAINS: ChainInfo[] = [
   {
     key: 'medibloc',
     chainId: 'panacea-3',
@@ -74,7 +81,17 @@ export const CHAINS: ChainInfo[] = [
 
 // Bootstrap default. Prefer resolveChain(wallet.chainKey) for wallet-specific
 // (signing) operations - see resolveChain / findChain below.
-export const DEFAULT_CHAIN = CHAINS[0]
+export let DEFAULT_CHAIN = CHAINS[0]
+
+/**
+ * Replace the registry. Called ONLY by chainStore once the DB config has been
+ * validated. Replacing (rather than mutating) is what makes a rendered chain
+ * snapshot stable, and what lets React detect the change.
+ */
+export function setChainRegistry(next: ChainInfo[]): void {
+  CHAINS = next
+  DEFAULT_CHAIN = next[0]
+}
 
 /** The chain for a wallet's chainKey, or undefined if it is not configured. */
 export function findChain(chainKey: string): ChainInfo | undefined {

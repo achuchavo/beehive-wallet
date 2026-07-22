@@ -35,6 +35,7 @@ import Admin from './pages/Admin'
 import { useT } from './i18n/I18nContext'
 import { LANGUAGES } from './i18n/i18n'
 import Select from './components/Select'
+import { useChains } from './chainStore'
 
 const NAV = [
   { to: '/', key: 'nav.dashboard', Icon: LayoutDashboard },
@@ -67,6 +68,9 @@ function App() {
   const { t, lang, setLang } = useT()
   const location = useLocation()
   const isAdmin = auth.status === 'in' && auth.isAdmin
+  // Reactive chain registry: re-renders when the DB config lands, and lets us
+  // warn (and block signing) if it could not be loaded.
+  const { status: chainStatus } = useChains()
   const [banner, setBanner] = useState<Announcement | null>(null)
   const [uptimeEnabled, setUptimeEnabled] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -251,6 +255,21 @@ function App() {
           >
             <BannerIcon className="h-4 w-4 shrink-0" />
             {banner.message}
+          </div>
+        )}
+        {/* Signing is blocked while this is showing (see wallet/tx.ts), so say
+            so rather than letting a transaction fail with a cryptic error. */}
+        {chainStatus !== 'ready' && (
+          <div
+            role="status"
+            className={`mb-4 flex items-center gap-2.5 rounded-lg border px-4 py-3 text-sm ${
+              chainStatus === 'error'
+                ? 'border-red-200 bg-red-50 text-red-800'
+                : 'border-slate-200 bg-slate-50 text-slate-600'
+            }`}
+          >
+            <TriangleAlert className="h-4 w-4 shrink-0" />
+            {chainStatus === 'error' ? t('chains.loadError') : t('chains.loading')}
           </div>
         )}
         <Routes>

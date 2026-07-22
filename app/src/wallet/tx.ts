@@ -2,6 +2,7 @@ import { SigningStargateClient, GasPrice, calculateFee } from '@cosmjs/stargate'
 import type { StdFee } from '@cosmjs/amino'
 import type { OfflineDirectSigner, EncodeObject } from '@cosmjs/proto-signing'
 import type { ChainInfo } from '../chains'
+import { chainsUsable } from '../chainStore'
 
 // Two-phase signing: simulate (to show a real fee in the review) then broadcast
 // with that exact fee, so what the user confirms is what gets charged. Both
@@ -20,6 +21,19 @@ async function verifyNetwork(client: SigningStargateClient, chain: ChainInfo): P
   if (nodeChainId !== chain.chainId) {
     throw new Error(
       `Connected to the wrong network (${nodeChainId}, expected ${chain.chainId}). Transaction aborted.`,
+    )
+  }
+}
+
+/**
+ * Refuse to build or broadcast anything while the chain registry is still
+ * loading or failed to load. Signing against the unverified bootstrap config
+ * could use a stale gas price, fee collector or RPC endpoint.
+ */
+function assertChainConfigReady(): void {
+  if (!chainsUsable()) {
+    throw new Error(
+      'Chain configuration is not loaded yet. Please wait a moment and try again.',
     )
   }
 }
@@ -43,6 +57,7 @@ export async function simulateTx(
   // passes a scaled price for its Low/Medium/High speed options.
   gasPrice: string = chain.gasPrice,
 ): Promise<FeeEstimate> {
+  assertChainConfigReady()
   const client = await connect(chain, signer)
   try {
     await verifyNetwork(client, chain)
@@ -65,6 +80,7 @@ export async function broadcastTx(
   fee: StdFee,
   memo = '',
 ): Promise<string> {
+  assertChainConfigReady()
   const client = await connect(chain, signer)
   try {
     await verifyNetwork(client, chain)
