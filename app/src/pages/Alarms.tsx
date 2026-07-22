@@ -175,7 +175,9 @@ function AuthForm() {
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [remember, setRemember] = useState(true)
+  // Opt-in, not opt-out: a persistent session is a security tradeoff the user
+  // should choose deliberately.
+  const [remember, setRemember] = useState(false)
   const [registeredEmail, setRegisteredEmail] = useState<string | null>(null)
 
   // Offer the active wallet's address as the main address when registering.

@@ -622,15 +622,30 @@ function ActionForm({
     setBusy(true)
     onError('')
     try {
-      // onSubmit opens the review; fields are kept so a cancelled review can be
-      // re-submitted, and the form unmounts on a confirmed action anyway.
+      // onSubmit derives the signer and opens the review. Once it returns, the
+      // plaintext password has served its purpose, so clear it rather than
+      // holding it through review/broadcast. Cancelling the review therefore
+      // requires deliberately re-entering it.
       await onSubmit(password, amount)
     } catch (err) {
       onError(err instanceof Error ? err.message : t('staking.errTx'))
     } finally {
+      setPassword('')
       setBusy(false)
     }
   }
+
+  // Don't let a typed password survive backgrounding or unmount.
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') setPassword('')
+    }
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      document.removeEventListener('visibilitychange', onHide)
+      setPassword('')
+    }
+  }, [])
 
   return (
     <form onSubmit={submit} className="space-y-2 rounded-lg bg-slate-50 p-3">

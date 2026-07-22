@@ -139,6 +139,20 @@ function SendForm() {
 
   const speedMult = SPEED_OPTIONS.find((s) => s.key === speed)!.mult
 
+  // Never let a typed password outlive the form: clear it when the wallet
+  // changes, when the page is backgrounded, and on unmount.
+  useEffect(() => {
+    setPassword('')
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') setPassword('')
+    }
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      document.removeEventListener('visibilitychange', onHide)
+      setPassword('')
+    }
+  }, [active?.address])
+
   useEffect(() => {
     if (!active || !chain) return
     fetch(`${chain.lcd}/cosmos/bank/v1beta1/balances/${active.address}`)
@@ -181,6 +195,10 @@ function SendForm() {
     setBusy(true)
     try {
       const signer = await getSigner(active.address, password)
+      // The key material is derived - the plaintext password is not needed for
+      // any later step, so drop it now rather than holding it through review
+      // and broadcast. A retry after this point requires re-entering it.
+      setPassword('')
       const messages = [sendMsg(active.address, to, baseAmount, chain.denom)]
       const est = await simulateTx(
         chain,
@@ -192,6 +210,7 @@ function SendForm() {
       )
       setReview({ signer, messages, est, to, baseAmount, memo, speed })
     } catch (err) {
+      setPassword('') // also clear on a failed unlock/simulate
       setError(err instanceof Error ? err.message : t('send.errSendFailed'))
     } finally {
       setBusy(false)
