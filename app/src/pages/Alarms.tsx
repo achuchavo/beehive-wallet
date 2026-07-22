@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
-import { BellRing, Eye, ArrowUpRight, ArrowDownLeft, Undo2, ExternalLink, CircleCheck } from 'lucide-react'
+import {
+  BellRing,
+  Eye,
+  ArrowUpRight,
+  ArrowDownLeft,
+  Undo2,
+  ExternalLink,
+  CircleCheck,
+  Plus,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { api, type WatchedAddress, type WalletAlert, type AlarmType, type AlertKind } from '../api'
 import { DEFAULT_CHAIN, formatAmount, CHAINS } from '../chains'
 import { useWallet } from '../wallet/WalletContext'
@@ -8,6 +19,9 @@ import { useT } from '../i18n/I18nContext'
 import PasswordInput from '../components/PasswordInput'
 import Modal from '../components/Modal'
 import CopyAddress from '../components/CopyAddress'
+import Select from '../components/Select'
+import Toggle from '../components/Toggle'
+import Checkbox from '../components/Checkbox'
 
 const POLL_MS = 15000
 
@@ -161,6 +175,7 @@ function AuthForm() {
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [remember, setRemember] = useState(true)
   const [registeredEmail, setRegisteredEmail] = useState<string | null>(null)
 
   // Offer the active wallet's address as the main address when registering.
@@ -183,7 +198,7 @@ function AuthForm() {
         await api.register(email, password, mainAddress.trim())
         setRegisteredEmail(email)
       } else {
-        await api.login(identifier.trim(), password)
+        await api.login(identifier.trim(), password, remember)
         await refresh()
       }
     } catch (err) {
@@ -277,6 +292,9 @@ function AuthForm() {
             autoComplete="new-password"
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
           />
+        )}
+        {mode === 'login' && (
+          <Checkbox checked={remember} onChange={setRemember} label={t('alarms.rememberMe')} />
         )}
         {error && (
           <div role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -392,6 +410,7 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
   const [newLabel, setNewLabel] = useState('')
   const [newType, setNewType] = useState<AlarmType>('both')
   const [busy, setBusy] = useState(false)
+  const [showAddForm, setShowAddForm] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
@@ -420,6 +439,7 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
       setNewAddress('')
       setNewLabel('')
       setNewType('both')
+      setShowAddForm(false)
       await refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add address')
@@ -463,109 +483,129 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
       <PushSettings />
 
       <section className="space-y-3">
-        <h2 className="flex items-center gap-2 font-medium">
-          <Eye className="h-4 w-4 text-slate-400" /> {t('alarms.watched')}
-        </h2>
-        <form onSubmit={addAddress} className="space-y-2">
-          <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="flex items-center justify-between">
+          <h2 className="flex items-center gap-2 font-medium">
+            <Eye className="h-4 w-4 text-slate-400" /> {t('alarms.watched')}
+          </h2>
+          <button
+            type="button"
+            onClick={() => setShowAddForm((o) => !o)}
+            aria-expanded={showAddForm}
+            className="flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-sm hover:border-amber-500 hover:text-amber-700"
+          >
+            {showAddForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+            {showAddForm ? t('common.close') : t('alarms.watch')}
+          </button>
+        </div>
+
+        {showAddForm && (
+          <form onSubmit={addAddress} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
             <input
               value={newAddress}
               onChange={(e) => setNewAddress(e.target.value)}
               placeholder={`${DEFAULT_CHAIN.bech32Prefix}1...`}
               required
-              className="flex-1 rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
+              autoComplete="off"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
             />
             <input
               value={newLabel}
               onChange={(e) => setNewLabel(e.target.value)}
               placeholder={t('alarms.labelOptional')}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none sm:w-40"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
             />
+            <label className="flex items-center gap-2 text-xs text-slate-500">
+              {t('alarms.alarmType')}
+              <Select
+                value={newType}
+                onChange={(e) => setNewType(e.target.value as AlarmType)}
+                className="py-1 text-xs"
+              >
+                {ALARM_TYPES.map((ty) => (
+                  <option key={ty} value={ty}>
+                    {t(TYPE_KEY[ty])}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            {wallets.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs text-slate-400">{t('alarms.yourWallets')}</span>
+                {wallets.map((w) => (
+                  <button
+                    key={w.address}
+                    type="button"
+                    onClick={() => {
+                      setNewAddress(w.address)
+                      if (!newLabel) setNewLabel(w.name)
+                    }}
+                    className="rounded-full border border-slate-300 bg-white px-2.5 py-0.5 text-xs text-slate-600 hover:border-amber-500 hover:text-amber-700"
+                  >
+                    {w.name}
+                  </button>
+                ))}
+              </div>
+            )}
             <button
               disabled={busy}
-              className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+              className="w-full rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50 sm:w-auto"
             >
               {t('alarms.watch')}
             </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400">{t('alarms.alarmType')}</span>
-            <select
-              value={newType}
-              onChange={(e) => setNewType(e.target.value as AlarmType)}
-              className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-600 focus:border-amber-500 focus:outline-none"
-            >
-              {ALARM_TYPES.map((ty) => (
-                <option key={ty} value={ty}>
-                  {t(TYPE_KEY[ty])}
-                </option>
-              ))}
-            </select>
-          </div>
-          {wallets.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-xs text-slate-400">{t('alarms.yourWallets')}</span>
-              {wallets.map((w) => (
-                <button
-                  key={w.address}
-                  type="button"
-                  onClick={() => {
-                    setNewAddress(w.address)
-                    if (!newLabel) setNewLabel(w.name)
-                  }}
-                  className="rounded-full border border-slate-300 bg-white px-2.5 py-0.5 text-xs text-slate-600 hover:border-amber-500 hover:text-amber-700"
-                >
-                  {w.name}
-                </button>
-              ))}
-            </div>
-          )}
-        </form>
+          </form>
+        )}
+
         {addresses.length === 0 ? (
           <p className="text-sm text-slate-500">{t('alarms.noWatched')}</p>
         ) : (
-          <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
+          <ul className="space-y-2">
             {addresses.map((w) => (
-              <li key={w.id} className="flex items-center gap-3 px-4 py-3">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">
-                    {w.label || shortAddr(w.address)}
-                    <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs font-normal text-slate-500">
-                      {chainName(w.chain_key)}
-                    </span>
+              <li key={w.id} className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
+                      {w.label || shortAddr(w.address)}
+                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-normal text-slate-500">
+                        {chainName(w.chain_key)}
+                      </span>
+                    </div>
+                    <CopyAddress address={w.address} className="max-w-full text-xs text-slate-400" />
                   </div>
-                  <CopyAddress address={w.address} className="max-w-full text-xs text-slate-400" />
+                  <button
+                    onClick={() => api.watchedRemove(w.id).then(refresh)}
+                    aria-label={t('common.remove')}
+                    className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </div>
-                <select
-                  value={w.alarm_type}
-                  onChange={(e) =>
-                    api.watchedSetType(w.id, e.target.value as AlarmType).then(refresh)
-                  }
-                  aria-label={t('alarms.alarmType')}
-                  className="shrink-0 rounded-lg border border-slate-300 px-1.5 py-1 text-xs text-slate-600 focus:border-amber-500 focus:outline-none"
-                >
-                  {ALARM_TYPES.map((ty) => (
-                    <option key={ty} value={ty}>
-                      {t(TYPE_KEY[ty])}
-                    </option>
-                  ))}
-                </select>
-                <label className="flex shrink-0 items-center gap-1.5 text-xs text-slate-500">
-                  <input
-                    type="checkbox"
-                    checked={w.alarm_enabled === 1}
-                    onChange={(e) =>
-                      api.watchedToggle(w.id, e.target.checked).then(refresh)
-                    }
-                  />
-                  {t('alarms.alarm')}
-                </label>
-                <button
-                  onClick={() => api.watchedRemove(w.id).then(refresh)}
-                  className="shrink-0 text-xs text-red-600 hover:underline"
-                >
-                  {t('common.remove')}
-                </button>
+                <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-100 pt-3">
+                  <label className="flex items-center gap-1.5 text-xs text-slate-500">
+                    {t('alarms.alarmType')}
+                    <Select
+                      value={w.alarm_type}
+                      onChange={(e) =>
+                        api.watchedSetType(w.id, e.target.value as AlarmType).then(refresh)
+                      }
+                      aria-label={t('alarms.alarmType')}
+                      className="py-1 text-xs"
+                    >
+                      {ALARM_TYPES.map((ty) => (
+                        <option key={ty} value={ty}>
+                          {t(TYPE_KEY[ty])}
+                        </option>
+                      ))}
+                    </Select>
+                  </label>
+                  <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <Toggle
+                      checked={w.alarm_enabled === 1}
+                      onChange={(v) => api.watchedToggle(w.id, v).then(refresh)}
+                      label={t('alarms.alarm')}
+                    />
+                    {t('alarms.alarm')}
+                  </div>
+                </div>
               </li>
             ))}
           </ul>

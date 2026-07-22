@@ -10,11 +10,15 @@ error_reporting(E_ALL);
 
 // --- Session hardening -----------------------------------------------------
 // Cookie flags MUST be set before session_start().
-const SESSION_IDLE_SECONDS = 3600;           // sign out after 1h of inactivity
-const SESSION_ABSOLUTE_SECONDS = 7 * 86400;  // hard cap regardless of activity
+const SESSION_IDLE_SECONDS = 3600;             // sign out after 1h of inactivity
+const SESSION_ABSOLUTE_SECONDS = 7 * 86400;    // hard cap regardless of activity
+const SESSION_REMEMBER_SECONDS = 30 * 86400;   // "stay signed in" lifetime
 
-$__https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-    || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+function cookie_secure(): bool
+{
+    return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+}
 
 ini_set('session.use_strict_mode', '1'); // reject attacker-supplied session ids
 ini_set('session.use_only_cookies', '1');
@@ -22,7 +26,7 @@ ini_set('session.cookie_httponly', '1');
 session_set_cookie_params([
     'lifetime' => 0,
     'path' => '/',
-    'secure' => $__https,
+    'secure' => cookie_secure(),
     'httponly' => true,
     'samesite' => 'Strict',
 ]);
@@ -32,12 +36,17 @@ header('Content-Type: application/json; charset=utf-8');
 // Authenticated JSON must never be stored by browser or shared caches.
 header('Cache-Control: no-store');
 
-// Enforce idle + absolute timeout on every request.
+// Enforce idle + absolute timeout on every request. A "remember me" session
+// skips the idle timeout and gets a longer absolute cap, so the user stays
+// signed in until they explicitly log out (or 30 days pass).
 if (!empty($_SESSION['user_id'])) {
     $__now = time();
     $__started = (int) ($_SESSION['auth_started_at'] ?? $__now);
     $__last = (int) ($_SESSION['last_seen_at'] ?? $__now);
-    if (($__now - $__last) > SESSION_IDLE_SECONDS || ($__now - $__started) > SESSION_ABSOLUTE_SECONDS) {
+    $__remember = !empty($_SESSION['remember']);
+    $__idleLimit = $__remember ? PHP_INT_MAX : SESSION_IDLE_SECONDS;
+    $__absLimit = $__remember ? SESSION_REMEMBER_SECONDS : SESSION_ABSOLUTE_SECONDS;
+    if (($__now - $__last) > $__idleLimit || ($__now - $__started) > $__absLimit) {
         session_logout();
     } else {
         $_SESSION['last_seen_at'] = $__now;
@@ -45,13 +54,24 @@ if (!empty($_SESSION['user_id'])) {
 }
 
 // Establish an authenticated session (call on successful login). Rotates the
-// session id to defeat fixation and stamps the timeout clocks.
-function session_login(int $userId): void
+// session id to defeat fixation and stamps the timeout clocks. When $remember
+// is true the cookie is made persistent (30 days) instead of session-only.
+function session_login(int $userId, bool $remember = false): void
 {
+    if ($remember) {
+        session_set_cookie_params([
+            'lifetime' => SESSION_REMEMBER_SECONDS,
+            'path' => '/',
+            'secure' => cookie_secure(),
+            'httponly' => true,
+            'samesite' => 'Strict',
+        ]);
+    }
     session_regenerate_id(true);
     $_SESSION['user_id'] = $userId;
     $_SESSION['auth_started_at'] = time();
     $_SESSION['last_seen_at'] = time();
+    $_SESSION['remember'] = $remember;
 }
 
 // Fully invalidate the session and delete its cookie.

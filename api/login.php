@@ -8,6 +8,7 @@ $body = read_body();
 $identifier = trim($body['identifier'] ?? $body['email'] ?? '');
 $email = strtolower($identifier);
 $password = $body['password'] ?? '';
+$remember = !empty($body['remember']);
 
 $db = get_db();
 $ip = client_ip();
@@ -34,6 +35,6 @@ record_attempt($db, $ip, $email, 'login', true);
 $db->prepare("DELETE FROM login_attempts WHERE identifier = ? AND kind = 'login' AND success = 0")
     ->execute([$email]);
 
-session_login((int) $user['id']);
+session_login((int) $user['id'], $remember);
 
 json_out(['ok' => true]);

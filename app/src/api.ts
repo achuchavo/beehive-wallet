@@ -137,7 +137,8 @@ export const api = {
     }>('me.php'),
   register: (email: string, password: string, main_address: string) =>
     call('register.php', { email, password, main_address }),
-  login: (identifier: string, password: string) => call('login.php', { identifier, password }),
+  login: (identifier: string, password: string, remember = false) =>
+    call('login.php', { identifier, password, remember }),
   accountSetAddress: (main_address: string) =>
     call<{ main_address: string | null }>('account_set_address.php', { main_address }),
   logout: () => call('logout.php', {}),
