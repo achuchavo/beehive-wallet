@@ -69,7 +69,9 @@ export const ko: Record<string, string> = {
   'alarms.signInDesc':
     '로그인하면 주소를 감시하고 거래가 발생할 때 알림을 받을 수 있습니다. 계정에는 공개 주소만 저장되며 키는 저장되지 않습니다.',
   'alarms.emailOrAddress': '이메일 또는 지갑 주소',
+  // 플레이스홀더 예시이며 라벨이 아닙니다 - alarms.emailLabel 참조.
   'alarms.email': 'name@example.com',
+  'alarms.emailLabel': '이메일 주소',
   'alarms.password': '비밀번호',
   'alarms.passwordHint': '비밀번호 (10자 이상)',
   'alarms.confirmPassword': '비밀번호 확인',
@@ -147,6 +149,8 @@ export const ko: Record<string, string> = {
   'send.from': '보내는 지갑',
   'send.balance': '잔액',
   'send.recipient': '받는 주소 ({prefix}1...)',
+  'send.recipientLabel': '받는 주소',
+  'history.addressLabel': '조회할 지갑 주소',
   'send.amount': '금액',
   'send.memoOptional': '메모 (선택)',
   'send.signPassword': '서명할 지갑 비밀번호',

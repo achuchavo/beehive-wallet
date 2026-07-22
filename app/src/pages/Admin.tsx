@@ -464,6 +464,7 @@ function AnnouncementEditor({ onChanged }: { onChanged: () => void }) {
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           placeholder="Message shown to every user"
+          aria-label="Announcement message"
           required
           maxLength={300}
           className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"

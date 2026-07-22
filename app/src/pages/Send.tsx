@@ -275,6 +275,7 @@ function SendForm() {
         value={to}
         onChange={(e) => setTo(e.target.value.trim())}
         placeholder={t('send.recipient', { prefix: chain.bech32Prefix })}
+        aria-label={t('send.recipientLabel')}
         required
         autoComplete="off"
         className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
@@ -285,6 +286,7 @@ function SendForm() {
           value={amount}
           onChange={(e) => setAmount(e.target.value.trim())}
           placeholder={t('send.amount')}
+          aria-label={t('send.amount')}
           required
           inputMode="decimal"
           autoComplete="off"
@@ -305,6 +307,7 @@ function SendForm() {
         value={memo}
         onChange={(e) => setMemo(e.target.value)}
         placeholder={t('send.memoOptional')}
+        aria-label={t('send.memoOptional')}
         maxLength={256}
         autoComplete="off"
         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
@@ -342,6 +345,7 @@ function SendForm() {
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         placeholder={t('send.signPassword')}
+        aria-label={t('send.signPassword')}
         required
         autoComplete="new-password"
         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"

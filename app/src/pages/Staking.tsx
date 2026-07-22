@@ -337,6 +337,7 @@ export default function Staking() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t('staking.search')}
+            aria-label={t('staking.search')}
             autoComplete="off"
             className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm focus:border-amber-500 focus:outline-none"
           />
@@ -658,6 +659,7 @@ function ActionForm({
               value={amount}
               onChange={(e) => setAmount(e.target.value.trim())}
               placeholder={t('send.amount')}
+              aria-label={t('send.amount')}
               required
               inputMode="decimal"
               autoComplete="off"
@@ -681,6 +683,7 @@ function ActionForm({
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         placeholder={t('send.signPassword')}
+        aria-label={t('send.signPassword')}
         required
         autoComplete="new-password"
         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"

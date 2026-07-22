@@ -69,7 +69,9 @@ export const en: Record<string, string> = {
   'alarms.signInDesc':
     'Sign in to watch addresses and get an alert whenever a transaction leaves them. Your account only stores public addresses - never keys.',
   'alarms.emailOrAddress': 'Email or wallet address',
+  // Placeholder example, NOT a label - see alarms.emailLabel.
   'alarms.email': 'name@example.com',
+  'alarms.emailLabel': 'Email address',
   'alarms.password': 'Password',
   'alarms.passwordHint': 'Password (10+ characters)',
   'alarms.confirmPassword': 'Confirm password',
@@ -149,6 +151,8 @@ export const en: Record<string, string> = {
   'send.from': 'From',
   'send.balance': 'Balance',
   'send.recipient': 'Recipient ({prefix}1...)',
+  'send.recipientLabel': 'Recipient address',
+  'history.addressLabel': 'Wallet address to look up',
   'send.amount': 'Amount',
   'send.memoOptional': 'Memo (optional)',
   'send.signPassword': 'Wallet password to sign',

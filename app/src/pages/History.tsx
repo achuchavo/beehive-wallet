@@ -222,6 +222,7 @@ export default function History() {
           value={address}
           onChange={(e) => setAddress(e.target.value.trim())}
           placeholder={`${displayChain.bech32Prefix}1...`}
+          aria-label={t('history.addressLabel')}
           required
           autoComplete="off"
           className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"

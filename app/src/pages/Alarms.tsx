@@ -241,49 +241,82 @@ function AuthForm() {
       <h1 className="text-xl font-semibold">{t('alarms.title')}</h1>
       <p className="text-sm text-slate-500">{t('alarms.signInDesc')}</p>
       <form onSubmit={submit} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+        {/* Persistent labels, not placeholders: a placeholder disappears the
+            moment you type and is not reliably announced (audit #22). */}
         {mode === 'login' ? (
-          <input
-            type="text"
-            required
-            value={identifier}
-            onChange={(e) => setIdentifier(e.target.value)}
-            placeholder={t('alarms.emailOrAddress')}
-            autoComplete="username"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-          />
-        ) : (
-          <>
+          <div>
+            <label htmlFor="auth-identifier" className="mb-1 block text-xs font-medium text-slate-600">
+              {t('alarms.emailOrAddress')}
+            </label>
             <input
-              type="email"
+              id="auth-identifier"
+              type="text"
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder={t('alarms.email')}
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder={t('alarms.emailOrAddress')}
+              autoComplete="username"
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
             />
+          </div>
+        ) : (
+          <>
+            <div>
+              <label htmlFor="auth-email" className="mb-1 block text-xs font-medium text-slate-600">
+                {t('alarms.emailLabel')}
+              </label>
+              <input
+                id="auth-email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@example.com"
+                autoComplete="email"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+              />
+            </div>
             {/* No address field at sign-up: the server ignores an unproven
                 address. It is linked after sign-in by signing a challenge. */}
             <p className="text-xs text-slate-500">{t('alarms.linkAddressAfter')}</p>
           </>
         )}
-        <PasswordInput
-          required
-          minLength={10}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder={mode === 'register' ? t('alarms.passwordHint') : t('alarms.password')}
-          autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-        />
-        {mode === 'register' && (
+        <div>
+          <label htmlFor="auth-password" className="mb-1 block text-xs font-medium text-slate-600">
+            {t('alarms.password')}
+          </label>
           <PasswordInput
+            id="auth-password"
             required
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            placeholder={t('alarms.confirmPassword')}
-            autoComplete="new-password"
+            minLength={10}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder={mode === 'register' ? t('alarms.passwordHint') : t('alarms.password')}
+            autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+            aria-describedby={mode === 'register' ? 'auth-password-hint' : undefined}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
           />
+          {mode === 'register' && (
+            <p id="auth-password-hint" className="mt-1 text-xs text-slate-500">
+              {t('alarms.passwordHint')}
+            </p>
+          )}
+        </div>
+        {mode === 'register' && (
+          <div>
+            <label htmlFor="auth-confirm" className="mb-1 block text-xs font-medium text-slate-600">
+              {t('alarms.confirmPassword')}
+            </label>
+            <PasswordInput
+              id="auth-confirm"
+              required
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              placeholder={t('alarms.confirmPassword')}
+              autoComplete="new-password"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+            />
+          </div>
         )}
         {mode === 'login' && (
           <Checkbox checked={remember} onChange={setRemember} label={t('alarms.rememberMe')} />
@@ -457,6 +490,7 @@ function MainAddressCard() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder={t('send.signPassword')}
+                aria-label={t('send.signPassword')}
                 autoComplete="current-password"
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
               />
@@ -605,6 +639,7 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
               value={newLabel}
               onChange={(e) => setNewLabel(e.target.value)}
               placeholder={t('alarms.labelOptional')}
+              aria-label={t('alarms.labelOptional')}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
             />
             <label className="flex items-center gap-2 text-xs text-slate-500">

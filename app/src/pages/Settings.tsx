@@ -183,6 +183,7 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           placeholder={t('settings.walletPassword')}
+                          aria-label={t('settings.walletPassword')}
                           autoComplete="new-password"
                           className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
                         />
@@ -246,25 +247,41 @@ function PasswordFields({
   const { t } = useT()
   return (
     <>
-      <PasswordInput
-        name="beehive-new-password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        placeholder={t('settings.newPassword')}
-        minLength={10}
-        required
-        autoComplete="new-password"
-        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-      />
-      <PasswordInput
-        name="beehive-confirm-password"
-        value={confirm}
-        onChange={(e) => setConfirm(e.target.value)}
-        placeholder={t('settings.repeatPassword')}
-        required
-        autoComplete="new-password"
-        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-      />
+      <div>
+        <label htmlFor="wallet-password" className="mb-1 block text-xs font-medium text-slate-600">
+          {t('settings.walletPassword')}
+        </label>
+        <PasswordInput
+          id="wallet-password"
+          name="beehive-new-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder={t('settings.newPassword')}
+          minLength={10}
+          required
+          autoComplete="new-password"
+          aria-describedby="wallet-password-hint"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+        />
+        <p id="wallet-password-hint" className="mt-1 text-xs text-slate-500">
+          {t('settings.newPassword')}
+        </p>
+      </div>
+      <div>
+        <label htmlFor="wallet-password-confirm" className="mb-1 block text-xs font-medium text-slate-600">
+          {t('settings.repeatPassword')}
+        </label>
+        <PasswordInput
+          id="wallet-password-confirm"
+          name="beehive-confirm-password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          placeholder={t('settings.repeatPassword')}
+          required
+          autoComplete="new-password"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+        />
+      </div>
     </>
   )
 }
@@ -523,20 +540,33 @@ function ImportWallet({ onDone }: { onDone: () => void }) {
           </button>
         ))}
       </div>
-      <p className="text-sm text-slate-500">
+      <p id="import-secret-desc" className="text-sm text-slate-500">
         {kind === 'mnemonic' ? t('settings.importMnemonicDesc') : t('settings.importPrivkeyDesc')}
       </p>
-      <textarea
-        name="beehive-import-secret"
-        value={secret}
-        onChange={(e) => setSecret(e.target.value)}
-        placeholder={kind === 'mnemonic' ? t('settings.mnemonicPlaceholder') : t('settings.privkeyPlaceholder')}
-        rows={kind === 'mnemonic' ? 3 : 2}
-        required
-        autoComplete="off"
-        spellCheck={false}
-        className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
-      />
+      <div>
+        <label htmlFor="import-secret" className="mb-1 block text-xs font-medium text-slate-600">
+          {kind === 'mnemonic' ? t('settings.seedPhrase') : t('settings.privateKey')}
+        </label>
+        <textarea
+          id="import-secret"
+          name="beehive-import-secret"
+          value={secret}
+          onChange={(e) => setSecret(e.target.value)}
+          placeholder={kind === 'mnemonic' ? t('settings.mnemonicPlaceholder') : t('settings.privkeyPlaceholder')}
+          rows={kind === 'mnemonic' ? 3 : 2}
+          required
+          // A secret must never reach a cloud spellchecker, a password manager,
+          // or autofill history.
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          data-lpignore="true"
+          data-1p-ignore="true"
+          aria-describedby="import-secret-desc"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
+        />
+      </div>
       <ChainPicker
         id="import-chain"
         label={t('settings.network')}
