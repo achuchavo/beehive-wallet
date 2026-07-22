@@ -45,6 +45,7 @@ export const ko: Record<string, string> = {
   'dash.createWallet': '지갑 생성',
   'dash.importWallet': '지갑 가져오기',
   'dash.watchAddress': '주소 감시',
+  'dash.manage': '지갑 및 주소',
   'dash.totalValue': '총 자산',
   'dash.wallets': '지갑 {count}개',
   'dash.wallet': '지갑 {count}개',

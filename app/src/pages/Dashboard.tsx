@@ -316,6 +316,34 @@ export default function Dashboard() {
           <HistoryIcon className="h-4 w-4" /> {t('dash.history')}
         </Link>
       </div>
+
+      {/* Wallet management shortcuts. Previously these only existed in the
+          empty state, so once you had one wallet the only route to adding
+          another was Settings. Kept in a separate row from the transactional
+          actions above so the two are not confused. */}
+      <div className="border-t border-slate-200 pt-3">
+        <h2 className="mb-2 text-xs font-medium text-slate-500">{t('dash.manage')}</h2>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            to="/settings?action=create"
+            className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:border-amber-500"
+          >
+            <Plus className="h-4 w-4" /> {t('dash.createWallet')}
+          </Link>
+          <Link
+            to="/settings?action=import"
+            className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:border-amber-500"
+          >
+            <Import className="h-4 w-4" /> {t('dash.importWallet')}
+          </Link>
+          <Link
+            to="/alarms"
+            className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:border-amber-500"
+          >
+            <Bell className="h-4 w-4" /> {t('dash.watchAddress')}
+          </Link>
+        </div>
+      </div>
     </div>
   )
 }

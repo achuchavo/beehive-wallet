@@ -45,6 +45,7 @@ export const en: Record<string, string> = {
   'dash.createWallet': 'Create wallet',
   'dash.importWallet': 'Import wallet',
   'dash.watchAddress': 'Watch an address',
+  'dash.manage': 'Wallets and addresses',
   'dash.totalValue': 'Total value',
   'dash.wallets': '{count} wallets',
   'dash.wallet': '{count} wallet',
