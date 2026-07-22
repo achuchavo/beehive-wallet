@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require __DIR__ . '/common.php';
 require_post();
 
