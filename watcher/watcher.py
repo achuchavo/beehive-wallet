@@ -189,17 +189,22 @@ def collect_new(pairs: list, last_seen: str):
 def fetch_new_since(chain: dict, address: str, event_tpl: str, last_seen: str):
     """Paginate newest-first until the cursor is found, history is exhausted, or
     the safety cap is hit. Returns (new_pairs_newest_first, found). found=False
-    means a cursor GAP: the cursor was not seen within MAX_PAGES."""
+    means a cursor GAP: an ESTABLISHED cursor could not be located, so we must
+    not advance past a range we may never have read."""
     new_pairs = []
     offset = 0
     prev_first = None
+    # '' is the first-contact sentinel: there is no established cursor yet, so
+    # running out of history is the expected end of a baseline pass.
+    initial = last_seen == ""
     for _ in range(MAX_PAGES):
         page = fetch_tx_page(chain, address, event_tpl, offset)
         if not page:
-            # Ran out of history without hitting the cursor. Either the cursor is
-            # the '' sentinel (alert everything) or it was pruned; either way we
-            # have now seen all available txs, so this is NOT a gap.
-            return new_pairs, True
+            # Ran out of history. With no cursor yet this is a normal baseline.
+            # With an ESTABLISHED cursor it means the cursor is gone - pruned by
+            # the provider or orphaned by a reorg - which is a real gap: we
+            # cannot prove we saw everything between it and here.
+            return new_pairs, initial
         pairs = [(r.get("txhash", ""), r) for r in page]
         # Guard against an LCD that ignores offset and returns the same page.
         if prev_first is not None and pairs and pairs[0][0] == prev_first:

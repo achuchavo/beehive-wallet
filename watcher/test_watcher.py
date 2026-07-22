@@ -88,10 +88,53 @@ class FetchNewSince(unittest.TestCase):
         self.assertFalse(found)  # gap
         self.assertEqual(len(new), p * watcher.MAX_PAGES)
 
-    def test_exhaustion_is_not_a_gap(self):
+    def test_initial_cursor_exhaustion_is_not_a_gap(self):
+        # First contact ('' sentinel): running out of history is the expected
+        # end of a baseline pass, not a gap.
         self._stub([["c", "b", "a"]])  # then empty
+        new, found = watcher.fetch_new_since({}, "addr", "e", "")
+        self.assertTrue(found)
+        self.assertEqual(len(new), 3)
+
+    def test_established_cursor_pruned_is_a_gap(self):
+        # An ESTABLISHED cursor that is no longer anywhere in the provider's
+        # history (pruned) must be reported as a gap so the caller refuses to
+        # advance past a range it may never have read.
+        self._stub([["c", "b", "a"]])  # then empty; "missing" never appears
         new, found = watcher.fetch_new_since({}, "addr", "e", "missing")
-        self.assertTrue(found)  # ran out of history, not a gap
+        self.assertFalse(found)
+        self.assertEqual(len(new), 3)
+
+    def test_reorg_orphaned_cursor_is_a_gap(self):
+        # Reorg: the tx the cursor pointed at was orphaned, so the chain now
+        # returns a different set of hashes and the cursor is unreachable.
+        self._stub([["z", "y"], ["x", "w"]])
+        new, found = watcher.fetch_new_since({}, "addr", "e", "orphaned")
+        self.assertFalse(found)
+
+    def test_empty_provider_result_initial(self):
+        # Provider returns nothing at all on first contact - no txs, no gap.
+        self._stub([[]])
+        new, found = watcher.fetch_new_since({}, "addr", "e", "")
+        self.assertTrue(found)
+        self.assertEqual(new, [])
+
+    def test_empty_provider_result_established_is_a_gap(self):
+        # Same empty response, but we had a cursor: we cannot confirm we saw
+        # everything, so this is degraded, not "all caught up".
+        self._stub([[]])
+        new, found = watcher.fetch_new_since({}, "addr", "e", "abc")
+        self.assertFalse(found)
+
+    def test_recovery_after_gap(self):
+        # Documented recovery: an operator resets the cursor to '' after
+        # investigating, which re-baselines cleanly instead of staying stuck.
+        self._stub([["c", "b", "a"]])
+        _, found_gap = watcher.fetch_new_since({}, "addr", "e", "missing")
+        self.assertFalse(found_gap)
+        self._stub([["c", "b", "a"]])
+        new, found = watcher.fetch_new_since({}, "addr", "e", "")
+        self.assertTrue(found)
         self.assertEqual(len(new), 3)
 
     def test_stuck_pagination_guard(self):
