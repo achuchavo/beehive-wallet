@@ -264,7 +264,11 @@ export default function Dashboard() {
                 {t('dash.totalValue')} ·{' '}
                 {t(g.rows.length > 1 ? 'dash.wallets' : 'dash.wallet', { count: g.rows.length })}
               </span>
-              <span className="rounded bg-slate-100 px-1.5 py-0.5 font-medium">{g.chain.chainName}</span>
+              {/* slate-600, not the inherited slate-500: on a slate-100 chip
+                  that only reaches 4.35:1, just under the 4.5 AA threshold. */}
+              <span className="rounded bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">
+                {g.chain.chainName}
+              </span>
             </div>
             <div className="text-3xl font-semibold">
               {formatAmount(g.total, g.chain)}{' '}
@@ -291,26 +295,57 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Average monthly income. Only shown once there is claim history to
-              average - with no past claims there is nothing to report. */}
-          {isPositiveBase(monthly[g.chain.key]?.amount ?? '0') && (
+          {/* Average monthly income - a headline metric, deliberately loud.
+              Shown whenever this chain is actually earning (staked or accrued
+              rewards), so someone who has staked but never claimed sees WHY it
+              is empty rather than wondering where the figure went. */}
+          {(isPositiveBase(monthly[g.chain.key]?.amount ?? '0') ||
+            isPositiveBase(g.staked) ||
+            isPositiveBase(g.rewards)) && (
             <Link
               to="/rewards"
-              className="flex items-center gap-2 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600 hover:bg-slate-100"
+              className="group block rounded-xl border-2 border-green-200 bg-green-50 p-4 transition-colors hover:border-green-300 hover:bg-green-100"
             >
-              <TrendingUp className="h-4 w-4 shrink-0 text-green-700" />
-              <span>
-                {(monthly[g.chain.key]!.months > 1
-                  ? t('rewards.averagingOver', {
-                      amount: formatAmount(monthly[g.chain.key]!.amount, g.chain),
-                      denom: g.chain.displayDenom,
-                      months: monthly[g.chain.key]!.months,
-                    })
-                  : t('rewards.averaging', {
-                      amount: formatAmount(monthly[g.chain.key]!.amount, g.chain),
-                      denom: g.chain.displayDenom,
-                    }))}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-green-700 text-white">
+                  <TrendingUp className="h-6 w-6" strokeWidth={2.2} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-green-800">
+                    {t('dash.monthlyIncome')}
+                  </div>
+
+                  {isPositiveBase(monthly[g.chain.key]?.amount ?? '0') ? (
+                    <>
+                      <div className="text-3xl font-bold leading-tight text-green-900">
+                        {formatAmount(monthly[g.chain.key]!.amount, g.chain)}{' '}
+                        <span className="text-lg font-semibold">{g.chain.displayDenom}</span>
+                        <span className="text-lg font-medium text-green-800">
+                          {' '}
+                          {t('dash.perMonth')}
+                        </span>
+                      </div>
+                      <div className="text-sm text-green-800">
+                        {fiatFor(g.chain, monthly[g.chain.key]!.amount) && (
+                          <span className="font-medium">
+                            ≈ {fiatFor(g.chain, monthly[g.chain.key]!.amount)}
+                            {' · '}
+                          </span>
+                        )}
+                        {monthly[g.chain.key]!.months > 1
+                          ? t('dash.overMonths', { months: monthly[g.chain.key]!.months })
+                          : t('dash.oneMonth')}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-3xl font-bold leading-tight text-green-900">—</div>
+                      <div className="text-sm text-green-800">{t('dash.noClaimsYet')}</div>
+                    </>
+                  )}
+                </div>
+                <ChevronRight className="h-5 w-5 shrink-0 text-green-700 transition-transform group-hover:translate-x-0.5" />
+              </div>
             </Link>
           )}
 
