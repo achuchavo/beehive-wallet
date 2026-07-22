@@ -79,6 +79,17 @@ export const ko: Record<string, string> = {
   'alarms.haveAccount': '계정이 있으신가요? 로그인',
   'alarms.passwordsNoMatch': '비밀번호가 일치하지 않습니다',
   'alarms.rememberMe': '이 기기에서 로그인 상태 유지',
+  'alarms.verified': '확인됨',
+  'alarms.linkAddressAfter': '로그인 후 지갑 주소를 연결할 수 있습니다 — 소유권 증명이 필요합니다.',
+  'alarms.unlink': '연결 해제',
+  'alarms.chooseWalletToVerify': '확인하고 연결할 지갑을 선택하세요',
+  'alarms.pickWallet': '지갑 선택',
+  'alarms.verifyAndLink': '확인 후 연결',
+  'alarms.verifying': '확인 중...',
+  'alarms.needWalletToLink':
+    '먼저 이 앱에 지갑을 추가하세요. 주소를 연결하려면 해당 키로 서명하여 소유권을 증명해야 합니다.',
+  'alarms.ownershipNote':
+    '이 키를 보유하고 있음을 증명하기 위해 일회용 메시지에 서명합니다. 온체인으로 전송되지 않고, 자금이 이동하지 않으며, 키는 이 기기를 벗어나지 않습니다.',
   'alarms.accountCreated': '계정이 생성되었습니다',
   'alarms.accountReady': '{email} 계정이 준비되었습니다. 로그인하여 주소 감시와 알림 설정을 시작하세요.',
 

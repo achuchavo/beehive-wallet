@@ -138,12 +138,31 @@ export const api = {
       admin_features?: string[]
       main_address?: string | null
     }>('me.php'),
-  register: (email: string, password: string, main_address: string) =>
-    call('register.php', { email, password, main_address }),
+  // A wallet address is not accepted at registration: proving control of one
+  // requires signing a challenge bound to an account, which does not exist yet.
+  // Link it after signing in via addressChallenge + accountSetAddress.
+  register: (email: string, password: string) =>
+    call('register.php', { email, password }),
   login: (identifier: string, password: string, remember = false) =>
     call('login.php', { identifier, password, remember }),
-  accountSetAddress: (main_address: string) =>
-    call<{ main_address: string | null }>('account_set_address.php', { main_address }),
+  /** Step 1: ask the server for a single-use challenge to sign. */
+  addressChallenge: (address: string, chain_key: string) =>
+    call<{ nonce: string; expires_at: string; message: string }>('address_challenge.php', {
+      address,
+      chain_key,
+    }),
+  /**
+   * Step 2: redeem the challenge with an ADR-036 signature. Pass only
+   * `main_address: ''` (no proof) to clear the linked address.
+   */
+  accountSetAddress: (
+    main_address: string,
+    proof?: { nonce: string; pubkey: string; signature: string },
+  ) =>
+    call<{ main_address: string | null; verified?: boolean }>('account_set_address.php', {
+      main_address,
+      ...(proof ?? {}),
+    }),
   logout: () => call('logout.php', {}),
   watchedList: () => call<{ addresses: WatchedAddress[] }>('watched_list.php'),
   watchedAdd: (chain_key: string, address: string, label: string, alarm_type: AlarmType) =>

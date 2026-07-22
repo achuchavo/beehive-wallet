@@ -10,6 +10,7 @@ import {
   Plus,
   Trash2,
   X,
+  ShieldCheck,
 } from 'lucide-react'
 import { api, type WatchedAddress, type WalletAlert, type AlarmType, type AlertKind } from '../api'
 import { DEFAULT_CHAIN, formatAmount, CHAINS } from '../chains'
@@ -164,13 +165,11 @@ export default function Alarms() {
 }
 
 function AuthForm() {
-  const { active } = useWallet()
   const { refresh } = useAuth()
   const { t } = useT()
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [identifier, setIdentifier] = useState('')
   const [email, setEmail] = useState('')
-  const [mainAddress, setMainAddress] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
@@ -180,11 +179,9 @@ function AuthForm() {
   const [remember, setRemember] = useState(false)
   const [registeredEmail, setRegisteredEmail] = useState<string | null>(null)
 
-  // Offer the active wallet's address as the main address when registering.
   function startRegister() {
     setMode('register')
     setError('')
-    if (active && !mainAddress) setMainAddress(active.address)
   }
 
   async function submit(e: React.FormEvent) {
@@ -197,7 +194,9 @@ function AuthForm() {
     setError('')
     try {
       if (mode === 'register') {
-        await api.register(email, password, mainAddress.trim())
+        // No address here: it can only be linked after sign-in, by signing a
+        // challenge that proves you hold its key.
+        await api.register(email, password)
         setRegisteredEmail(email)
       } else {
         await api.login(identifier.trim(), password, remember)
@@ -261,19 +260,9 @@ function AuthForm() {
               placeholder={t('alarms.email')}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
             />
-            <div>
-              <input
-                type="text"
-                value={mainAddress}
-                onChange={(e) => setMainAddress(e.target.value.trim())}
-                placeholder={`${DEFAULT_CHAIN.bech32Prefix}1... (${t('alarms.mainAddrOptional')})`}
-                autoComplete="off"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
-              />
-              <p className="mt-1 text-xs text-slate-400">
-                {t('alarms.mainAddrHelp')}
-              </p>
-            </div>
+            {/* No address field at sign-up: the server ignores an unproven
+                address. It is linked after sign-in by signing a challenge. */}
+            <p className="text-xs text-slate-400">{t('alarms.linkAddressAfter')}</p>
           </>
         )}
         <PasswordInput
@@ -321,11 +310,14 @@ function AuthForm() {
 }
 
 function MainAddressCard() {
-  const { active } = useWallet()
   const { t } = useT()
+  const { wallets, signOwnership } = useWallet()
   const [address, setAddress] = useState<string | null | undefined>(undefined)
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState('')
+  // Only a wallet held in this app can be linked - ownership has to be proved
+  // by signing, so an arbitrary typed address is no longer accepted.
+  const [pick, setPick] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -333,14 +325,51 @@ function MainAddressCard() {
     api.me().then((r) => setAddress(r.main_address ?? null))
   }, [])
 
-  async function save(value: string) {
+  // Never let a typed password outlive the form.
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') setPassword('')
+    }
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      document.removeEventListener('visibilitychange', onHide)
+      setPassword('')
+    }
+  }, [])
+
+  async function link() {
+    const wallet = wallets.find((w) => w.address === pick)
+    if (!wallet) {
+      setError(t('alarms.pickWallet'))
+      return
+    }
     setBusy(true)
     setError('')
     try {
-      const r = await api.accountSetAddress(value.trim())
+      // 1. Server issues a single-use challenge bound to this account+address.
+      const c = await api.addressChallenge(wallet.address, wallet.chainKey)
+      // 2. Sign it locally; the key never leaves the browser.
+      const proof = await signOwnership(wallet.address, password, c.message)
+      setPassword('')
+      // 3. Redeem. The server re-derives the address from the public key.
+      const r = await api.accountSetAddress(wallet.address, { nonce: c.nonce, ...proof })
       setAddress(r.main_address)
       setEditing(false)
-      setDraft('')
+    } catch (e) {
+      setPassword('')
+      setError(e instanceof Error ? e.message : 'Failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function unlink() {
+    setBusy(true)
+    setError('')
+    try {
+      const r = await api.accountSetAddress('')
+      setAddress(r.main_address)
+      setEditing(false)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed')
     } finally {
@@ -352,50 +381,84 @@ function MainAddressCard() {
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-      <div className="text-sm font-medium">{t('alarms.mainAddress')}</div>
+      <div className="flex items-center gap-1.5 text-sm font-medium">
+        {t('alarms.mainAddress')}
+        {address && (
+          <span className="flex items-center gap-0.5 rounded bg-green-100 px-1.5 py-0.5 text-[11px] font-normal text-green-700">
+            <ShieldCheck className="h-3 w-3" /> {t('alarms.verified')}
+          </span>
+        )}
+      </div>
+
       {address && !editing ? (
         <div className="flex items-center justify-between gap-2">
           <span className="truncate font-mono text-xs text-slate-500">{address}</span>
-          <button
-            onClick={() => {
-              setDraft(address)
-              setEditing(true)
-            }}
-            className="shrink-0 text-xs text-amber-700 hover:underline"
-          >
-            {t('alarms.change')}
-          </button>
-        </div>
-      ) : editing || !address ? (
-        <div className="mt-1 space-y-2">
-          <div className="flex gap-2">
-            <input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value.trim())}
-              placeholder={`${DEFAULT_CHAIN.bech32Prefix}1...`}
-              className="flex-1 rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
-            />
-            {active && (
-              <button
-                type="button"
-                onClick={() => setDraft(active.address)}
-                className="shrink-0 rounded-lg border border-slate-300 px-2 text-xs hover:border-amber-500"
-              >
-                {t('alarms.useMyWallet')}
-              </button>
-            )}
-            <button
-              onClick={() => save(draft)}
-              disabled={busy}
-              className="shrink-0 rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
-            >
-              {t('common.save')}
+          <div className="flex shrink-0 gap-2">
+            <button onClick={() => setEditing(true)} className="text-xs text-amber-700 hover:underline">
+              {t('alarms.change')}
+            </button>
+            <button onClick={unlink} disabled={busy} className="text-xs text-slate-400 hover:text-red-600">
+              {t('alarms.unlink')}
             </button>
           </div>
-          <p className="text-xs text-slate-400">{t('alarms.mainAddrNotSet')}</p>
-          {error && <p className="text-xs text-red-600">{error}</p>}
         </div>
-      ) : null}
+      ) : (
+        <div className="mt-1 space-y-2">
+          {wallets.length === 0 ? (
+            <p className="text-xs text-slate-500">{t('alarms.needWalletToLink')}</p>
+          ) : (
+            <>
+              <label className="block text-xs text-slate-500" htmlFor="link-wallet">
+                {t('alarms.chooseWalletToVerify')}
+              </label>
+              <Select
+                id="link-wallet"
+                full
+                value={pick}
+                onChange={(e) => setPick(e.target.value)}
+                className="py-2"
+              >
+                <option value="">{t('alarms.pickWallet')}</option>
+                {wallets.map((w) => (
+                  <option key={w.address} value={w.address}>
+                    {w.name} — {w.address.slice(0, 14)}...{w.address.slice(-6)}
+                  </option>
+                ))}
+              </Select>
+              <PasswordInput
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={t('send.signPassword')}
+                autoComplete="current-password"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={link}
+                  disabled={busy || !pick || !password}
+                  className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+                >
+                  {busy ? t('alarms.verifying') : t('alarms.verifyAndLink')}
+                </button>
+                {address && (
+                  <button
+                    onClick={() => setEditing(false)}
+                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:border-amber-500"
+                  >
+                    {t('common.cancel')}
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-slate-400">{t('alarms.ownershipNote')}</p>
+            </>
+          )}
+          {error && (
+            <p role="alert" className="text-xs text-red-600">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

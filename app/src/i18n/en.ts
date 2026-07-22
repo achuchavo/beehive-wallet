@@ -79,6 +79,18 @@ export const en: Record<string, string> = {
   'alarms.haveAccount': 'Have an account? Sign in',
   'alarms.passwordsNoMatch': 'Passwords do not match',
   'alarms.rememberMe': 'Keep me signed in on this device',
+  'alarms.verified': 'Verified',
+  'alarms.linkAddressAfter':
+    'You can link a wallet address after signing in — it requires proving you control it.',
+  'alarms.unlink': 'Unlink',
+  'alarms.chooseWalletToVerify': 'Choose a wallet to verify and link',
+  'alarms.pickWallet': 'Select a wallet',
+  'alarms.verifyAndLink': 'Verify and link',
+  'alarms.verifying': 'Verifying...',
+  'alarms.needWalletToLink':
+    'Add a wallet to this app first. Linking an address requires signing with its key to prove you control it.',
+  'alarms.ownershipNote':
+    'You sign a one-time message to prove you hold this key. Nothing is sent on-chain, no funds move, and your key never leaves this device.',
   'alarms.accountCreated': 'Account created',
   'alarms.accountReady': 'Your account {email} is ready. Sign in to start watching addresses and setting alarms.',
 
