@@ -23,6 +23,15 @@ const row = (over: Partial<SnapshotRow> = {}): SnapshotRow => ({
   ...over,
 })
 
+/** A live row as the dashboard supplies it, defaulting the accrual fields. */
+const cur = (o: {
+  address: string
+  available: string
+  staked: string
+  rewards?: string
+  commission?: string
+}) => ({ rewards: '0', commission: '0', ...o })
+
 beforeEach(() => {
   clearSnapshot()
 })
@@ -147,73 +156,99 @@ describe('monthly cache', () => {
 
 describe('chainDelta', () => {
   it('reports the exact gain when the same addresses are compared', () => {
-    const prev = [row({ address: 'a', available: '100', staked: '200' })]
-    const now = [{ address: 'a', available: '150', staked: '200' }]
+    const prev = [row(cur({ address: 'a', available: '100', staked: '200' }))]
+    const now = [cur({ address: 'a', available: '150', staked: '200' })]
     expect(chainDelta(prev, now)).toBe('50')
   })
 
   it('reports a loss as a negative amount', () => {
-    const prev = [row({ address: 'a', available: '100', staked: '0' })]
-    expect(chainDelta(prev, [{ address: 'a', available: '40', staked: '0' }])).toBe('-60')
+    const prev = [row(cur({ address: 'a', available: '100', staked: '0' }))]
+    expect(chainDelta(prev, [cur({ address: 'a', available: '40', staked: '0' })])).toBe('-60')
   })
 
   it('sums across several wallets on the chain', () => {
     const prev = [
-      row({ address: 'a', available: '10', staked: '0' }),
-      row({ address: 'b', available: '20', staked: '0' }),
+      row(cur({ address: 'a', available: '10', staked: '0' })),
+      row(cur({ address: 'b', available: '20', staked: '0' })),
     ]
     const now = [
-      { address: 'a', available: '15', staked: '0' },
-      { address: 'b', available: '25', staked: '0' },
+      cur({ address: 'a', available: '15', staked: '0' }),
+      cur({ address: 'b', available: '25', staked: '0' }),
     ]
     expect(chainDelta(prev, now)).toBe('10')
+  })
+
+  // THE regression. The hero card's total is available + staked, which does not
+  // move at all between two visits unless the user transacts - staking rewards
+  // accrue into `rewards`. A delta based on available + staked was therefore
+  // silently '0' on virtually every return, so the "+X since last time" and the
+  // count-up never fired. Every time it appeared to work, the stored snapshot
+  // had been hand-edited to manufacture a difference.
+  it('counts accrued rewards as a gain when available and staked are unchanged', () => {
+    const prev = [row({ address: 'a', available: '100', staked: '200', rewards: '5' })]
+    const now = [cur({ address: 'a', available: '100', staked: '200', rewards: '9' })]
+    expect(chainDelta(prev, now)).toBe('4')
+  })
+
+  it('counts accrued commission too', () => {
+    const prev = [row({ address: 'a', available: '0', staked: '0', commission: '10' })]
+    const now = [cur({ address: 'a', available: '0', staked: '0', commission: '17' })]
+    expect(chainDelta(prev, now)).toBe('7')
+  })
+
+  // Claiming moves value from rewards into available. Net worth is unchanged,
+  // so it must not read as a sudden gain - nor as a loss.
+  it('reports no change when rewards are merely claimed into the balance', () => {
+    const prev = [row({ address: 'a', available: '100', staked: '0', rewards: '40' })]
+    const now = [cur({ address: 'a', available: '140', staked: '0', rewards: '0' })]
+    expect(chainDelta(prev, now)).toBe('0')
   })
 
   // The guard that matters. Importing a wallet raises the total without
   // anything having been earned; calling that a gain would be a fabricated
   // number attached to the user's money.
   it('refuses to compare when a wallet was added', () => {
-    const prev = [row({ address: 'a', available: '100', staked: '0' })]
+    const prev = [row(cur({ address: 'a', available: '100', staked: '0' }))]
     const now = [
-      { address: 'a', available: '100', staked: '0' },
-      { address: 'b', available: '999999', staked: '0' },
+      cur({ address: 'a', available: '100', staked: '0' }),
+      cur({ address: 'b', available: '999999', staked: '0' }),
     ]
     expect(chainDelta(prev, now)).toBeNull()
   })
 
   it('refuses to compare when a wallet was removed', () => {
     const prev = [
-      row({ address: 'a', available: '100', staked: '0' }),
-      row({ address: 'b', available: '100', staked: '0' }),
+      row(cur({ address: 'a', available: '100', staked: '0' })),
+      row(cur({ address: 'b', available: '100', staked: '0' })),
     ]
-    expect(chainDelta(prev, [{ address: 'a', available: '100', staked: '0' }])).toBeNull()
+    expect(chainDelta(prev, [cur({ address: 'a', available: '100', staked: '0' })])).toBeNull()
   })
 
   it('refuses to compare when the address set differs but the count matches', () => {
-    const prev = [row({ address: 'a', available: '100', staked: '0' })]
-    expect(chainDelta(prev, [{ address: 'zz', available: '100', staked: '0' }])).toBeNull()
+    const prev = [row(cur({ address: 'a', available: '100', staked: '0' }))]
+    expect(chainDelta(prev, [cur({ address: 'zz', available: '100', staked: '0' })])).toBeNull()
   })
 
   it('is order-independent for the same set', () => {
     const prev = [
-      row({ address: 'b', available: '1', staked: '0' }),
-      row({ address: 'a', available: '1', staked: '0' }),
+      row(cur({ address: 'b', available: '1', staked: '0' })),
+      row(cur({ address: 'a', available: '1', staked: '0' })),
     ]
     const now = [
-      { address: 'a', available: '2', staked: '0' },
-      { address: 'b', available: '2', staked: '0' },
+      cur({ address: 'a', available: '2', staked: '0' }),
+      cur({ address: 'b', available: '2', staked: '0' }),
     ]
     expect(chainDelta(prev, now)).toBe('2')
   })
 
   it('returns null with no baseline or no current rows', () => {
-    expect(chainDelta([], [{ address: 'a', available: '1', staked: '0' }])).toBeNull()
+    expect(chainDelta([], [cur({ address: 'a', available: '1', staked: '0' })])).toBeNull()
     expect(chainDelta([row()], [])).toBeNull()
   })
 
   it('stays exact past 2^53, where a float would round the gain away', () => {
-    const prev = [row({ address: 'a', available: '9007199254740992', staked: '0' })]
-    const now = [{ address: 'a', available: '9007199254740993', staked: '0' }]
+    const prev = [row(cur({ address: 'a', available: '9007199254740992', staked: '0' }))]
+    const now = [cur({ address: 'a', available: '9007199254740993', staked: '0' })]
     expect(chainDelta(prev, now)).toBe('1')
     // A one-base-unit gain at this magnitude vanishes entirely in a double.
     // The lint warning below is the assertion's whole point: this literal is

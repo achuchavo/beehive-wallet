@@ -69,6 +69,10 @@ export default function Dashboard() {
   // Per chain, the total to count up FROM, and the change to float. Populated
   // when live data replaces the snapshot, then cleared once shown.
   const [countFrom, setCountFrom] = useState<Record<string, string>>({})
+  // Per-stat baselines, keyed by stat then chain. Rewards and commission are
+  // the figures that genuinely move between visits, so animating only the hero
+  // total left the reveal looking dead.
+  const [countFromStat, setCountFromStat] = useState<Record<string, Record<string, string>>>({})
   const [deltas, setDeltas] = useState<Record<string, string>>({})
   const [currency, setCurrencyState] = useState(getCurrency())
   // Price per chain key - different chains have different coingecko ids.
@@ -130,6 +134,10 @@ export default function Dashboard() {
    */
   function settleAgainstSnapshot(fresh: Row[]) {
     const from: Record<string, string> = {}
+    const fromAvailable: Record<string, string> = {}
+    const fromStaked: Record<string, string> = {}
+    const fromRewards: Record<string, string> = {}
+    const fromCommission: Record<string, string> = {}
     const changed: Record<string, string> = {}
     const keys = Array.from(new Set(fresh.map((r) => r.chain.key)))
 
@@ -138,9 +146,15 @@ export default function Dashboard() {
       const nowRows = fresh.filter((r) => r.chain.key === key && !r.failed)
       if (prevRows.length === 0) continue
 
-      // Count up from the previous total regardless of the address-set check:
-      // animating between two figures is cosmetic and cannot misreport anything.
+      // Count up from the previous figures regardless of the address-set check:
+      // animating between two values is cosmetic and cannot misreport anything.
+      // Rewards and commission are animated too - they accrue every block, so
+      // they are what visibly moves on a normal return.
       from[key] = sumBase(prevRows.map((r) => addBase(r.available, r.staked)))
+      fromRewards[key] = sumBase(prevRows.map((r) => r.rewards))
+      fromCommission[key] = sumBase(prevRows.map((r) => r.commission))
+      fromAvailable[key] = sumBase(prevRows.map((r) => r.available))
+      fromStaked[key] = sumBase(prevRows.map((r) => r.staked))
 
       // The delta is a claim about the user's money, so it only appears when
       // the comparison is genuinely like-for-like.
@@ -150,12 +164,20 @@ export default function Dashboard() {
           address: r.portfolio.address,
           available: r.portfolio.available,
           staked: r.portfolio.staked,
+          rewards: r.portfolio.rewards,
+          commission: r.portfolio.commission,
         })),
       )
       if (d && d !== '0') changed[key] = d
     }
 
     setCountFrom(from)
+    setCountFromStat({
+      available: fromAvailable,
+      staked: fromStaked,
+      rewards: fromRewards,
+      commission: fromCommission,
+    })
     setDeltas(changed)
 
     // Persist only chains where EVERY wallet loaded cleanly. A chain with a
@@ -330,6 +352,11 @@ export default function Dashboard() {
   const displayRows = rows ?? snapshotRows
   const showingSnapshot = rows === null && (snapshotRows?.length ?? 0) > 0
 
+  // The loading modal covers every load, snapshot or not. The snapshot still
+  // renders behind it: that is what the figures animate up FROM once the modal
+  // clears, so the reveal starts from the numbers the user last saw.
+  const modalUp = !rows && (loading || !chainsSettled)
+
   const visibleRows = (displayRows ?? []).filter((r) => !chainFilter || r.chain.key === chainFilter)
 
   // Totals are computed per chain and summed with exact BigInt arithmetic.
@@ -366,7 +393,11 @@ export default function Dashboard() {
           <h1 className="text-xl font-semibold">{t('dash.title')}</h1>
           {/* Never let cached figures pass as live. This says, in words, that
               what is on screen is the last known state and is being refreshed. */}
-          {showingSnapshot && (
+          {/* Only when cached figures are actually exposed - i.e. the modal has
+              gone but live data never arrived (a failed or errored load).
+              While the modal is up nothing stale is readable, so the badge
+              would just be noise. */}
+          {showingSnapshot && !modalUp && (
             <p
               role="status"
               aria-live="polite"
@@ -422,7 +453,7 @@ export default function Dashboard() {
       {/* The blocking overlay is only for a genuinely empty screen. With a
           snapshot on display there is something to read, so refreshing is
           demoted to the quiet badge below rather than covering the figures. */}
-      {!rows && !showingSnapshot && (loading || !chainsSettled) && (
+      {modalUp && (
         <LoadingOverlay title={t('dash.loadingWallets')} subtitle={t('dash.loadingWalletsHint')} />
       )}
 
@@ -489,11 +520,11 @@ export default function Dashboard() {
 
             {open && (
               <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
-                <Stat icon={Wallet} label={t('dash.available')} value={formatAmount(g.available, g.chain)} />
-                <Stat icon={Coins} label={t('dash.staked')} value={formatAmount(g.staked, g.chain)} />
-                <Stat icon={Gift} label={t('dash.rewards')} value={formatAmount(g.rewards, g.chain)} />
+                <Stat icon={Wallet} label={t('dash.available')} base={g.available} from={countFromStat.available?.[g.chain.key]} chain={g.chain} />
+                <Stat icon={Coins} label={t('dash.staked')} base={g.staked} from={countFromStat.staked?.[g.chain.key]} chain={g.chain} />
+                <Stat icon={Gift} label={t('dash.rewards')} base={g.rewards} from={countFromStat.rewards?.[g.chain.key]} chain={g.chain} />
                 {g.anyValidator && (
-                  <Stat icon={Landmark} label={t('dash.commission')} value={formatAmount(g.commission, g.chain)} />
+                  <Stat icon={Landmark} label={t('dash.commission')} base={g.commission} from={countFromStat.commission?.[g.chain.key]} chain={g.chain} />
                 )}
               </div>
             )}
@@ -670,13 +701,29 @@ export default function Dashboard() {
 
 // Used only inside the amber hero card, so it is coloured for that surface -
 // the previous slate tones do not hold contrast on a tinted background.
-function Stat({ icon: Icon, label, value }: { icon: typeof Wallet; label: string; value: string }) {
+function Stat({
+  icon: Icon,
+  label,
+  base,
+  from,
+  chain,
+}: {
+  icon: typeof Wallet
+  label: string
+  /** Base-unit amount. */
+  base: string
+  /** Base-unit amount to count up from, when a snapshot supplied one. */
+  from?: string
+  chain: ChainInfo
+}) {
   return (
     <div>
       <div className="flex items-center gap-1 text-xs text-amber-800">
         <Icon className="h-3.5 w-3.5 shrink-0" /> {label}
       </div>
-      <div className="truncate font-semibold text-amber-950">{value}</div>
+      <div className="truncate font-semibold text-amber-950">
+        <CountUp value={base} from={from} format={(b) => formatAmount(b, chain)} />
+      </div>
     </div>
   )
 }

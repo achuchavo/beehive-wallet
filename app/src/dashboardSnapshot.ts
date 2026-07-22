@@ -185,13 +185,38 @@ const addressSet = (rows: { address: string }[]): string =>
  */
 export function chainDelta(
   previousRows: SnapshotRow[],
-  currentRows: { address: string; available: string; staked: string }[],
+  currentRows: NetWorthRow[],
 ): string | null {
   if (previousRows.length === 0 || currentRows.length === 0) return null
   if (addressSet(previousRows) !== addressSet(currentRows)) return null
+  return (netWorth(currentRows) - netWorth(previousRows)).toString()
+}
 
-  const totalOf = (rows: { available: string; staked: string }[]) =>
-    rows.reduce((sum, r) => sum + BigInt(r.available) + BigInt(r.staked), 0n)
+export interface NetWorthRow {
+  address: string
+  available: string
+  staked: string
+  rewards: string
+  commission: string
+}
 
-  return (totalOf(currentRows) - totalOf(previousRows)).toString()
+/**
+ * Everything the account owns on a chain, in base units.
+ *
+ * Unclaimed rewards and commission are included deliberately. The hero card's
+ * "total value" is available + staked, which does not move at all between two
+ * visits unless the user transacts - so a delta based on it was silently zero
+ * on virtually every return, and the whole "+X since last time" never fired.
+ * Rewards accrue every block, so this is both the figure that actually changes
+ * and the honest answer to "what did I gain".
+ *
+ * It is also stable across a claim: claiming moves value from rewards into
+ * available, leaving this sum unchanged rather than inventing a jump.
+ */
+export function netWorth(rows: NetWorthRow[]): bigint {
+  return rows.reduce(
+    (sum, r) =>
+      sum + BigInt(r.available) + BigInt(r.staked) + BigInt(r.rewards) + BigInt(r.commission),
+    0n,
+  )
 }
