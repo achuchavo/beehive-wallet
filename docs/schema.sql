@@ -45,6 +45,7 @@ CREATE TABLE chains (
     beehive_moniker VARCHAR(80) NOT NULL DEFAULT '',
     service_fee VARCHAR(40) NOT NULL DEFAULT '0',
     fee_collector VARCHAR(120) NOT NULL DEFAULT '',
+    coingecko_id VARCHAR(60) NOT NULL DEFAULT '',
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     sort_order INT NOT NULL DEFAULT 0
 ) ENGINE = InnoDB;
@@ -168,3 +169,67 @@ CREATE TABLE uptime_alerts (
     CONSTRAINT fk_uptimealert_sub FOREIGN KEY (subscription_id)
         REFERENCES uptime_subscriptions (id) ON DELETE CASCADE
 ) ENGINE = InnoDB;
+
+-- ===========================================================================
+-- Added by migration 004 (second audit). Kept in sync with
+-- docs/migrations/004_audit_findings.sql, which is the authoritative source
+-- for an already-deployed database. This file is the fresh-install schema.
+-- ===========================================================================
+
+-- Login/registration rate limiting (common.php record_attempt).
+CREATE TABLE login_attempts (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ip VARCHAR(45) NOT NULL,
+    identifier VARCHAR(190) NOT NULL DEFAULT '',
+    kind VARCHAR(20) NOT NULL DEFAULT 'login',
+    success TINYINT(1) NOT NULL DEFAULT 0,
+    attempted_at DATETIME NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_ip_kind_time (ip, kind, success, attempted_at),
+    KEY idx_identifier_kind_time (identifier, kind, success, attempted_at),
+    KEY idx_attempted_at (attempted_at)
+) ENGINE = InnoDB;
+
+-- Validators exempt from the service fee (admin-managed).
+CREATE TABLE chain_free_validators (
+    id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    chain_key VARCHAR(40) NOT NULL,
+    valoper VARCHAR(120) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_chain_valoper (chain_key, valoper),
+    KEY idx_chain (chain_key)
+) ENGINE = InnoDB;
+
+-- Shared fallback for proxy rate limiting when APCu is unavailable.
+CREATE TABLE rate_counters (
+    scope VARCHAR(64) NOT NULL,
+    bucket INT UNSIGNED NOT NULL,
+    hits INT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (scope, bucket),
+    KEY idx_bucket (bucket)
+) ENGINE = InnoDB;
+
+-- Audit trail for administrator account changes.
+CREATE TABLE admin_audit_log (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    actor_user_id INT UNSIGNED NULL,
+    target_user_id INT UNSIGNED NULL,
+    action VARCHAR(40) NOT NULL,
+    detail VARCHAR(255) NOT NULL DEFAULT '',
+    ip VARCHAR(45) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_actor (actor_user_id),
+    KEY idx_target (target_user_id),
+    KEY idx_created (created_at)
+) ENGINE = InnoDB;
+
+-- Applied-migration marker.
+CREATE TABLE schema_version (
+    version INT UNSIGNED NOT NULL,
+    applied_at DATETIME NOT NULL,
+    PRIMARY KEY (version)
+) ENGINE = InnoDB;
+
+INSERT INTO schema_version (version, applied_at) VALUES (4, NOW());
