@@ -8,6 +8,11 @@ declare(strict_types=1);
 ini_set('display_errors', '0');
 error_reporting(E_ALL);
 
+// Pure validation/policy helpers (bech32, origin policy, role hierarchy, SSRF
+// address rules). Kept separate so they are unit-testable without a session or
+// database - see api/tests/run.php.
+require_once __DIR__ . '/security_lib.php';
+
 // --- Session hardening -----------------------------------------------------
 // Cookie flags MUST be set before session_start().
 const SESSION_IDLE_SECONDS = 3600;             // sign out after 1h of inactivity
@@ -58,20 +63,25 @@ if (!empty($_SESSION['user_id'])) {
 // is true the cookie is made persistent (30 days) instead of session-only.
 function session_login(int $userId, bool $remember = false): void
 {
+    session_regenerate_id(true);
+    $_SESSION['user_id'] = $userId;
+    $_SESSION['auth_started_at'] = time();
+    $_SESSION['last_seen_at'] = time();
+    $_SESSION['remember'] = $remember;
+
+    // session_set_cookie_params() only affects the cookie when called BEFORE
+    // session_start(), which already ran during this file's include - so it is
+    // useless here. Emit the persistent cookie explicitly instead, now that
+    // session_regenerate_id() has settled the final session id.
     if ($remember) {
-        session_set_cookie_params([
-            'lifetime' => SESSION_REMEMBER_SECONDS,
+        setcookie(session_name(), session_id(), [
+            'expires' => time() + SESSION_REMEMBER_SECONDS,
             'path' => '/',
             'secure' => cookie_secure(),
             'httponly' => true,
             'samesite' => 'Strict',
         ]);
     }
-    session_regenerate_id(true);
-    $_SESSION['user_id'] = $userId;
-    $_SESSION['auth_started_at'] = time();
-    $_SESSION['last_seen_at'] = time();
-    $_SESSION['remember'] = $remember;
 }
 
 // Fully invalidate the session and delete its cookie.
@@ -124,28 +134,38 @@ function get_db(): PDO
     return $pdo;
 }
 
-// CSRF defense for cookie-authenticated requests. `Sec-Fetch-Site` is set by the
-// browser and cannot be forged by a cross-site attacker; `none` covers a user
-// typing the URL / a bookmark. We fall back to Origin-host comparison for the
-// rare client that omits Sec-Fetch-Site. CosmJS RPC/LCD proxy traffic is
-// unauthenticated (no session cookie) so it never reaches this check.
+// CSRF gate for cookie-authenticated requests. The policy itself lives in
+// security_lib.php (origin_denied_reason) so it can be unit-tested; note that
+// `same-site` is NOT trusted, so a compromised sibling subdomain cannot drive
+// authenticated mutations. CosmJS RPC/LCD proxy traffic is unauthenticated
+// (no session cookie) so it never reaches this check.
 function require_same_origin(): void
 {
-    $site = $_SERVER['HTTP_SEC_FETCH_SITE'] ?? '';
-    if ($site !== '') {
-        if (in_array($site, ['same-origin', 'same-site', 'none'], true)) {
-            return;
-        }
-        json_error('Cross-site request blocked', 403);
-    }
-    $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-    if ($origin === '') {
-        return; // no Origin (e.g. same-origin GET / legacy client)
-    }
-    $originHost = parse_url($origin, PHP_URL_HOST);
-    $host = preg_replace('/:\d+$/', '', $_SERVER['HTTP_HOST'] ?? '');
-    if ($originHost === null || strcasecmp($originHost, (string) $host) !== 0) {
+    $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+    $reason = origin_denied_reason(
+        $_SERVER['HTTP_SEC_FETCH_SITE'] ?? '',
+        $_SERVER['HTTP_ORIGIN'] ?? '',
+        $_SERVER['HTTP_HOST'] ?? '',
+        is_mutating_method($method)
+    );
+    if ($reason !== '') {
         json_error('Cross-origin request blocked', 403);
+    }
+}
+
+// State-changing endpoints must be POST: a mutation must never be reachable by
+// a GET navigation (<img src>, link prefetch, browser history replay).
+function require_post(): void
+{
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+        header('Allow: POST');
+        json_error('Method not allowed', 405);
+    }
+    // JSON endpoints only. This also blocks HTML form cross-submission, which
+    // can only send urlencoded/multipart/plain content types.
+    $ct = strtolower(trim(explode(';', $_SERVER['CONTENT_TYPE'] ?? '')[0]));
+    if ($ct !== '' && $ct !== 'application/json') {
+        json_error('Unsupported content type', 415);
     }
 }
 
@@ -173,6 +193,24 @@ function require_user(PDO $db): int
 
 // Admin features that can be granted individually. Super admins have all.
 const ADMIN_FEATURES = ['users', 'chains', 'announcements', 'uptime'];
+
+/**
+ * Best-effort audit trail for administrator account changes. Never allowed to
+ * break the action itself: if the table has not been migrated yet the failure
+ * is logged to the PHP error log instead. See docs/migrations/004.
+ */
+function audit_admin_action(PDO $db, int $actorId, int $targetId, string $action, string $detail = ''): void
+{
+    try {
+        $stmt = $db->prepare(
+            'INSERT INTO admin_audit_log (actor_user_id, target_user_id, action, detail, ip, created_at)
+             VALUES (?, ?, ?, ?, ?, NOW())'
+        );
+        $stmt->execute([$actorId, $targetId, mb_substr($action, 0, 40), mb_substr($detail, 0, 255), client_ip()]);
+    } catch (Throwable $e) {
+        error_log('admin_audit_log write failed: ' . $e->getMessage());
+    }
+}
 
 // Read a global setting from app_settings, with a default fallback.
 function get_setting(PDO $db, string $key, string $default = ''): string
@@ -233,11 +271,12 @@ function require_super_admin(PDO $db): int
     return $userId;
 }
 
-// Basic bech32 shape check (not full checksum validation - the watcher
-// verifies addresses against the chain before first poll).
+// Full bech32 validation (checksum + exact HRP + payload length + canonical
+// lowercase). Implemented in security_lib.php; this wrapper keeps the original
+// call sites working.
 function looks_like_address(string $address, string $prefix): bool
 {
-    return (bool) preg_match('/^' . preg_quote($prefix, '/') . '1[a-z0-9]{20,80}$/', $address);
+    return is_account_address($address, $prefix);
 }
 
 // Direct socket peers we trust to set a real forwarded-client-IP header. With
@@ -262,29 +301,13 @@ function client_ip(): string
 }
 
 // --- SSRF guards -----------------------------------------------------------
-// A public routable IP: rejects private (10/8, 172.16/12, 192.168/16, fc00::/7),
-// reserved/loopback (127/8, ::1), link-local (169.254/16 incl. the 169.254.169.254
-// metadata address, fe80::/10) and other reserved ranges.
-function is_public_ip(string $ip): bool
-{
-    return (bool) filter_var(
-        $ip,
-        FILTER_VALIDATE_IP,
-        FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
-    );
-}
+// is_public_ip() / outbound_url_denied_reason() live in security_lib.php.
 
-// Full validation for admin-configured node URLs (used at save time): must be
-// HTTPS and resolve only to public IPs. Rejects unresolvable hosts.
-function is_safe_public_url(string $url): bool
+/** Every A/AAAA address a hostname currently resolves to. */
+function resolve_host_ips(string $host): array
 {
-    $p = parse_url($url);
-    if ($p === false || ($p['scheme'] ?? '') !== 'https' || empty($p['host'])) {
-        return false;
-    }
-    $host = $p['host'];
     if (filter_var($host, FILTER_VALIDATE_IP)) {
-        return is_public_ip($host);
+        return [$host];
     }
     $ips = [];
     $records = @dns_get_record($host, DNS_A | DNS_AAAA) ?: [];
@@ -302,48 +325,251 @@ function is_safe_public_url(string $url): bool
             $ips[] = $v4;
         }
     }
+    return $ips;
+}
+
+/**
+ * Resolve a URL's host and require that EVERY returned address is public.
+ * Returns the validated IP list, or null if the URL is unsafe/unresolvable.
+ * Used both at admin save time and immediately before each outbound request,
+ * so a hostname whose DNS later flips to an internal address is caught.
+ */
+function validated_target_ips(string $url): ?array
+{
+    if (outbound_url_denied_reason($url) !== '') {
+        return null;
+    }
+    $host = (string) parse_url($url, PHP_URL_HOST);
+    $ips = resolve_host_ips(trim($host, '[]'));
     if (!$ips) {
-        return false;
+        return null;
     }
     foreach ($ips as $ip) {
         if (!is_public_ip($ip)) {
-            return false;
+            return null;
         }
     }
-    return true;
+    return $ips;
 }
 
-// Cheap request-time guard for the proxies: HTTPS only and, for IP-literal hosts,
-// must be public. Hostnames are trusted here because they were validated with a
-// full DNS check when the admin saved them (see admin_endpoint_save.php).
+// Full validation for admin-configured node URLs (used at save time).
+function is_safe_public_url(string $url): bool
+{
+    return validated_target_ips($url) !== null;
+}
+
+// Request-time guard for the proxies. Unlike before, this re-resolves DNS on
+// every request instead of trusting the hostname that was validated at save
+// time - which is what closes the DNS-rebinding window.
 function proxy_url_ok(string $url): bool
 {
-    $p = parse_url($url);
-    if (!$p || ($p['scheme'] ?? '') !== 'https' || empty($p['host'])) {
-        return false;
-    }
-    if (filter_var($p['host'], FILTER_VALIDATE_IP) && !is_public_ip($p['host'])) {
-        return false;
-    }
-    return true;
+    return validated_target_ips($url) !== null;
 }
 
-// Best-effort per-IP + global rate limit for the public proxies, using APCu when
-// available (in-memory, no DB write per request). A no-op if APCu is absent - the
-// size/timeout caps still apply. Emits 429 and exits when exceeded.
-function proxy_rate_limit(string $ip, int $perIpPerMin = 300, int $globalPerMin = 3000): void
+/**
+ * Shared cURL hardening for outbound proxy calls: no redirects (each hop would
+ * bypass validation), pinned resolution to the addresses we just validated, and
+ * a bounded body read that fails loudly instead of returning truncated JSON.
+ *
+ * Returns ['body'=>string,'status'=>int,'error'=>string,'too_large'=>bool].
+ */
+function proxy_fetch(string $url, array $opts = []): array
 {
-    if (!function_exists('apcu_fetch') || !@apcu_enabled()) {
-        return;
+    $timeout = (int) ($opts['timeout'] ?? 10);
+    $maxBytes = (int) ($opts['max_bytes'] ?? 2 * 1024 * 1024);
+    $post = $opts['post'] ?? null;
+
+    $ips = validated_target_ips($url);
+    if ($ips === null) {
+        return ['body' => '', 'status' => 0, 'error' => 'blocked', 'too_large' => false];
     }
-    $bucket = (int) floor(time() / 60);
-    foreach ([["proxy_ip_{$ip}_{$bucket}", $perIpPerMin], ["proxy_all_{$bucket}", $globalPerMin]] as [$key, $limit]) {
-        $n = apcu_inc($key, 1, $ok, 90);
-        if ($n !== false && $n > $limit) {
-            header('Retry-After: 60');
-            json_out(['error' => 'Rate limit exceeded. Please slow down.'], 429);
+
+    $parts = parse_url($url);
+    $host = trim((string) ($parts['host'] ?? ''), '[]');
+    $port = (int) ($parts['port'] ?? 443);
+
+    // NOTE: the ext/curl extension is NOT available in this deployment's Apache
+    // SAPI, so this uses the HTTPS stream wrapper. Consequence: we cannot pin
+    // the connection to the pre-validated IPs the way CURLOPT_RESOLVE would, so
+    // a small DNS-rebinding window remains between validation and connect. It
+    // is narrowed by revalidating immediately before every request; install
+    // ext/curl to close it completely.
+    $headers = "Accept: application/json\r\n";
+    if ($post !== null) {
+        $headers .= "Content-Type: application/json\r\n";
+    }
+    $ctx = stream_context_create([
+        'http' => [
+            'method' => $post !== null ? 'POST' : 'GET',
+            'header' => $headers,
+            'content' => $post ?? '',
+            'timeout' => $timeout,
+            'ignore_errors' => true,
+            // Never auto-follow: a redirect hop would skip SSRF revalidation.
+            'follow_location' => 0,
+            'max_redirects' => 0,
+            'protocol_version' => 1.1,
+        ],
+        'ssl' => [
+            'verify_peer' => true,
+            'verify_peer_name' => true,
+        ],
+    ]);
+
+    $fh = @fopen($url, 'rb', false, $ctx);
+    if ($fh === false) {
+        return ['body' => '', 'status' => 0, 'error' => 'request failed', 'too_large' => false];
+    }
+
+    // Status line comes from the wrapper metadata (works inside a function,
+    // unlike the magic $http_response_header local).
+    $status = 0;
+    $meta = stream_get_meta_data($fh);
+    foreach ($meta['wrapper_data'] ?? [] as $h) {
+        if (preg_match('#^HTTP/\S+\s+(\d{3})#', (string) $h, $m)) {
+            $status = (int) $m[1]; // last status line wins
         }
     }
+
+    // Bounded read: stop as soon as the cap is passed instead of buffering an
+    // arbitrarily large upstream body or silently truncating it.
+    $body = '';
+    $tooLarge = false;
+    while (!feof($fh)) {
+        $chunk = fread($fh, 16384);
+        if ($chunk === false || $chunk === '') {
+            break;
+        }
+        $body .= $chunk;
+        if (strlen($body) > $maxBytes) {
+            $tooLarge = true;
+            break;
+        }
+    }
+    fclose($fh);
+
+    if ($tooLarge) {
+        return ['body' => '', 'status' => $status, 'error' => 'too_large', 'too_large' => true];
+    }
+    // Treat a redirect as a failure rather than following it.
+    if ($status >= 300 && $status < 400) {
+        return ['body' => '', 'status' => $status, 'error' => 'redirect_blocked', 'too_large' => false];
+    }
+    return ['body' => $body, 'status' => $status, 'error' => '', 'too_large' => false];
+}
+
+// Per-IP + global rate limit for the public proxies. Uses APCu when available
+// (in-memory, no DB write per request) and otherwise falls back to a shared
+// database counter, so the limiter is never silently disabled. Emits 429 with
+// Retry-After and exits when exceeded.
+//
+// The DB fallback is a fixed 60s bucket keyed by (scope, bucket); rows are
+// pruned opportunistically so the table cannot grow without bound.
+function proxy_rate_limit(string $ip, int $perIpPerMin = 300, int $globalPerMin = 3000): void
+{
+    $bucket = (int) floor(time() / 60);
+    $scopes = [["ip_{$ip}", $perIpPerMin], ['all', $globalPerMin]];
+
+    if (function_exists('apcu_enabled') && @apcu_enabled()) {
+        foreach ($scopes as [$scope, $limit]) {
+            $n = apcu_inc("proxy_{$scope}_{$bucket}", 1, $ok, 90);
+            if ($n !== false && $n > $limit) {
+                rate_limit_exceeded();
+            }
+        }
+        return;
+    }
+
+    // --- Shared DB fallback -------------------------------------------------
+    // Correct across processes/instances, at the cost of one upsert per request.
+    try {
+        $db = get_db();
+        foreach ($scopes as [$scope, $limit]) {
+            $stmt = $db->prepare(
+                'INSERT INTO rate_counters (scope, bucket, hits) VALUES (?, ?, 1)
+                 ON DUPLICATE KEY UPDATE hits = hits + 1'
+            );
+            $stmt->execute([mb_substr($scope, 0, 64), $bucket]);
+
+            $stmt = $db->prepare('SELECT hits FROM rate_counters WHERE scope = ? AND bucket = ?');
+            $stmt->execute([mb_substr($scope, 0, 64), $bucket]);
+            if ((int) $stmt->fetchColumn() > $limit) {
+                rate_limit_exceeded();
+            }
+        }
+        if (random_int(1, 200) === 1) {
+            $db->prepare('DELETE FROM rate_counters WHERE bucket < ?')->execute([$bucket - 60]);
+        }
+        return;
+    } catch (Throwable $e) {
+        // Shared storage unavailable - most commonly because migration 004 has
+        // not been applied yet, so `rate_counters` does not exist. Do NOT fail
+        // closed here: that would 429 every proxy request and take the whole
+        // wallet offline. Do NOT silently skip either. Fall through to the
+        // file-backed limiter below, which still enforces a limit.
+        error_log('proxy_rate_limit: shared storage unavailable (' . $e->getMessage() . '), using file fallback');
+    }
+
+    file_rate_limit($scopes, $bucket);
+}
+
+/**
+ * Last-resort limiter backed by counter files in the system temp dir.
+ *
+ * LIMITATIONS (documented per audit #4): this is per-server, not shared across
+ * instances, so behind multiple app servers each enforces the limit separately.
+ * It is a safety net for when APCu is absent AND the DB counter table is
+ * unavailable - install APCu or apply migration 004 for correct shared limits.
+ * Infrastructure-level limiting (mod_ratelimit / reverse proxy) should back
+ * this up regardless; see docs/security-headers.md.
+ */
+function file_rate_limit(array $scopes, int $bucket): void
+{
+    $dir = sys_get_temp_dir() . '/beehive_rl';
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0700, true);
+    }
+    if (!is_dir($dir) || !is_writable($dir)) {
+        error_log('proxy_rate_limit: file fallback unavailable, request allowed unmetered');
+        return;
+    }
+
+    foreach ($scopes as [$scope, $limit]) {
+        $file = $dir . '/' . hash('sha256', $scope . '_' . $bucket) . '.cnt';
+        $fh = @fopen($file, 'c+');
+        if ($fh === false) {
+            continue;
+        }
+        if (flock($fh, LOCK_EX)) {
+            $n = (int) stream_get_contents($fh) + 1;
+            ftruncate($fh, 0);
+            rewind($fh);
+            fwrite($fh, (string) $n);
+            fflush($fh);
+            flock($fh, LOCK_UN);
+            fclose($fh);
+            if ($n > $limit) {
+                rate_limit_exceeded();
+            }
+        } else {
+            fclose($fh);
+        }
+    }
+
+    // Opportunistically drop counter files older than a few minutes.
+    if (random_int(1, 200) === 1) {
+        foreach (glob($dir . '/*.cnt') ?: [] as $f) {
+            if (@filemtime($f) < time() - 300) {
+                @unlink($f);
+            }
+        }
+    }
+}
+
+function rate_limit_exceeded(): void
+{
+    header('Retry-After: 60');
+    json_out(['error' => 'Rate limit exceeded. Please slow down.'], 429);
 }
 
 // Rolling-window rate limit config.
