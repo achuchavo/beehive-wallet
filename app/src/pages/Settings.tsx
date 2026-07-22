@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Plus, Import, TriangleAlert, Copy, Check } from 'lucide-react'
-import { DEFAULT_CHAIN } from '../chains'
 import { useWallet, generateMnemonic } from '../wallet/WalletContext'
+import { useChains } from '../chainStore'
 import PasswordInput from '../components/PasswordInput'
 import CopyAddress from '../components/CopyAddress'
+import ChainPicker from '../components/ChainPicker'
+import RemoveWalletDialog from '../components/RemoveWalletDialog'
 import Checkbox from '../components/Checkbox'
 import { walletPasswordError, walletPasswordWeak } from '../wallet/password'
 import { useT } from '../i18n/I18nContext'
@@ -103,10 +105,15 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
     }
   }, [secret])
 
-  function remove(address: string) {
-    if (window.confirm(t('settings.removeConfirm'))) {
-      removeWallet(address)
-    }
+  // Accessible confirmation dialog instead of window.confirm (audit #27).
+  const [removing, setRemoving] = useState<{ address: string; name: string } | null>(null)
+
+  function confirmRemove() {
+    if (!removing) return
+    removeWallet(removing.address)
+    // Drop any revealed secret still on screen for the wallet being removed.
+    setSecret('')
+    setRemoving(null)
   }
 
   return (
@@ -142,7 +149,10 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
                         ? t('settings.showKey')
                         : t('settings.showSeed')}
                   </button>
-                  <button onClick={() => remove(w.address)} className="text-xs text-red-600 hover:underline">
+                  <button
+                    onClick={() => setRemoving({ address: w.address, name: w.name })}
+                    className="text-xs text-red-600 hover:underline"
+                  >
                     {t('common.remove')}
                   </button>
                 </div>
@@ -206,6 +216,18 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
           <Import className="h-4 w-4" /> {t('settings.import')}
         </button>
       </div>
+
+      {removing && (
+        <RemoveWalletDialog
+          walletName={removing.name}
+          address={removing.address}
+          // Block removal while a secret is revealed for that wallet - a
+          // wallet-sensitive operation is in progress.
+          busy={revealFor === removing.address && secret !== ''}
+          onConfirm={confirmRemove}
+          onClose={() => setRemoving(null)}
+        />
+      )}
     </div>
   )
 }
@@ -248,8 +270,12 @@ function PasswordFields({
 }
 
 function CreateWallet({ onDone }: { onDone: () => void }) {
-  const chain = DEFAULT_CHAIN
   const { t } = useT()
+  const { chains } = useChains()
+  // Explicit network choice: it fixes the derivation path, address prefix and
+  // denom for the life of the wallet, so it must not be an implicit default.
+  const [chainKey, setChainKey] = useState(chains[0]?.key ?? '')
+  const chain = chains.find((c) => c.key === chainKey) ?? chains[0]
   const { addWallet } = useWallet()
   const [name, setName] = useState('')
   const [mnemonic, setMnemonic] = useState('')
@@ -315,9 +341,18 @@ function CreateWallet({ onDone }: { onDone: () => void }) {
       {!mnemonic ? (
         <>
           <p className="text-sm text-slate-500">{t('settings.createDesc')}</p>
+          {/* Chosen BEFORE generating: the network fixes the derivation path
+              and address prefix this wallet will use. */}
+          <ChainPicker
+            id="create-chain"
+            label={t('settings.network')}
+            value={chainKey}
+            onChange={setChainKey}
+          />
           <button
             onClick={start}
-            className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
+            disabled={!chain}
+            className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
           >
             {t('settings.generateSeed')}
           </button>
@@ -362,14 +397,26 @@ function CreateWallet({ onDone }: { onDone: () => void }) {
             </div>
           )}
 
-          <input
-            name="beehive-create-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={t('settings.walletNamePlaceholder')}
-            autoComplete="off"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-          />
+          {/* Network is fixed once the seed is generated - show it, don't let
+              it change underneath an already-derived wallet. */}
+          <p className="text-xs text-slate-500">
+            {t('settings.network')}: <span className="font-medium">{chain?.chainName}</span>{' '}
+            <span className="font-mono text-slate-400">({chain?.chainId})</span>
+          </p>
+          <div>
+            <label htmlFor="create-name" className="mb-1 block text-xs font-medium text-slate-600">
+              {t('settings.walletName')}
+            </label>
+            <input
+              id="create-name"
+              name="beehive-create-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t('settings.walletNamePlaceholder')}
+              autoComplete="off"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+            />
+          </div>
           <PasswordFields
             password={password}
             confirm={confirm}
@@ -398,8 +445,11 @@ function CreateWallet({ onDone }: { onDone: () => void }) {
 }
 
 function ImportWallet({ onDone }: { onDone: () => void }) {
-  const chain = DEFAULT_CHAIN
   const { t } = useT()
+  const { chains } = useChains()
+  // Same as create: the network must be chosen, not inherited from a default.
+  const [chainKey, setChainKey] = useState(chains[0]?.key ?? '')
+  const chain = chains.find((c) => c.key === chainKey) ?? chains[0]
   const { addWallet } = useWallet()
   const [kind, setKind] = useState<'mnemonic' | 'privkey'>('mnemonic')
   const [name, setName] = useState('')
@@ -487,14 +537,26 @@ function ImportWallet({ onDone }: { onDone: () => void }) {
         spellCheck={false}
         className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
       />
-      <input
-        name="beehive-wallet-name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder={t('settings.walletNamePlaceholder')}
-        autoComplete="off"
-        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+      <ChainPicker
+        id="import-chain"
+        label={t('settings.network')}
+        value={chainKey}
+        onChange={setChainKey}
       />
+      <div>
+        <label htmlFor="import-name" className="mb-1 block text-xs font-medium text-slate-600">
+          {t('settings.walletName')}
+        </label>
+        <input
+          id="import-name"
+          name="beehive-wallet-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={t('settings.walletNamePlaceholder')}
+          autoComplete="off"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+        />
+      </div>
       <PasswordFields
         password={password}
         confirm={confirm}
