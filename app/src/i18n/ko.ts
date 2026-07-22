@@ -80,6 +80,10 @@ export const ko: Record<string, string> = {
   'alarms.passwordsNoMatch': '비밀번호가 일치하지 않습니다',
   'alarms.rememberMe': '이 기기에서 로그인 상태 유지',
   'alarms.verified': '확인됨',
+  'alarms.unverified': '미확인',
+  'alarms.verifyNow': '지금 확인',
+  'alarms.needsReverify':
+    '이 주소는 소유권 증명을 요구하기 전에 연결되었습니다. 확인하기 전까지는 로그인에 사용할 수 없습니다. 지금 확인하여 지갑이 본인 것임을 증명하세요.',
   'alarms.linkAddressAfter': '로그인 후 지갑 주소를 연결할 수 있습니다 — 소유권 증명이 필요합니다.',
   'alarms.unlink': '연결 해제',
   'alarms.chooseWalletToVerify': '확인하고 연결할 지갑을 선택하세요',

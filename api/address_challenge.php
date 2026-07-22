@@ -23,9 +23,13 @@ if (!is_account_address($address, $chain['bech32Prefix'])) {
     json_error("Enter a valid {$chain['chainName']} address");
 }
 
-// Refuse early if the address already belongs to someone else. (The same check
-// runs again at redemption, inside the transaction, to close the race.)
-$stmt = $db->prepare('SELECT id FROM users WHERE main_address = ? AND id <> ?');
+// Refuse early only if a VERIFIED owner already holds this address. An
+// unverified holder (a squatter, or a row linked before proofs existed) does
+// not block someone who can actually sign for it - redemption reassigns it.
+// The same check runs again inside the redemption transaction.
+$stmt = $db->prepare(
+    'SELECT id FROM users WHERE main_address = ? AND main_address_verified = 1 AND id <> ?'
+);
 $stmt->execute([$address, $userId]);
 if ($stmt->fetch()) {
     json_error('That address is already linked to another account', 409);

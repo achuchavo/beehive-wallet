@@ -6,7 +6,9 @@ if (empty($_SESSION['user_id'])) {
 }
 
 $db = get_db();
-$stmt = $db->prepare('SELECT email, is_admin, is_disabled, main_address FROM users WHERE id = ?');
+$stmt = $db->prepare(
+    'SELECT email, is_admin, is_disabled, main_address, main_address_verified FROM users WHERE id = ?'
+);
 $stmt->execute([(int) $_SESSION['user_id']]);
 $user = $stmt->fetch();
 
@@ -26,4 +28,7 @@ json_out([
     'is_super_admin' => $ctx['is_super_admin'],
     'admin_features' => $ctx['features'],
     'main_address' => $user['main_address'],
+    // False for anything linked before ownership proofs existed: the UI prompts
+    // re-verification, and login.php will not accept it as an identifier.
+    'main_address_verified' => (int) $user['main_address_verified'] === 1,
 ]);

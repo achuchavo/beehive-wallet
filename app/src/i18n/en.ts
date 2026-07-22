@@ -80,6 +80,10 @@ export const en: Record<string, string> = {
   'alarms.passwordsNoMatch': 'Passwords do not match',
   'alarms.rememberMe': 'Keep me signed in on this device',
   'alarms.verified': 'Verified',
+  'alarms.unverified': 'Unverified',
+  'alarms.verifyNow': 'Verify now',
+  'alarms.needsReverify':
+    'This address was linked before we required proof of ownership. Until you verify it, it will not work for signing in. Verify it now to confirm the wallet is yours.',
   'alarms.linkAddressAfter':
     'You can link a wallet address after signing in — it requires proving you control it.',
   'alarms.unlink': 'Unlink',

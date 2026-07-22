@@ -137,6 +137,8 @@ export const api = {
       is_super_admin?: boolean
       admin_features?: string[]
       main_address?: string | null
+      /** False for addresses linked before ownership proofs existed. */
+      main_address_verified?: boolean
     }>('me.php'),
   // A wallet address is not accepted at registration: proving control of one
   // requires signing a challenge bound to an account, which does not exist yet.
@@ -159,7 +161,7 @@ export const api = {
     main_address: string,
     proof?: { nonce: string; pubkey: string; signature: string },
   ) =>
-    call<{ main_address: string | null; verified?: boolean }>('account_set_address.php', {
+    call<{ main_address: string | null; verified: boolean }>('account_set_address.php', {
       main_address,
       ...(proof ?? {}),
     }),

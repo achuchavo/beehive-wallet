@@ -11,6 +11,7 @@ import {
   Trash2,
   X,
   ShieldCheck,
+  TriangleAlert,
 } from 'lucide-react'
 import { api, type WatchedAddress, type WalletAlert, type AlarmType, type AlertKind } from '../api'
 import { DEFAULT_CHAIN, formatAmount, CHAINS } from '../chains'
@@ -313,6 +314,9 @@ function MainAddressCard() {
   const { t } = useT()
   const { wallets, signOwnership } = useWallet()
   const [address, setAddress] = useState<string | null | undefined>(undefined)
+  // Addresses linked before ownership proofs existed come back unverified and
+  // must be re-proved; until then they do not work as a sign-in identifier.
+  const [verified, setVerified] = useState(false)
   const [editing, setEditing] = useState(false)
   // Only a wallet held in this app can be linked - ownership has to be proved
   // by signing, so an arbitrary typed address is no longer accepted.
@@ -322,7 +326,10 @@ function MainAddressCard() {
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    api.me().then((r) => setAddress(r.main_address ?? null))
+    api.me().then((r) => {
+      setAddress(r.main_address ?? null)
+      setVerified(r.main_address_verified === true)
+    })
   }, [])
 
   // Never let a typed password outlive the form.
@@ -354,6 +361,7 @@ function MainAddressCard() {
       // 3. Redeem. The server re-derives the address from the public key.
       const r = await api.accountSetAddress(wallet.address, { nonce: c.nonce, ...proof })
       setAddress(r.main_address)
+      setVerified(r.verified === true)
       setEditing(false)
     } catch (e) {
       setPassword('')
@@ -369,6 +377,7 @@ function MainAddressCard() {
     try {
       const r = await api.accountSetAddress('')
       setAddress(r.main_address)
+      setVerified(false)
       setEditing(false)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed')
@@ -383,24 +392,43 @@ function MainAddressCard() {
     <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
       <div className="flex items-center gap-1.5 text-sm font-medium">
         {t('alarms.mainAddress')}
-        {address && (
-          <span className="flex items-center gap-0.5 rounded bg-green-100 px-1.5 py-0.5 text-[11px] font-normal text-green-700">
-            <ShieldCheck className="h-3 w-3" /> {t('alarms.verified')}
-          </span>
-        )}
+        {address &&
+          (verified ? (
+            <span className="flex items-center gap-0.5 rounded bg-green-100 px-1.5 py-0.5 text-[11px] font-normal text-green-700">
+              <ShieldCheck className="h-3 w-3" /> {t('alarms.verified')}
+            </span>
+          ) : (
+            <span className="flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-normal text-amber-800">
+              <TriangleAlert className="h-3 w-3" /> {t('alarms.unverified')}
+            </span>
+          ))}
       </div>
 
       {address && !editing ? (
-        <div className="flex items-center justify-between gap-2">
-          <span className="truncate font-mono text-xs text-slate-500">{address}</span>
-          <div className="flex shrink-0 gap-2">
-            <button onClick={() => setEditing(true)} className="text-xs text-amber-700 hover:underline">
-              {t('alarms.change')}
-            </button>
-            <button onClick={unlink} disabled={busy} className="text-xs text-slate-400 hover:text-red-600">
-              {t('alarms.unlink')}
-            </button>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate font-mono text-xs text-slate-500">{address}</span>
+            <div className="flex shrink-0 gap-2">
+              <button
+                onClick={() => setEditing(true)}
+                className="text-xs text-amber-700 hover:underline"
+              >
+                {verified ? t('alarms.change') : t('alarms.verifyNow')}
+              </button>
+              <button
+                onClick={unlink}
+                disabled={busy}
+                className="text-xs text-slate-400 hover:text-red-600"
+              >
+                {t('alarms.unlink')}
+              </button>
+            </div>
           </div>
+          {!verified && (
+            <p role="status" className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              {t('alarms.needsReverify')}
+            </p>
+          )}
         </div>
       ) : (
         <div className="mt-1 space-y-2">

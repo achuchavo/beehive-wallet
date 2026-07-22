@@ -16,8 +16,14 @@ $ip = client_ip();
 
 enforce_login_rate_limit($db, $ip, $email);
 
+// A wallet address only works as an identifier once its owner has PROVED
+// control of it by signing a challenge (audit #19). Addresses linked before
+// proofs existed are main_address_verified = 0 and are therefore not accepted
+// here, so a squatted or unproven address can never act as a sign-in handle.
 $stmt = $db->prepare(
-    'SELECT id, password_hash, is_disabled FROM users WHERE email = ? OR main_address = ?'
+    'SELECT id, password_hash, is_disabled FROM users
+     WHERE email = ?
+        OR (main_address = ? AND main_address_verified = 1)'
 );
 $stmt->execute([$email, $identifier]);
 $user = $stmt->fetch();

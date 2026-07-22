@@ -17,8 +17,9 @@ $mainAddress = trim($body['main_address'] ?? '');
 
 // --- Clearing the address needs no proof -------------------------------------
 if ($mainAddress === '') {
-    $db->prepare('UPDATE users SET main_address = NULL WHERE id = ?')->execute([$userId]);
-    json_out(['ok' => true, 'main_address' => null]);
+    $db->prepare('UPDATE users SET main_address = NULL, main_address_verified = 0 WHERE id = ?')
+        ->execute([$userId]);
+    json_out(['ok' => true, 'main_address' => null, 'verified' => false]);
 }
 
 $nonce = trim($body['nonce'] ?? '');
@@ -93,16 +94,32 @@ try {
         json_error('Could not verify that you control this address.', 400);
     }
 
-    // Re-check uniqueness inside the transaction: another account may have
-    // claimed this address between challenge issuance and redemption.
-    $stmt = $db->prepare('SELECT id FROM users WHERE main_address = ? AND id <> ? FOR UPDATE');
+    // Re-check ownership inside the transaction: another account may hold this
+    // address. A VERIFIED holder wins - there can only be one proven owner. An
+    // UNVERIFIED holder is a squatter or a pre-proof legacy row, and loses to
+    // someone who can actually sign for the address; otherwise a squat taken
+    // before proofs existed would block the real owner forever.
+    $stmt = $db->prepare(
+        'SELECT id, main_address_verified FROM users
+         WHERE main_address = ? AND id <> ? FOR UPDATE'
+    );
     $stmt->execute([$mainAddress, $userId]);
-    if ($stmt->fetch()) {
-        $db->commit();
-        json_error('That address is already linked to another account', 409);
+    $holder = $stmt->fetch();
+    if ($holder) {
+        if ((int) $holder['main_address_verified'] === 1) {
+            $db->commit();
+            json_error('That address is already linked to another account', 409);
+        }
+        // Release the unproven claim so the UNIQUE index allows the reassignment.
+        $db->prepare('UPDATE users SET main_address = NULL, main_address_verified = 0 WHERE id = ?')
+            ->execute([$holder['id']]);
+        error_log(
+            "account_set_address: reassigned unverified address from user {$holder['id']} to {$userId}"
+        );
     }
 
-    $db->prepare('UPDATE users SET main_address = ? WHERE id = ?')->execute([$mainAddress, $userId]);
+    $db->prepare('UPDATE users SET main_address = ?, main_address_verified = 1 WHERE id = ?')
+        ->execute([$mainAddress, $userId]);
     $db->commit();
 } catch (Throwable $e) {
     if ($db->inTransaction()) {
