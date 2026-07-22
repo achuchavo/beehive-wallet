@@ -155,15 +155,21 @@ export default function Rewards() {
   }
 
   // Average monthly income: total claimed over the calendar span it covers.
+  // Scoped to the displayed chain's own records so two assets are never summed.
   const HISTORY_PER_PAGE = 10
-  const totalClaimed = history.reduce((s, h) => s + h.rewards + h.commission, 0)
+  const chainOf = (h: { chainKey: string }) => resolveChain(h.chainKey)
+  const displayHistory = history.filter((h) => h.chainKey === displayChain.key)
+  // Exact: base units can exceed Number.MAX_SAFE_INTEGER.
+  const totalClaimed = sumBase(displayHistory.flatMap((h) => [h.rewards, h.commission]))
   let monthsSpan = 0
-  if (history.length > 0) {
-    const [ly, lm] = history[0].time.slice(0, 7).split('-').map(Number)
-    const [ey, em] = history[history.length - 1].time.slice(0, 7).split('-').map(Number)
+  if (displayHistory.length > 0) {
+    const [ly, lm] = displayHistory[0].time.slice(0, 7).split('-').map(Number)
+    const [ey, em] = displayHistory[displayHistory.length - 1].time.slice(0, 7).split('-').map(Number)
     monthsSpan = (ly - ey) * 12 + (lm - em) + 1
   }
-  const avgMonthly = monthsSpan > 0 ? totalClaimed / monthsSpan : 0
+  // Integer base-unit division; the quotient is still a base-unit string.
+  const avgMonthly =
+    monthsSpan > 0 ? (BigInt(totalClaimed) / BigInt(monthsSpan)).toString() : '0'
   const historyPageCount = Math.max(1, Math.ceil(history.length / HISTORY_PER_PAGE))
   const historyRows = history.slice(
     historyPage * HISTORY_PER_PAGE,
@@ -229,18 +235,18 @@ export default function Rewards() {
         </div>
       </section>
 
-      {avgMonthly > 0 && (
+      {isPositiveBase(avgMonthly) && (
         <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600">
           <TrendingUp className="h-4 w-4 shrink-0 text-green-600" />
           <span>
             {monthsSpan > 1
               ? t('rewards.averagingOver', {
-                  amount: formatAmount(String(Math.round(avgMonthly)), displayChain),
+                  amount: formatAmount(avgMonthly, displayChain),
                   denom: displayChain.displayDenom,
                   months: monthsSpan,
                 })
               : t('rewards.averaging', {
-                  amount: formatAmount(String(Math.round(avgMonthly)), displayChain),
+                  amount: formatAmount(avgMonthly, displayChain),
                   denom: displayChain.displayDenom,
                 })}
           </span>
@@ -253,14 +259,16 @@ export default function Rewards() {
             {historyRows.map((h) => (
               <li key={h.hash} className="flex items-center justify-between px-4 py-2 text-sm">
                 <span>
-                  {h.rewards > 0 && (
+                  {/* Format with the chain the record actually came from, never
+                      another chain's decimals/ticker. */}
+                  {isPositiveBase(h.rewards) && (
                     <span className="text-green-700">
-                      +{formatAmount(String(h.rewards), displayChain)} {t('rewards.rewardsWord')}
+                      +{formatAmount(h.rewards, chainOf(h))} {t('rewards.rewardsWord')}
                     </span>
                   )}
-                  {h.commission > 0 && (
+                  {isPositiveBase(h.commission) && (
                     <span className="ml-2 text-amber-700">
-                      +{formatAmount(String(h.commission), displayChain)} {t('rewards.commissionWord')}
+                      +{formatAmount(h.commission, chainOf(h))} {t('rewards.commissionWord')}
                     </span>
                   )}
                 </span>
@@ -496,14 +504,29 @@ function ClaimForm({
     setBusy(true)
     onError('')
     try {
-      // onSubmit opens the review; keep the field for a cancelled review.
+      // onSubmit derives the signer and opens the review; the plaintext
+      // password is not needed afterwards, so it is cleared below. Cancelling
+      // the review therefore requires deliberately re-entering it.
       await onSubmit(password)
     } catch (err) {
       onError(err instanceof Error ? err.message : t('rewards.errClaim'))
     } finally {
+      setPassword('')
       setBusy(false)
     }
   }
+
+  // Don't let a typed password survive backgrounding or unmount.
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') setPassword('')
+    }
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      document.removeEventListener('visibilitychange', onHide)
+      setPassword('')
+    }
+  }, [])
 
   return (
     <form onSubmit={submit} className="space-y-2 rounded-lg bg-slate-50 p-3">
