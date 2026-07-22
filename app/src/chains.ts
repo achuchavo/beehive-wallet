@@ -130,3 +130,27 @@ export function feeReserve(chain: ChainInfo, gasLimit: number): string {
   const gasNum = BigInt(parseInt(chain.gasPrice, 10) || 0)
   return ((gasNum * BigInt(Math.floor(gasLimit)) * 3n) / 2n).toString()
 }
+
+// Split a gas price like "5umed" into its numeric amount and denom.
+export function parseGasPrice(chain: ChainInfo): { amount: number; denom: string } {
+  const m = chain.gasPrice.match(/^([0-9.]+)(.*)$/)
+  return { amount: m ? parseFloat(m[1]) : 0, denom: m ? m[2] : chain.denom }
+}
+
+// Scale the chain's minimum gas price by a speed multiplier, returning a
+// CosmJS-parseable gas price string (e.g. 1.5 x "5umed" -> "7.5umed"). Paying a
+// higher gas price is what gets a transaction picked up faster by validators.
+export function scaledGasPrice(chain: ChainInfo, multiplier: number): string {
+  const { amount, denom } = parseGasPrice(chain)
+  const scaled = Math.round(amount * multiplier * 1e6) / 1e6
+  return `${scaled}${denom}`
+}
+
+// The same scaled gas price expressed in the display denom (MED), as a compact
+// decimal string. Informational only - the fee shown in the review is computed
+// with exact Decimal math by CosmJS.
+export function gasPriceInDisplay(chain: ChainInfo, multiplier: number): string {
+  const { amount } = parseGasPrice(chain)
+  const med = (amount * multiplier) / Math.pow(10, chain.decimals)
+  return med.toFixed(chain.decimals + 2).replace(/\.?0+$/, '')
+}

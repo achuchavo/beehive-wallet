@@ -39,13 +39,16 @@ export async function simulateTx(
   sender: string,
   messages: EncodeObject[],
   memo = '',
+  // Gas price to price the fee at. Defaults to the chain minimum; the Send page
+  // passes a scaled price for its Low/Medium/High speed options.
+  gasPrice: string = chain.gasPrice,
 ): Promise<FeeEstimate> {
   const client = await connect(chain, signer)
   try {
     await verifyNetwork(client, chain)
     const gasEstimate = await client.simulate(sender, messages, memo)
     const gasLimit = Math.ceil(gasEstimate * GAS_MULTIPLIER)
-    const fee = calculateFee(gasLimit, GasPrice.fromString(chain.gasPrice))
+    const fee = calculateFee(gasLimit, GasPrice.fromString(gasPrice))
     const coin = fee.amount.find((c) => c.denom === chain.denom) ?? fee.amount[0]
     return { gas: String(gasLimit), fee, amount: coin?.amount ?? '0', denom: coin?.denom ?? chain.denom }
   } finally {

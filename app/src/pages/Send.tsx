@@ -4,7 +4,14 @@ import type { OfflineDirectSigner, EncodeObject } from '@cosmjs/proto-signing'
 import QRCode from 'qrcode'
 import PasswordInput from '../components/PasswordInput'
 import EmptyState from '../components/EmptyState'
-import { findChain, toBaseUnits, formatAmount, feeReserve } from '../chains'
+import {
+  findChain,
+  toBaseUnits,
+  formatAmount,
+  feeReserve,
+  scaledGasPrice,
+  gasPriceInDisplay,
+} from '../chains'
 import { assertAccountAddress } from '../wallet/address'
 import { addBase } from '../wallet/amount'
 import { simulateTx, broadcastTx, sendMsg, type FeeEstimate } from '../wallet/tx'
@@ -13,6 +20,15 @@ import { useT } from '../i18n/I18nContext'
 import PercentButtons from '../components/PercentButtons'
 import CopyAddress from '../components/CopyAddress'
 import TxReview, { type ReviewRow } from '../components/TxReview'
+
+// Transaction speed = gas-price multiplier over the chain minimum. A higher gas
+// price gets the tx included faster; "low" is the network minimum (current cost).
+const SPEED_OPTIONS = [
+  { key: 'low', mult: 1, label: 'send.speedLow' },
+  { key: 'medium', mult: 1.5, label: 'send.speedMedium' },
+  { key: 'high', mult: 2, label: 'send.speedHigh' },
+] as const
+type Speed = (typeof SPEED_OPTIONS)[number]['key']
 
 export default function Send() {
   const { active } = useWallet()
@@ -104,6 +120,7 @@ function SendForm() {
   const [amount, setAmount] = useState('')
   const [memo, setMemo] = useState('')
   const [password, setPassword] = useState('')
+  const [speed, setSpeed] = useState<Speed>('low')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [txHash, setTxHash] = useState('')
@@ -116,8 +133,11 @@ function SendForm() {
     to: string
     baseAmount: string
     memo: string
+    speed: Speed
   } | null>(null)
   const [confirming, setConfirming] = useState(false)
+
+  const speedMult = SPEED_OPTIONS.find((s) => s.key === speed)!.mult
 
   useEffect(() => {
     if (!active || !chain) return
@@ -162,8 +182,15 @@ function SendForm() {
     try {
       const signer = await getSigner(active.address, password)
       const messages = [sendMsg(active.address, to, baseAmount, chain.denom)]
-      const est = await simulateTx(chain, signer, active.address, messages, memo)
-      setReview({ signer, messages, est, to, baseAmount, memo })
+      const est = await simulateTx(
+        chain,
+        signer,
+        active.address,
+        messages,
+        memo,
+        scaledGasPrice(chain, speedMult),
+      )
+      setReview({ signer, messages, est, to, baseAmount, memo, speed })
     } catch (err) {
       setError(err instanceof Error ? err.message : t('send.errSendFailed'))
     } finally {
@@ -249,7 +276,7 @@ function SendForm() {
       {balance !== null && (
         <PercentButtons
           maxBase={balance}
-          reserveBase={feeReserve(chain, 120000)}
+          reserveBase={feeReserve(chain, Math.ceil(120000 * speedMult))}
           chain={chain}
           onPick={setAmount}
         />
@@ -263,6 +290,34 @@ function SendForm() {
         autoComplete="off"
         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
       />
+
+      {/* Transaction speed: a gas-price multiplier. Higher = faster inclusion. */}
+      <div>
+        <div className="mb-1.5 flex items-baseline justify-between">
+          <span className="text-xs font-medium text-slate-500">{t('send.speed')}</span>
+          <span className="text-xs text-slate-400">
+            {scaledGasPrice(chain, speedMult)} · {gasPriceInDisplay(chain, speedMult)} {chain.displayDenom}
+          </span>
+        </div>
+        <div className="grid grid-cols-3 gap-1 rounded-lg bg-slate-100 p-1">
+          {SPEED_OPTIONS.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              onClick={() => setSpeed(s.key)}
+              aria-pressed={speed === s.key}
+              className={`rounded-md py-1.5 text-xs font-medium transition-colors ${
+                speed === s.key
+                  ? 'bg-white text-amber-700 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              {t(s.label)}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 text-xs text-slate-400">{t('send.speedHint')}</p>
+      </div>
       <PasswordInput
         name="beehive-sign-password"
         value={password}
@@ -273,7 +328,11 @@ function SendForm() {
         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
       />
       <p className="text-xs text-slate-400">
-        {t('send.feeNote', { denom: chain.displayDenom, gas: chain.gasPrice })}
+        {t('send.feeNote', {
+          denom: chain.displayDenom,
+          gas: scaledGasPrice(chain, speedMult),
+          gasMed: gasPriceInDisplay(chain, speedMult),
+        })}
       </p>
       {error && (
         <div role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -329,6 +388,10 @@ function SendForm() {
       {
         label: t('review.amount'),
         value: `${formatAmount(r.baseAmount, c)} ${c.displayDenom} (${r.baseAmount} ${c.denom})`,
+      },
+      {
+        label: t('review.speed'),
+        value: `${t(SPEED_OPTIONS.find((s) => s.key === r.speed)!.label)} · ${scaledGasPrice(c, SPEED_OPTIONS.find((s) => s.key === r.speed)!.mult)}`,
       },
       { label: t('review.fee'), value: `${formatAmount(r.est.amount, c)} ${c.displayDenom}` },
       { label: t('review.total'), value: `${formatAmount(total, c)} ${c.displayDenom}`, strong: true },
