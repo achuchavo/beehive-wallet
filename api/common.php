@@ -597,6 +597,92 @@ function proxy_url_ok(string $url): bool
  *
  * Returns ['body'=>string,'status'=>int,'error'=>string,'too_large'=>bool].
  */
+/**
+ * cURL transport for proxy_fetch(). Pins the connection to $ips, the addresses
+ * validated moments earlier, so DNS cannot be re-pointed at an internal host
+ * between validation and connect.
+ *
+ * Redirects are refused rather than followed: each hop would otherwise reach a
+ * destination that was never validated.
+ */
+function proxy_fetch_curl(
+    string $url,
+    string $host,
+    int $port,
+    array $ips,
+    ?string $post,
+    int $timeout,
+    int $maxBytes
+): array {
+    // curl's --resolve syntax is HOST:PORT:ADDR[,ADDR...]; IPv6 literals must
+    // be bracketed or their colons are mistaken for field separators.
+    $pinned = array_map(
+        static fn(string $ip): string => str_contains($ip, ':') ? "[{$ip}]" : $ip,
+        $ips
+    );
+
+    $body = '';
+    $tooLarge = false;
+
+    $ch = curl_init($url);
+    if ($ch === false) {
+        return ['body' => '', 'status' => 0, 'error' => 'curl init failed', 'too_large' => false];
+    }
+
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => false,
+        CURLOPT_FOLLOWLOCATION => false,
+        CURLOPT_MAXREDIRS => 0,
+        CURLOPT_CONNECTTIMEOUT => $timeout,
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+        CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+        CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
+        // The pin. TLS still validates against the ORIGINAL hostname, so this
+        // narrows where we connect without weakening certificate checking.
+        CURLOPT_RESOLVE => ["{$host}:{$port}:" . implode(',', $pinned)],
+        CURLOPT_HTTPHEADER => $post !== null
+            ? ['Content-Type: application/json', 'Accept: application/json']
+            : ['Accept: application/json'],
+        // Bounded read: abort as soon as the cap is passed rather than
+        // buffering an arbitrarily large upstream body.
+        CURLOPT_WRITEFUNCTION => function ($_ch, string $chunk) use (&$body, &$tooLarge, $maxBytes): int {
+            $body .= $chunk;
+            if (strlen($body) > $maxBytes) {
+                $tooLarge = true;
+                return 0; // signals curl to abort the transfer
+            }
+            return strlen($chunk);
+        },
+    ]);
+    if ($post !== null) {
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $post);
+    }
+
+    $ok = curl_exec($ch);
+    $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    $curlErr = curl_error($ch);
+    curl_close($ch);
+
+    if ($tooLarge) {
+        return ['body' => '', 'status' => $status, 'error' => 'too_large', 'too_large' => true];
+    }
+    if ($ok === false) {
+        return [
+            'body' => '',
+            'status' => $status,
+            'error' => $curlErr !== '' ? $curlErr : 'request failed',
+            'too_large' => false,
+        ];
+    }
+    if ($status >= 300 && $status < 400) {
+        return ['body' => '', 'status' => $status, 'error' => 'redirect_blocked', 'too_large' => false];
+    }
+    return ['body' => $body, 'status' => $status, 'error' => '', 'too_large' => false];
+}
+
 function proxy_fetch(string $url, array $opts = []): array
 {
     $timeout = (int) ($opts['timeout'] ?? 10);
@@ -612,12 +698,19 @@ function proxy_fetch(string $url, array $opts = []): array
     $host = trim((string) ($parts['host'] ?? ''), '[]');
     $port = (int) ($parts['port'] ?? 443);
 
-    // NOTE: the ext/curl extension is NOT available in this deployment's Apache
-    // SAPI, so this uses the HTTPS stream wrapper. Consequence: we cannot pin
-    // the connection to the pre-validated IPs the way CURLOPT_RESOLVE would, so
-    // a small DNS-rebinding window remains between validation and connect. It
-    // is narrowed by revalidating immediately before every request; install
-    // ext/curl to close it completely.
+    // Preferred path: cURL, which can PIN the connection to the addresses we
+    // just validated (CURLOPT_RESOLVE). Without that pin a hostname could
+    // resolve to a public IP during validation and to an internal one moments
+    // later at connect time - the DNS-rebinding window. The stream-wrapper
+    // fallback below cannot pin, so it is only used where curl is absent.
+    if (function_exists('curl_init')) {
+        return proxy_fetch_curl($url, $host, $port, $ips, $post, $timeout, $maxBytes);
+    }
+
+    // NOTE: reached only when ext/curl is unavailable. Consequence: we cannot
+    // pin the connection to the pre-validated IPs the way CURLOPT_RESOLVE does,
+    // so a small DNS-rebinding window remains between validation and connect.
+    // It is narrowed by revalidating immediately before every request.
     $headers = "Accept: application/json\r\n";
     if ($post !== null) {
         $headers .= "Content-Type: application/json\r\n";

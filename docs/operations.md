@@ -22,7 +22,7 @@ Verified automatically by `docs/verify-deployment.ps1`.
 | Extension | Effect if missing |
 |---|---|
 | `apcu` | proxy rate limiting falls back to the shared DB counter (`rate_counters`), then to per-server file counters. Correct, just slower. |
-| `curl` | **currently NOT loadable in this deployment's Apache SAPI.** `api/common.php` therefore uses the HTTPS stream wrapper for outbound proxy calls. The cost is that a connection cannot be pinned to the pre-validated IP (no `CURLOPT_RESOLVE`), leaving a narrow DNS-rebinding window. Installing `php_curl.dll` and restarting Apache closes it. |
+| `curl` | **Loaded (7.85.0 / OpenSSL 3.0.8) as of 2026-07-23.** `proxy_fetch()` uses it and pins each connection to the addresses validated moments earlier via `CURLOPT_RESOLVE`, closing the DNS-rebinding window. If curl is ever absent the code falls back to the HTTPS stream wrapper automatically — still safe, but unable to pin. |
 
 ### The php.ini trap
 
@@ -44,13 +44,39 @@ Only the `Unable to load` lines appearing **after** the most recent
 will happily show you warnings from a startup days ago and send you chasing a
 problem that is already fixed.
 
-Known state after the 2026-07-22 restart:
+All extension load failures are resolved as of 2026-07-23; the check above
+should report nothing.
 
-| Extension | Status |
-|---|---|
-| `php_oci8_19.dll` | resolved — the extension line is commented out in php.ini (it was never used; the app is PDO MySQL) |
-| `pdo_sqlite` | still failing, harmless — unused |
-| `php_curl.dll` | still failing — see the table above; this is why outbound HTTP uses stream wrappers |
+### "Unable to load dynamic library" when the DLL clearly exists
+
+This one is badly worded by Windows and cost real time. `php_curl.dll` and
+`php_pdo_sqlite.dll` both failed with *"The specified module could not be
+found"* while sitting in `ext\`, correctly built, and enabled in php.ini — and
+the CLI loaded curl the whole time.
+
+The message refers to the DLL's **dependencies**, not the DLL named in it.
+`php_curl.dll` needs `libcrypto-3-x64.dll`, `libssl-3-x64.dll`, `libssh2.dll`
+and `nghttp2.dll`; `php_pdo_sqlite.dll` needs `libsqlite3.dll`. All live in the
+PHP **root**, not `ext\`. Windows searches the *loading executable's* directory,
+so `php.exe` (in `D:\WebServer\php`) finds them and `httpd.exe` does not —
+and `D:\WebServer\php` is not on the machine PATH.
+
+Fixed with `LoadFile` directives in `httpd.conf`, immediately **before**
+`LoadModule php_module` (order matters: `libssl` depends on `libcrypto`):
+
+```apache
+LoadFile "D:/WebServer/php/libcrypto-3-x64.dll"
+LoadFile "D:/WebServer/php/libssl-3-x64.dll"
+LoadFile "D:/WebServer/php/libssh2.dll"
+LoadFile "D:/WebServer/php/nghttp2.dll"
+LoadFile "D:/WebServer/php/libsqlite3.dll"
+```
+
+Preferred over adding the PHP directory to the machine PATH: explicit,
+self-documenting, and it does not affect other software on the box.
+
+**Before downloading a replacement DLL, check whether the file is already
+there.** It almost certainly is, and replacing it fixes nothing.
 
 ---
 
