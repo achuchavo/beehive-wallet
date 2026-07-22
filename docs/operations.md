@@ -293,3 +293,52 @@ rewards, history and send.
 - **Address ownership** requires an ADR-036 signature over a single-use,
   account-bound challenge. Only a *verified* address works as a login
   identifier; an unverified holder loses the address to whoever can sign for it.
+
+## Adding a chain
+
+The registry is entirely DB-driven: `chains` + `chain_endpoints`, served by
+`api/chains_public.php`. The proxies read endpoints from the same tables, so no
+PHP or allowlist change is needed. `app/src/chains.ts` ships a **bootstrap**
+array containing Medibloc only — that is the fallback used when
+`chains_public.php` cannot be reached, not the source of truth.
+
+Chihuahua (migration 008) is the worked example. Verify each of these against
+the live chain rather than assuming:
+
+1. **Identity** — `chain_id` from `/status` on more than one RPC node, plus
+   `bech32_prefix`, `denom`, `decimals` and `coin_type` from the Cosmos
+   chain-registry. `coin_type` drives the derivation path
+   (`m/44'/<coinType>'/0'/0/0`), so getting it wrong yields valid-looking but
+   wrong addresses. Medibloc's 371 is the outlier; most chains are 118.
+2. **Gas price** — do not copy the registry's "average" blindly. Sample recent
+   transactions and see what actually gets included:
+   `/cosmos/tx/v1beta1/txs?query=message.action='/cosmos.staking.v1beta1.MsgDelegate'&order_by=ORDER_BY_DESC`,
+   then divide `auth_info.fee.amount[0].amount` by `fee.gas_limit`. Store the
+   value the app's "Low" tier should mean, because `SPEED_OPTIONS` multiplies it
+   by 1 / 1.5 / 2. Fractional gas prices are fine — `feeReserve` handles them
+   exactly (it did not before 2026-07-23; see the commit that fixed it).
+3. **Endpoints** — request each candidate with redirects disabled. `proxy_fetch`
+   pins the connection to pre-validated IPs and refuses to follow redirects, so
+   an endpoint that 301s or 403s is unusable. Chihuahua's publicnode REST host
+   was dropped for exactly this reason (403).
+4. **CoinGecko id** — confirm through the deployed endpoint, not coingecko.com:
+   `api/price.php?id=<id>&currency=krw`. A wrong id fails silently and just
+   leaves the fiat column blank.
+5. **Sort order** — append (`MAX(sort_order) + 1`). The frontend's
+   `DEFAULT_CHAIN` is `CHAINS[0]`, so changing the first row changes the default
+   network for every wallet-less operation.
+
+**No house validator is a supported state.** Leave `beehive_validator`,
+`beehive_moniker` and `fee_collector` empty until one is actually running.
+`serviceFeeActive()` is false while `fee_collector` is `''`, so no fee is
+bundled into a delegation; `isFree()` matches nothing, so the validator list
+sorts purely by stake; and the dashboard CTA falls back to "Start staking"
+instead of advertising a Beehive validator the user cannot find.
+
+**Trap: the frontend must wait for the registry.** The dashboard resolves each
+wallet's chain with `findChain(w.chainKey)`. Its loaders are memoised, so if
+they run before `chains_public.php` resolves, every DB-only chain resolves to
+"network not configured" and never retries. Both loaders are now gated on
+`chainsSettled` from `useChains()`. Medibloc hid this for as long as it was the
+only chain, because it is the one entry in the bootstrap array. Any new page
+that resolves a chain per wallet needs the same gate.
