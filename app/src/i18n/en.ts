@@ -47,10 +47,11 @@ export const en: Record<string, string> = {
   'dash.watchAddress': 'Watch an address',
   'dash.manage': 'Wallets and addresses',
   'dash.monthlyIncome': 'Average monthly income',
-  'dash.perMonth': '/ month',
-  'dash.overMonths': 'averaged over {months} months of claims',
-  'dash.oneMonth': 'based on your first month of claims',
-  'dash.noClaimsYet': 'Shows here once you claim your first rewards',
+  // Kept short: this line sits beside a 40px icon on a 375px screen, so a
+  // longer phrasing wraps to two lines.
+  'dash.overMonths': 'over {months} months',
+  'dash.oneMonth': 'first month of claims',
+  'dash.noClaimsYet': 'Shows once you claim rewards',
   'dash.totalValue': 'Total value',
   'dash.wallets': '{count} wallets',
   'dash.wallet': '{count} wallet',

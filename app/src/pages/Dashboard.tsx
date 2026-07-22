@@ -306,26 +306,27 @@ export default function Dashboard() {
               to="/rewards"
               className="group block rounded-xl border-2 border-green-200 bg-green-50 p-4 transition-colors hover:border-green-300 hover:bg-green-100"
             >
-              <div className="flex items-center gap-3">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-green-700 text-white">
-                  <TrendingUp className="h-6 w-6" strokeWidth={2.2} />
+              {/* Sized to fit 375px without wrapping. "per month" is NOT
+                  repeated on the amount line - the label above already says
+                  monthly income, and dropping it is what buys the room. */}
+              <div className="flex items-center gap-2.5 sm:gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-700 text-white sm:h-11 sm:w-11">
+                  <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6" strokeWidth={2.2} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-green-800">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-green-800 sm:text-xs">
                     {t('dash.monthlyIncome')}
                   </div>
 
                   {isPositiveBase(monthly[g.chain.key]?.amount ?? '0') ? (
                     <>
-                      <div className="text-3xl font-bold leading-tight text-green-900">
+                      <div className="truncate text-2xl font-bold leading-tight text-green-900 sm:text-3xl">
                         {formatAmount(monthly[g.chain.key]!.amount, g.chain)}{' '}
-                        <span className="text-lg font-semibold">{g.chain.displayDenom}</span>
-                        <span className="text-lg font-medium text-green-800">
-                          {' '}
-                          {t('dash.perMonth')}
+                        <span className="text-base font-semibold sm:text-lg">
+                          {g.chain.displayDenom}
                         </span>
                       </div>
-                      <div className="text-sm text-green-800">
+                      <div className="truncate text-xs text-green-800 sm:text-sm">
                         {fiatFor(g.chain, monthly[g.chain.key]!.amount) && (
                           <span className="font-medium">
                             ≈ {fiatFor(g.chain, monthly[g.chain.key]!.amount)}
@@ -339,8 +340,10 @@ export default function Dashboard() {
                     </>
                   ) : (
                     <>
-                      <div className="text-3xl font-bold leading-tight text-green-900">—</div>
-                      <div className="text-sm text-green-800">{t('dash.noClaimsYet')}</div>
+                      <div className="text-2xl font-bold leading-tight text-green-900 sm:text-3xl">
+                        —
+                      </div>
+                      <div className="text-xs text-green-800 sm:text-sm">{t('dash.noClaimsYet')}</div>
                     </>
                   )}
                 </div>
@@ -389,24 +392,26 @@ export default function Dashboard() {
         </div>
       ))}
 
-      <div className="flex gap-2">
+      {/* wrap + nowrap: labels like "Send / receive" must not break mid-phrase.
+          The row reflows to a second line instead. */}
+      <div className="flex flex-wrap gap-2">
         <Link
           to="/send"
-          className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600"
+          className="flex items-center gap-2 whitespace-nowrap rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600"
         >
-          <SendHorizontal className="h-4 w-4" /> {t('dash.send')}
+          <SendHorizontal className="h-4 w-4 shrink-0" /> {t('dash.send')}
         </Link>
         <Link
           to="/staking"
-          className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm hover:border-amber-500"
+          className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm hover:border-amber-500"
         >
-          <Coins className="h-4 w-4" /> {t('dash.stake')}
+          <Coins className="h-4 w-4 shrink-0" /> {t('dash.stake')}
         </Link>
         <Link
           to="/history"
-          className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm hover:border-amber-500"
+          className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm hover:border-amber-500"
         >
-          <HistoryIcon className="h-4 w-4" /> {t('dash.history')}
+          <HistoryIcon className="h-4 w-4 shrink-0" /> {t('dash.history')}
         </Link>
       </div>
 
@@ -419,19 +424,19 @@ export default function Dashboard() {
         <div className="flex flex-wrap gap-2">
           <Link
             to="/settings?action=create"
-            className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:border-amber-500"
+            className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:border-amber-500"
           >
             <Plus className="h-4 w-4" /> {t('dash.createWallet')}
           </Link>
           <Link
             to="/settings?action=import"
-            className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:border-amber-500"
+            className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:border-amber-500"
           >
             <Import className="h-4 w-4" /> {t('dash.importWallet')}
           </Link>
           <Link
             to="/alarms"
-            className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:border-amber-500"
+            className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:border-amber-500"
           >
             <Bell className="h-4 w-4" /> {t('dash.watchAddress')}
           </Link>
