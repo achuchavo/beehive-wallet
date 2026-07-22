@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require __DIR__ . '/common.php';
 require_post();
 
@@ -43,5 +43,14 @@ $db->prepare("DELETE FROM login_attempts WHERE identifier = ? AND kind = 'login'
     ->execute([$email]);
 
 session_login((int) $user['id'], $remember);
+
+// A fresh sign-in supersedes any previous persistent token for this account,
+// so an old cookie cannot linger after the user re-authenticates.
+remember_revoke_all($db, (int) $user['id']);
+if ($remember) {
+    remember_issue($db, (int) $user['id']);
+} else {
+    remember_clear_cookie();
+}
 
 json_out(['ok' => true]);

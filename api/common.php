@@ -17,7 +17,9 @@ require_once __DIR__ . '/security_lib.php';
 // Cookie flags MUST be set before session_start().
 const SESSION_IDLE_SECONDS = 3600;             // sign out after 1h of inactivity
 const SESSION_ABSOLUTE_SECONDS = 7 * 86400;    // hard cap regardless of activity
-const SESSION_REMEMBER_SECONDS = 30 * 86400;   // "stay signed in" lifetime
+// NOTE: "stay signed in" no longer extends the session itself - see
+// REMEMBER_TTL and remember_issue() further down. There is no password-change
+// endpoint yet; when one is added it MUST call remember_revoke_all().
 
 function cookie_secure(): bool
 {
@@ -41,17 +43,18 @@ header('Content-Type: application/json; charset=utf-8');
 // Authenticated JSON must never be stored by browser or shared caches.
 header('Cache-Control: no-store');
 
-// Enforce idle + absolute timeout on every request. A "remember me" session
-// skips the idle timeout and gets a longer absolute cap, so the user stays
-// signed in until they explicitly log out (or 30 days pass).
+// Enforce idle + absolute timeout on every request. These limits now apply
+// uniformly: "remember me" no longer stretches the primary session (which made
+// a stolen session id valid for 30 days). Instead a separate rotating token
+// re-establishes a fresh short session - see remember_resume() below.
 if (!empty($_SESSION['user_id'])) {
     $__now = time();
     $__started = (int) ($_SESSION['auth_started_at'] ?? $__now);
     $__last = (int) ($_SESSION['last_seen_at'] ?? $__now);
-    $__remember = !empty($_SESSION['remember']);
-    $__idleLimit = $__remember ? PHP_INT_MAX : SESSION_IDLE_SECONDS;
-    $__absLimit = $__remember ? SESSION_REMEMBER_SECONDS : SESSION_ABSOLUTE_SECONDS;
-    if (($__now - $__last) > $__idleLimit || ($__now - $__started) > $__absLimit) {
+    if (
+        ($__now - $__last) > SESSION_IDLE_SECONDS
+        || ($__now - $__started) > SESSION_ABSOLUTE_SECONDS
+    ) {
         session_logout();
     } else {
         $_SESSION['last_seen_at'] = $__now;
@@ -68,19 +71,178 @@ function session_login(int $userId, bool $remember = false): void
     $_SESSION['auth_started_at'] = time();
     $_SESSION['last_seen_at'] = time();
     $_SESSION['remember'] = $remember;
+    // The session cookie itself stays session-scoped. Persistence is provided
+    // by a separate rotating token (remember_issue), so the session id is never
+    // long-lived. Callers pass $remember through to remember_issue().
+}
 
-    // session_set_cookie_params() only affects the cookie when called BEFORE
-    // session_start(), which already ran during this file's include - so it is
-    // useless here. Emit the persistent cookie explicitly instead, now that
-    // session_regenerate_id() has settled the final session id.
-    if ($remember) {
-        setcookie(session_name(), session_id(), [
-            'expires' => time() + SESSION_REMEMBER_SECONDS,
-            'path' => '/',
-            'secure' => cookie_secure(),
-            'httponly' => true,
-            'samesite' => 'Strict',
-        ]);
+// --- "Remember me" tokens (audit #18) ---------------------------------------
+// Selector + verifier in one cookie: "<selector>:<verifier>". The selector
+// finds the row; only a SHA-256 of the verifier is stored, so a database leak
+// yields no usable cookie. Every use rotates the verifier.
+
+const REMEMBER_COOKIE = 'beehive_remember';
+const REMEMBER_TTL = 30 * 86400;   // 30 days
+const REMEMBER_GRACE_SECONDS = 60; // window in which the previous verifier still works
+
+function remember_cookie_options(int $expires): array
+{
+    return [
+        'expires' => $expires,
+        'path' => '/',
+        'secure' => cookie_secure(),
+        'httponly' => true,
+        'samesite' => 'Strict',
+    ];
+}
+
+/** Mint a token for $userId and send it as a persistent cookie. */
+function remember_issue(PDO $db, int $userId): void
+{
+    $selector = bin2hex(random_bytes(16));
+    $verifier = bin2hex(random_bytes(32));
+
+    $stmt = $db->prepare(
+        'INSERT INTO remember_tokens
+            (user_id, selector, verifier_hash, expires_at, user_agent, ip, created_at)
+         VALUES (?, ?, ?, NOW() + INTERVAL ' . REMEMBER_TTL . ' SECOND, ?, ?, NOW())'
+    );
+    $stmt->execute([
+        $userId,
+        $selector,
+        hash('sha256', $verifier),
+        mb_substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255),
+        client_ip(),
+    ]);
+
+    setcookie(REMEMBER_COOKIE, "{$selector}:{$verifier}", remember_cookie_options(time() + REMEMBER_TTL));
+
+    // Opportunistic cleanup of expired rows.
+    if (random_int(1, 50) === 1) {
+        $db->exec('DELETE FROM remember_tokens WHERE expires_at < NOW()');
+    }
+}
+
+function remember_clear_cookie(): void
+{
+    setcookie(REMEMBER_COOKIE, '', remember_cookie_options(time() - 42000));
+}
+
+/** Revoke every token for a user (password change, theft detection, disable). */
+function remember_revoke_all(PDO $db, int $userId): void
+{
+    $db->prepare('DELETE FROM remember_tokens WHERE user_id = ?')->execute([$userId]);
+}
+
+/** Revoke only the token presented by this request, and drop the cookie. */
+function remember_revoke_current(PDO $db): void
+{
+    $raw = (string) ($_COOKIE[REMEMBER_COOKIE] ?? '');
+    if ($raw !== '' && str_contains($raw, ':')) {
+        [$selector] = explode(':', $raw, 2);
+        if (preg_match('/^[0-9a-f]{32}$/', $selector)) {
+            $db->prepare('DELETE FROM remember_tokens WHERE selector = ?')->execute([$selector]);
+        }
+    }
+    remember_clear_cookie();
+}
+
+/**
+ * If there is no active session but a valid remember cookie, re-establish one
+ * and rotate the token. Returns the user id, or null.
+ *
+ * Called lazily (only where authentication is actually needed) so the public
+ * RPC/LCD proxies never pay for a database lookup.
+ */
+function remember_resume(PDO $db): ?int
+{
+    if (!empty($_SESSION['user_id'])) {
+        return (int) $_SESSION['user_id'];
+    }
+    $raw = (string) ($_COOKIE[REMEMBER_COOKIE] ?? '');
+    if ($raw === '' || !str_contains($raw, ':')) {
+        return null;
+    }
+    [$selector, $verifier] = explode(':', $raw, 2);
+    if (!preg_match('/^[0-9a-f]{32}$/', $selector) || !preg_match('/^[0-9a-f]{64}$/', $verifier)) {
+        remember_clear_cookie();
+        return null;
+    }
+
+    $db->beginTransaction();
+    try {
+        $stmt = $db->prepare(
+            'SELECT t.id, t.user_id, t.verifier_hash, t.prev_verifier_hash, t.rotated_at,
+                    (t.expires_at > NOW()) AS still_valid,
+                    (t.rotated_at IS NOT NULL
+                     AND t.rotated_at > NOW() - INTERVAL ' . REMEMBER_GRACE_SECONDS . ' SECOND) AS in_grace,
+                    u.is_disabled
+             FROM remember_tokens t
+             JOIN users u ON u.id = t.user_id
+             WHERE t.selector = ?
+             FOR UPDATE'
+        );
+        $stmt->execute([$selector]);
+        $row = $stmt->fetch();
+
+        if (!$row) {
+            $db->commit();
+            remember_clear_cookie();
+            return null;
+        }
+
+        $hash = hash('sha256', $verifier);
+        $matchesCurrent = hash_equals((string) $row['verifier_hash'], $hash);
+        $matchesPrev = $row['prev_verifier_hash'] !== null
+            && (int) $row['in_grace'] === 1
+            && hash_equals((string) $row['prev_verifier_hash'], $hash);
+
+        if (!$matchesCurrent && !$matchesPrev) {
+            // A known selector with an unrecognised verifier means a stolen or
+            // superseded token was replayed. Burn every token for this user.
+            remember_revoke_all($db, (int) $row['user_id']);
+            $db->commit();
+            remember_clear_cookie();
+            error_log('remember: verifier mismatch for user ' . $row['user_id'] . ' - all tokens revoked');
+            return null;
+        }
+
+        if ((int) $row['still_valid'] !== 1 || (int) $row['is_disabled'] === 1) {
+            $db->prepare('DELETE FROM remember_tokens WHERE id = ?')->execute([$row['id']]);
+            $db->commit();
+            remember_clear_cookie();
+            return null;
+        }
+
+        // Rotate: new verifier, previous one honoured for the grace window so
+        // parallel requests carrying the same cookie still succeed.
+        $newVerifier = bin2hex(random_bytes(32));
+        $db->prepare(
+            'UPDATE remember_tokens
+             SET prev_verifier_hash = verifier_hash,
+                 verifier_hash = ?,
+                 rotated_at = NOW(),
+                 last_used_at = NOW(),
+                 ip = ?
+             WHERE id = ?'
+        )->execute([hash('sha256', $newVerifier), client_ip(), $row['id']]);
+        $db->commit();
+
+        setcookie(
+            REMEMBER_COOKIE,
+            "{$selector}:{$newVerifier}",
+            remember_cookie_options(time() + REMEMBER_TTL)
+        );
+
+        $userId = (int) $row['user_id'];
+        session_login($userId, true);
+        return $userId;
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        error_log('remember_resume failed: ' . $e->getMessage());
+        return null;
     }
 }
 
@@ -125,7 +287,13 @@ function read_body(): array
 
 function get_db(): PDO
 {
-    $cfg = require __DIR__ . '/db_config.php';
+    // require_once, not require: get_db() is called more than once per request,
+    // and any stray leading bytes in the config file (e.g. a UTF-8 BOM added by
+    // an editor) would otherwise be echoed into the response body each time.
+    static $cfg = null;
+    if ($cfg === null) {
+        $cfg = require __DIR__ . '/db_config.php';
+    }
     $dsn = "mysql:host={$cfg['host']};port={$cfg['port']};dbname={$cfg['database']};charset=utf8mb4";
     $pdo = new PDO($dsn, $cfg['user'], $cfg['password'], [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
@@ -173,6 +341,12 @@ function require_user(PDO $db): int
 {
     // Every authenticated endpoint (read or write) is same-origin only.
     require_same_origin();
+    // Lazily re-establish a session from a "remember me" token. Done here (and
+    // in me.php) rather than at bootstrap so the unauthenticated RPC/LCD
+    // proxies never trigger a database lookup on every request.
+    if (empty($_SESSION['user_id'])) {
+        remember_resume($db);
+    }
     if (empty($_SESSION['user_id'])) {
         json_error('Not logged in', 401);
     }

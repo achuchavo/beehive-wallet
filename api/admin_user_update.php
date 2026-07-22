@@ -68,6 +68,9 @@ try {
     switch ($action) {
         case 'disable':
             $db->prepare('UPDATE users SET is_disabled = 1 WHERE id = ?')->execute([$targetId]);
+            // Kill any persistent "remember me" tokens so the account cannot be
+            // silently revived from a cookie. (DELETE cascades these already.)
+            remember_revoke_all($db, $targetId);
             break;
         case 'enable':
             $db->prepare('UPDATE users SET is_disabled = 0 WHERE id = ?')->execute([$targetId]);
