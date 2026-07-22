@@ -12,6 +12,7 @@ import {
 import { api, type UptimeSubscription, type UptimeAlert } from '../api'
 import { DEFAULT_CHAIN } from '../chains'
 import { useAuth } from '../auth/AuthContext'
+import Select from '../components/Select'
 import { useT } from '../i18n/I18nContext'
 
 const POLL_MS = 30000
@@ -138,10 +139,12 @@ function UptimePanel() {
       {/* Apply */}
       <form onSubmit={apply} className="space-y-2 rounded-xl border border-slate-200 bg-white p-4">
         <div className="text-sm font-medium">{t('uptime.applyTitle')}</div>
-        <select
+        <Select
+          full
           value={validators.some((v) => v.operator === validator) ? validator : ''}
           onChange={(e) => setValidator(e.target.value)}
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+          className="py-2"
+          aria-label={t('uptime.selectValidator')}
         >
           <option value="">{t('uptime.selectValidator')}</option>
           {validators.map((v) => (
@@ -149,7 +152,7 @@ function UptimePanel() {
               {v.moniker}
             </option>
           ))}
-        </select>
+        </Select>
         <input
           value={validator}
           onChange={(e) => setValidator(e.target.value.trim())}
@@ -294,19 +297,20 @@ function SubRow({
           <div className="flex flex-wrap items-center gap-2">
             <label className="flex items-center gap-1.5 text-xs text-slate-500">
               <Clock className="h-3.5 w-3.5" /> {t('uptime.frequency')}
-              <select
+              <Select
                 value={sub.frequency_minutes}
                 onChange={(e) =>
                   api.uptimeUpdate(sub.id, { frequency_minutes: Number(e.target.value) }).then(onChange)
                 }
-                className="rounded-lg border border-slate-300 px-1.5 py-1 text-xs"
+                className="py-1 text-xs"
+                aria-label={t('uptime.frequency')}
               >
                 {FREQ_OPTIONS.map((f) => (
                   <option key={f} value={f}>
                     {t(`uptime.freq${f}`)}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
 
             {snoozed ? (

@@ -34,6 +34,7 @@ import UptimeAlerts from './pages/UptimeAlerts'
 import Admin from './pages/Admin'
 import { useT } from './i18n/I18nContext'
 import { LANGUAGES } from './i18n/i18n'
+import Select from './components/Select'
 
 const NAV = [
   { to: '/', key: 'nav.dashboard', Icon: LayoutDashboard },
@@ -135,10 +136,11 @@ function App() {
   )
 
   const langSwitcher = (
-    <select
+    <Select
+      full
       value={lang}
       onChange={(e) => setLang(e.target.value as typeof lang)}
-      className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs text-slate-600"
+      className="text-xs"
       aria-label={t('common.language')}
     >
       {LANGUAGES.map((l) => (
@@ -146,7 +148,7 @@ function App() {
           {l.label}
         </option>
       ))}
-    </select>
+    </Select>
   )
 
   return (

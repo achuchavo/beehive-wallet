@@ -5,6 +5,7 @@ import { DEFAULT_CHAIN } from '../chains'
 import { useWallet, generateMnemonic } from '../wallet/WalletContext'
 import PasswordInput from '../components/PasswordInput'
 import CopyAddress from '../components/CopyAddress'
+import Checkbox from '../components/Checkbox'
 import { walletPasswordError, walletPasswordWeak } from '../wallet/password'
 import { useT } from '../i18n/I18nContext'
 
@@ -334,14 +335,11 @@ function CreateWallet({ onDone }: { onDone: () => void }) {
             <p className="font-mono text-sm leading-relaxed">{mnemonic}</p>
           </div>
           <p className="rounded-lg bg-slate-50 p-2 text-xs text-slate-500">{t('settings.seedBackupNote')}</p>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={confirmedSaved}
-              onChange={(e) => setConfirmedSaved(e.target.checked)}
-            />
-            {t('settings.wroteDown')}
-          </label>
+          <Checkbox
+            checked={confirmedSaved}
+            onChange={setConfirmedSaved}
+            label={t('settings.wroteDown')}
+          />
 
           {confirmedSaved && (
             <div className="space-y-2 rounded-lg border border-slate-200 p-3">
