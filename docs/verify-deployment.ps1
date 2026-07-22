@@ -115,9 +115,12 @@ if (Test-Path $PhpExe) {
             } else { Ok "Apache SAPI loaded all configured extensions" }
         }
     }
-    # Rate-limit backend: APCu preferred, DB fallback otherwise (see audit #4).
-    if ($out -match '(?im)^\s*apcu\s*$') { Ok "ext apcu (in-memory rate limiting)" }
-    else { Warn "apcu absent - proxy rate limiting uses the slower DB fallback (rate_counters)" }
+    # Rate-limit backend. APCu is DELIBERATELY not installed (see
+    # operations.md) - the DB counter is correct, so its absence is the
+    # expected state and must not warn. A check that warns forever just trains
+    # people to ignore warnings, which is how a real one gets missed.
+    if ($out -match '(?im)^\s*apcu\s*$') { Ok "ext apcu present (in-memory rate limiting)" }
+    else { Ok "apcu absent as intended - rate limiting via rate_counters (see operations.md)" }
 } else {
     Warn "PHP not found at $PhpExe - skipped extension checks"
 }

@@ -21,7 +21,7 @@ Verified automatically by `docs/verify-deployment.ps1`.
 
 | Extension | Effect if missing |
 |---|---|
-| `apcu` | proxy rate limiting falls back to the shared DB counter (`rate_counters`), then to per-server file counters. Correct, just slower. |
+| `apcu` | **Deliberately not installed** — see below. Proxy rate limiting uses the shared DB counter (`rate_counters`), falling back to per-server file counters. Correct, just one small write per proxy request. |
 | `curl` | **Loaded (7.85.0 / OpenSSL 3.0.8) as of 2026-07-23.** `proxy_fetch()` uses it and pins each connection to the addresses validated moments earlier via `CURLOPT_RESOLVE`, closing the DNS-rebinding window. If curl is ever absent the code falls back to the HTTPS stream wrapper automatically — still safe, but unable to pin. |
 
 ### The php.ini trap
@@ -46,6 +46,25 @@ problem that is already fixed.
 
 All extension load failures are resolved as of 2026-07-23; the check above
 should report nothing.
+
+### Why APCu is not installed (decision, 2026-07-23)
+
+APCu would let `proxy_rate_limit()` count in shared memory instead of writing a
+`rate_counters` row per proxy request. It is a performance optimisation, not a
+correctness or security fix — the DB-backed limiter is fully correct, and is
+itself backed by a per-server file counter if the database is unreachable.
+
+Unlike `php_curl.dll`, APCu does **not** ship with PHP. Installing it means
+fetching an **unsigned** third-party binary (`php_apcu-<ver>-8.2-ts-vs16-x64`
+from `windows.php.net/downloads/pecl/releases/apcu/`) and loading native code
+into the web server that fronts a wallet backend. Weighed against a modest
+saving at current traffic, the owner chose not to take on that supply-chain
+step. Revisit if proxy volume ever makes the per-request write matter.
+
+If it is installed later, the build must match exactly: **PHP 8.2, Thread Safe
+(TS), VS16, x64** (`Zend Extension Build => API420220829,TS,VS16`). A
+mismatched DLL will fail to load or destabilise Apache. `proxy_rate_limit()`
+already prefers APCu automatically when present — no code change is needed.
 
 ### "Unable to load dynamic library" when the DLL clearly exists
 
