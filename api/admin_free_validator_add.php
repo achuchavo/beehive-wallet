@@ -1,5 +1,6 @@
 <?php
 require __DIR__ . '/common.php';
+require_post();
 
 $db = get_db();
 require_permission($db, 'chains');
@@ -14,7 +15,10 @@ $chain = $stmt->fetch();
 if (!$chain) {
     json_error('Unknown chain');
 }
-if (!preg_match('/^' . preg_quote($chain['bech32_prefix'], '/') . 'valoper1[a-z0-9]{20,80}$/', $valoper)) {
+// Full bech32 validation (checksum + exact valoper HRP), not a shape guess: a
+// mistyped address here would silently make a validator "free" that is not the
+// one intended, or none at all.
+if (!is_valoper_address($valoper, (string) $chain['bech32_prefix'])) {
     json_error('Enter a valid validator (valoper) address');
 }
 

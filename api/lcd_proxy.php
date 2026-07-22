@@ -13,13 +13,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'GET') {
     json_out(['error' => 'GET only'], 405);
 }
 
+proxy_rate_limit(client_ip());
+
 $pathInfo = $_SERVER['PATH_INFO'] ?? '';
-// /<chainKey>/cosmos/...
-if (!preg_match('#^/([a-z0-9_-]+)(/cosmos/.*)$#', $pathInfo, $m)) {
+// /<chainKey>/cosmos/... - path allowlist: only the read-only cosmos REST tree.
+if (!preg_match('#^/([a-z0-9_-]+)(/cosmos/[A-Za-z0-9_./-]*)$#', $pathInfo, $m)) {
     json_out(['error' => 'Path must be /<chain>/cosmos/...'], 400);
 }
 $chainKey = $m[1];
 $lcdPath = $m[2];
+
+if (strlen($_SERVER['QUERY_STRING'] ?? '') > 4096) {
+    json_out(['error' => 'Query string too long'], 414);
+}
 
 $db = get_db();
 $stmt = $db->prepare(
@@ -37,23 +43,34 @@ if (!$endpoints) {
 $query = $_SERVER['QUERY_STRING'] ?? '';
 $suffix = $lcdPath . ($query !== '' ? '?' . $query : '');
 
+$sawTooLarge = false;
+
 foreach ($endpoints as $base) {
-    $ctx = stream_context_create(['http' => ['method' => 'GET', 'timeout' => 90, 'ignore_errors' => true]]);
-    $body = @file_get_contents(rtrim($base, '/') . $suffix, false, $ctx);
-    if ($body === false) {
-        continue; // endpoint unreachable - try the next
-    }
-    $status = 502;
-    if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $mm)) {
-        $status = (int) $mm[1];
-    }
-    // 5xx from an endpoint means try the next; otherwise return this response.
-    if ($status >= 500) {
+    // proxy_fetch re-resolves DNS, pins the connection to the validated
+    // addresses and refuses redirects, so each hop cannot escape the guard.
+    $res = proxy_fetch(rtrim($base, '/') . $suffix, [
+        'timeout' => 30,
+        'max_bytes' => 8 * 1024 * 1024,
+    ]);
+
+    if ($res['too_large']) {
+        // A truncated body is not a valid response - never pass it off as one.
+        $sawTooLarge = true;
         continue;
     }
-    http_response_code($status);
-    echo $body;
+    if ($res['error'] !== '' || $res['status'] === 0) {
+        continue; // endpoint unreachable - try the next
+    }
+    // 5xx from an endpoint means try the next; otherwise return this response.
+    if ($res['status'] >= 500) {
+        continue;
+    }
+    http_response_code($res['status']);
+    echo $res['body'];
     exit;
 }
 
+if ($sawTooLarge) {
+    json_out(['error' => 'Upstream response too large'], 502);
+}
 json_out(['error' => 'All LCD endpoints failed'], 502);

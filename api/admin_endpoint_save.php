@@ -1,5 +1,6 @@
 <?php
 require __DIR__ . '/common.php';
+require_post();
 
 $db = get_db();
 require_permission($db, 'chains');
@@ -15,8 +16,12 @@ $isActive = !empty($b['is_active']) ? 1 : 0;
 if (!in_array($kind, ['lcd', 'rpc'], true)) {
     json_error('Kind must be lcd or rpc');
 }
-if (!preg_match('#^https?://#', $url) || strlen($url) > 200) {
-    json_error('Enter a valid http(s) URL');
+// SSRF guard: node endpoints must be public HTTPS URLs. This rejects http://,
+// private/loopback/link-local hosts and the cloud metadata address, and resolves
+// the hostname so a domain pointing at an internal IP is refused. (A deliberate
+// local dev node must be added by direct DB insert.)
+if (strlen($url) > 200 || !is_safe_public_url($url)) {
+    json_error('Endpoint must be a public HTTPS URL (no private, loopback or link-local hosts)');
 }
 $url = rtrim($url, '/');
 

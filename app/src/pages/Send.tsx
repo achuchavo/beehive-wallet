@@ -1,27 +1,51 @@
 import { useEffect, useRef, useState } from 'react'
-import { SendHorizontal, QrCode, Copy, Check, CircleCheck, LockKeyhole, Plus, Import } from 'lucide-react'
-import { SigningStargateClient, GasPrice } from '@cosmjs/stargate'
+import { SendHorizontal, QrCode, Copy, Check, CircleCheck, Plus, Import } from 'lucide-react'
+import type { OfflineDirectSigner, EncodeObject } from '@cosmjs/proto-signing'
 import QRCode from 'qrcode'
 import PasswordInput from '../components/PasswordInput'
 import EmptyState from '../components/EmptyState'
-import { DEFAULT_CHAIN, toBaseUnits, formatAmount } from '../chains'
+import {
+  findChain,
+  toBaseUnits,
+  formatAmount,
+  feeReserve,
+  scaledGasPrice,
+  gasPriceInDisplay,
+} from '../chains'
+import { assertAccountAddress } from '../wallet/address'
+import { addBase } from '../wallet/amount'
+import { simulateTx, broadcastTx, sendMsg, type FeeEstimate } from '../wallet/tx'
 import { useWallet } from '../wallet/WalletContext'
+import { useT } from '../i18n/I18nContext'
+import PercentButtons from '../components/PercentButtons'
+import CopyAddress from '../components/CopyAddress'
+import TxReview, { type ReviewRow } from '../components/TxReview'
+
+// Transaction speed = gas-price multiplier over the chain minimum. A higher gas
+// price gets the tx included faster; "low" is the network minimum (current cost).
+const SPEED_OPTIONS = [
+  { key: 'low', mult: 1, label: 'send.speedLow' },
+  { key: 'medium', mult: 1.5, label: 'send.speedMedium' },
+  { key: 'high', mult: 2, label: 'send.speedHigh' },
+] as const
+type Speed = (typeof SPEED_OPTIONS)[number]['key']
 
 export default function Send() {
   const { active } = useWallet()
+  const { t } = useT()
   const [tab, setTab] = useState<'send' | 'receive'>('send')
 
   if (!active) {
     return (
       <div>
-        <h1 className="text-xl font-semibold">Send / receive</h1>
+        <h1 className="text-xl font-semibold">{t('send.title')}</h1>
         <EmptyState
           icon={SendHorizontal}
-          title="No wallet yet"
-          description="Add a wallet to send and receive tokens. Your keys stay encrypted in this browser."
+          title={t('send.noWallet')}
+          description={t('send.noWalletDesc')}
           actions={[
-            { label: 'Create wallet', to: '/settings?action=create', icon: Plus },
-            { label: 'Import wallet', to: '/settings?action=import', icon: Import, variant: 'secondary' },
+            { label: t('dash.createWallet'), to: '/settings?action=create', icon: Plus },
+            { label: t('dash.importWallet'), to: '/settings?action=import', icon: Import, variant: 'secondary' },
           ]}
         />
       </div>
@@ -30,18 +54,18 @@ export default function Send() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Send / receive</h1>
+      <h1 className="text-xl font-semibold">{t('send.title')}</h1>
       <div className="flex gap-1">
-        {(['send', 'receive'] as const).map((t) => (
+        {(['send', 'receive'] as const).map((tb) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm capitalize ${
-              tab === t ? 'bg-amber-500 font-medium text-white' : 'bg-slate-100 text-slate-600'
+            key={tb}
+            onClick={() => setTab(tb)}
+            className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm ${
+              tab === tb ? 'bg-amber-500 font-medium text-slate-900' : 'bg-slate-100 text-slate-600'
             }`}
           >
-            {t === 'send' ? <SendHorizontal className="h-3.5 w-3.5" /> : <QrCode className="h-3.5 w-3.5" />}
-            {t}
+            {tb === 'send' ? <SendHorizontal className="h-3.5 w-3.5" /> : <QrCode className="h-3.5 w-3.5" />}
+            {tb === 'send' ? t('send.tabSend') : t('send.tabReceive')}
           </button>
         ))}
       </div>
@@ -52,6 +76,7 @@ export default function Send() {
 
 function Receive() {
   const { active } = useWallet()
+  const { t } = useT()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [copied, setCopied] = useState(false)
 
@@ -78,27 +103,58 @@ function Receive() {
         onClick={copy}
         className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:border-amber-500"
       >
-        {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
-        {copied ? 'Copied' : 'Copy address'}
+        {copied ? <Check className="h-3.5 w-3.5 text-green-700" /> : <Copy className="h-3.5 w-3.5" />}
+        {copied ? t('send.copied') : t('send.copyAddress')}
       </button>
     </div>
   )
 }
 
 function SendForm() {
-  const chain = DEFAULT_CHAIN
   const { active, getSigner } = useWallet()
+  const { t } = useT()
+  // The chain comes from the active wallet's own chainKey - never a global
+  // default - so denom, gas and RPC always match the wallet being signed with.
+  const chain = active ? findChain(active.chainKey) : undefined
   const [to, setTo] = useState('')
   const [amount, setAmount] = useState('')
   const [memo, setMemo] = useState('')
   const [password, setPassword] = useState('')
+  const [speed, setSpeed] = useState<Speed>('low')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [txHash, setTxHash] = useState('')
   const [balance, setBalance] = useState<string | null>(null)
+  // Pending review: the simulated plan awaiting the user's explicit confirmation.
+  const [review, setReview] = useState<{
+    signer: OfflineDirectSigner
+    messages: EncodeObject[]
+    est: FeeEstimate
+    to: string
+    baseAmount: string
+    memo: string
+    speed: Speed
+  } | null>(null)
+  const [confirming, setConfirming] = useState(false)
+
+  const speedMult = SPEED_OPTIONS.find((s) => s.key === speed)!.mult
+
+  // Never let a typed password outlive the form: clear it when the wallet
+  // changes, when the page is backgrounded, and on unmount.
+  useEffect(() => {
+    setPassword('')
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') setPassword('')
+    }
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      document.removeEventListener('visibilitychange', onHide)
+      setPassword('')
+    }
+  }, [active?.address])
 
   useEffect(() => {
-    if (!active) return
+    if (!active || !chain) return
     fetch(`${chain.lcd}/cosmos/bank/v1beta1/balances/${active.address}`)
       .then((r) => r.json())
       .then((d) => {
@@ -110,16 +166,19 @@ function SendForm() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!active) return
+    if (!active || !chain) return
     setError('')
     setTxHash('')
 
-    if (!to.startsWith(chain.bech32Prefix + '1') || to.length < 39) {
-      setError(`Recipient must be a ${chain.chainName} address (${chain.bech32Prefix}1...)`)
+    // Real Bech32 (HRP + checksum) validation, not a prefix/length guess.
+    try {
+      assertAccountAddress(to, chain.bech32Prefix)
+    } catch {
+      setError(t('send.errRecipient', { chain: chain.chainName, prefix: chain.bech32Prefix }))
       return
     }
     if (to === active.address) {
-      setError('Recipient is the same as the sender')
+      setError(t('send.errSameAddr'))
       return
     }
 
@@ -127,51 +186,87 @@ function SendForm() {
     try {
       baseAmount = toBaseUnits(amount, chain)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Invalid amount')
+      setError(err instanceof Error ? err.message : t('send.errInvalidAmount'))
       return
     }
 
+    // Step 1: build the wallet's signer, simulate to get a real fee, and open
+    // the review. Nothing is broadcast here.
     setBusy(true)
     try {
       const signer = await getSigner(active.address, password)
-      const client = await SigningStargateClient.connectWithSigner(chain.rpc, signer, {
-        gasPrice: GasPrice.fromString(chain.gasPrice),
-      })
-      const result = await client.sendTokens(
-        active.address,
-        to,
-        [{ denom: chain.denom, amount: baseAmount }],
-        1.4,
-        memo,
-      )
-      client.disconnect()
-      if (result.code !== 0) {
-        throw new Error(`Transaction failed on chain: ${result.rawLog ?? result.code}`)
-      }
-      setTxHash(result.transactionHash)
-      setTo('')
-      setAmount('')
-      setMemo('')
+      // The key material is derived - the plaintext password is not needed for
+      // any later step, so drop it now rather than holding it through review
+      // and broadcast. A retry after this point requires re-entering it.
       setPassword('')
+      const messages = [sendMsg(active.address, to, baseAmount, chain.denom)]
+      const est = await simulateTx(
+        chain,
+        signer,
+        active.address,
+        messages,
+        memo,
+        scaledGasPrice(chain, speedMult),
+      )
+      setReview({ signer, messages, est, to, baseAmount, memo, speed })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Send failed')
+      setPassword('') // also clear on a failed unlock/simulate
+      setError(err instanceof Error ? err.message : t('send.errSendFailed'))
     } finally {
       setBusy(false)
     }
   }
 
+  // Step 2: the user has reviewed and confirmed - sign and broadcast with the
+  // exact fee that was shown.
+  async function confirmSend() {
+    if (!active || !chain || !review) return
+    setConfirming(true)
+    setError('')
+    try {
+      const hash = await broadcastTx(
+        chain,
+        review.signer,
+        active.address,
+        review.messages,
+        review.est.fee,
+        review.memo,
+      )
+      setTxHash(hash)
+      setReview(null)
+      setTo('')
+      setAmount('')
+      setMemo('')
+      setPassword('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('send.errSendFailed'))
+      setReview(null)
+    } finally {
+      setConfirming(false)
+    }
+  }
+
   if (!active) return null
+  if (!chain) {
+    return (
+      <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        {t('send.errUnknownChain', { chain: active.chainKey })}
+      </div>
+    )
+  }
 
   return (
     <form onSubmit={submit} className="max-w-lg space-y-3">
       <div className="rounded-lg bg-slate-50 px-4 py-2 text-sm text-slate-600">
-        From <span className="font-medium">{active.name}</span>
-        <span className="ml-2 font-mono text-xs text-slate-400">
-          {active.address.slice(0, 14)}...{active.address.slice(-6)}
-        </span>
+        {t('send.from')} <span className="font-medium">{active.name}</span>
+        <CopyAddress
+          address={active.address}
+          display={`${active.address.slice(0, 14)}...${active.address.slice(-6)}`}
+          className="ml-2 align-middle text-xs text-slate-500"
+        />
         {balance !== null && (
           <span className="ml-2 text-xs">
-            Balance: {formatAmount(balance, chain)} {chain.displayDenom}
+            {t('send.balance')}: {formatAmount(balance, chain)} {chain.displayDenom}
           </span>
         )}
       </div>
@@ -179,7 +274,8 @@ function SendForm() {
         name="beehive-recipient"
         value={to}
         onChange={(e) => setTo(e.target.value.trim())}
-        placeholder={`Recipient (${chain.bech32Prefix}1...)`}
+        placeholder={t('send.recipient', { prefix: chain.bech32Prefix })}
+        aria-label={t('send.recipientLabel')}
         required
         autoComplete="off"
         className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
@@ -189,7 +285,8 @@ function SendForm() {
           name="beehive-amount"
           value={amount}
           onChange={(e) => setAmount(e.target.value.trim())}
-          placeholder="Amount"
+          placeholder={t('send.amount')}
+          aria-label={t('send.amount')}
           required
           inputMode="decimal"
           autoComplete="off"
@@ -197,33 +294,87 @@ function SendForm() {
         />
         <span className="text-sm text-slate-500">{chain.displayDenom}</span>
       </div>
+      {balance !== null && (
+        <PercentButtons
+          maxBase={balance}
+          reserveBase={feeReserve(chain, Math.ceil(120000 * speedMult))}
+          chain={chain}
+          onPick={setAmount}
+        />
+      )}
       <input
         name="beehive-memo"
         value={memo}
         onChange={(e) => setMemo(e.target.value)}
-        placeholder="Memo (optional)"
+        placeholder={t('send.memoOptional')}
+        aria-label={t('send.memoOptional')}
         maxLength={256}
         autoComplete="off"
         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
       />
+
+      {/* Transaction speed: a gas-price multiplier. Higher = faster inclusion. */}
+      <div>
+        <div className="mb-1.5 flex items-baseline justify-between">
+          <span className="text-xs font-medium text-slate-500">{t('send.speed')}</span>
+          <span className="text-xs text-slate-500">
+            {scaledGasPrice(chain, speedMult)} · {gasPriceInDisplay(chain, speedMult)} {chain.displayDenom}
+          </span>
+        </div>
+        <div className="grid grid-cols-3 gap-1 rounded-lg bg-slate-100 p-1">
+          {SPEED_OPTIONS.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              onClick={() => setSpeed(s.key)}
+              aria-pressed={speed === s.key}
+              className={`rounded-md py-1.5 text-xs font-medium transition-colors ${
+                speed === s.key
+                  ? 'bg-white text-amber-700 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              {t(s.label)}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 text-xs text-slate-500">{t('send.speedHint')}</p>
+      </div>
       <PasswordInput
         name="beehive-sign-password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
-        placeholder="Wallet password to sign"
+        placeholder={t('send.signPassword')}
+        aria-label={t('send.signPassword')}
         required
         autoComplete="new-password"
         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
       />
-      <p className="text-xs text-slate-400">
-        The transaction is signed in your browser. Network fee is paid in {chain.displayDenom}{' '}
-        (gas price {chain.gasPrice}).
+      <p className="text-xs text-slate-500">
+        {t('send.feeNote', {
+          denom: chain.displayDenom,
+          gas: scaledGasPrice(chain, speedMult),
+          gasMed: gasPriceInDisplay(chain, speedMult),
+        })}
       </p>
-      {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+      {error && (
+        <div role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+      {/* Non-visual users get told what stage the transaction is at, not just
+          that a button became disabled. */}
+      <span className="sr-only" role="status" aria-live="polite">
+        {busy ? t('send.simulating') : confirming ? t('review.broadcasting') : ''}
+      </span>
       {txHash && (
-        <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800"
+        >
           <CircleCheck className="h-4 w-4 shrink-0" />
-          Sent.{' '}
+          {t('send.sent')}{' '}
           <a
             href={`${chain.explorerTxUrl}${txHash}`}
             target="_blank"
@@ -236,11 +387,44 @@ function SendForm() {
       )}
       <button
         disabled={busy}
-        className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+        className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
       >
-        <LockKeyhole className="h-4 w-4" />
-        {busy ? 'Signing and broadcasting...' : 'Sign and send'}
+        <SendHorizontal className="h-4 w-4" />
+        {busy ? t('send.simulating') : t('send.review')}
       </button>
+
+      {review && (
+        <TxReview
+          rows={reviewRows(review)}
+          warning={t('review.warnIrreversible')}
+          confirmLabel={t('review.confirmSend')}
+          busy={confirming}
+          onConfirm={confirmSend}
+          onClose={() => setReview(null)}
+        />
+      )}
     </form>
   )
+
+  function reviewRows(r: NonNullable<typeof review>): ReviewRow[] {
+    const c = chain!
+    const total = addBase(r.baseAmount, r.est.amount)
+    return [
+      { label: t('review.network'), value: `${c.chainName} (${c.chainId})` },
+      { label: t('review.from'), value: `${active!.name} · ${active!.address}`, mono: true },
+      { label: t('review.to'), value: r.to, mono: true },
+      {
+        label: t('review.amount'),
+        value: `${formatAmount(r.baseAmount, c)} ${c.displayDenom} (${r.baseAmount} ${c.denom})`,
+      },
+      {
+        label: t('review.speed'),
+        value: `${t(SPEED_OPTIONS.find((s) => s.key === r.speed)!.label)} · ${scaledGasPrice(c, SPEED_OPTIONS.find((s) => s.key === r.speed)!.mult)}`,
+      },
+      { label: t('review.fee'), value: `${formatAmount(r.est.amount, c)} ${c.displayDenom}` },
+      { label: t('review.total'), value: `${formatAmount(total, c)} ${c.displayDenom}`, strong: true },
+      { label: t('review.memo'), value: r.memo || '—' },
+      { label: t('review.action'), value: t('review.actionSend') },
+    ]
+  }
 }

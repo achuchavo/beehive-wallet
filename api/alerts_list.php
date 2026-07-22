@@ -5,7 +5,7 @@ $db = get_db();
 $userId = require_user($db);
 
 $stmt = $db->prepare(
-    'SELECT a.id, a.watched_address_id, w.chain_key, w.address, w.label,
+    'SELECT a.id, a.watched_address_id, a.kind, w.chain_key, w.address, w.label,
             a.tx_hash, a.amount, a.denom, a.recipient, a.detected_at, a.is_read
      FROM wallet_alerts a
      JOIN watched_addresses w ON w.id = a.watched_address_id

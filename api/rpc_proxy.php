@@ -12,13 +12,25 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     json_out(['error' => 'POST only'], 405);
 }
 
+proxy_rate_limit(client_ip());
+
 $chainKey = preg_replace('/[^a-z0-9_-]/', '', $_GET['chain'] ?? '');
 if ($chainKey === '') {
     json_out(['error' => 'Missing chain'], 400);
 }
 
-$raw = file_get_contents('php://input');
-$req = json_decode($raw === false ? '' : $raw, true);
+// Bounded read: stop at the limit + 1 byte rather than pulling an arbitrarily
+// large body into memory and measuring it afterwards.
+const RPC_MAX_REQUEST = 262144; // 256 KB
+$in = fopen('php://input', 'rb');
+$raw = $in === false ? '' : (string) stream_get_contents($in, RPC_MAX_REQUEST + 1);
+if ($in !== false) {
+    fclose($in);
+}
+if (strlen($raw) > RPC_MAX_REQUEST) {
+    json_out(['error' => 'Request body too large'], 413);
+}
+$req = json_decode($raw, true);
 
 $allowedMethods = [
     'status', 'abci_info', 'abci_query', 'health',
@@ -43,30 +55,34 @@ if (!$endpoints) {
     json_out(['error' => 'No RPC endpoint for chain'], 502);
 }
 
+$sawTooLarge = false;
+
 foreach ($endpoints as $base) {
-    $ctx = stream_context_create([
-        'http' => [
-            'method' => 'POST',
-            'header' => "Content-Type: application/json\r\n",
-            'content' => $raw,
-            'timeout' => 60,
-            'ignore_errors' => true,
-        ],
+    // proxy_fetch re-resolves DNS and rejects private/redirecting targets on
+    // every call, so a hostname that later points inside the network is caught.
+    $res = proxy_fetch(rtrim($base, '/'), [
+        'timeout' => 20,
+        'max_bytes' => 4 * 1024 * 1024,
+        'post' => $raw,
     ]);
-    $body = @file_get_contents(rtrim($base, '/'), false, $ctx);
-    if ($body === false) {
+
+    if ($res['too_large']) {
+        // Never emit a truncated body as a successful upstream response.
+        $sawTooLarge = true;
         continue;
     }
-    $status = 502;
-    if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $mm)) {
-        $status = (int) $mm[1];
-    }
-    if ($status >= 500) {
+    if ($res['error'] !== '' || $res['status'] === 0) {
         continue;
     }
-    http_response_code($status);
-    echo $body;
+    if ($res['status'] >= 500) {
+        continue;
+    }
+    http_response_code($res['status']);
+    echo $res['body'];
     exit;
 }
 
+if ($sawTooLarge) {
+    json_out(['error' => 'Upstream response too large'], 502);
+}
 json_out(['error' => 'All RPC endpoints failed'], 502);

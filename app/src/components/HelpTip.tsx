@@ -7,7 +7,7 @@ export default function HelpTip({ text }: { text: string }) {
       <button
         type="button"
         aria-label={text}
-        className="text-slate-400 hover:text-slate-600"
+        className="text-slate-500 hover:text-slate-600"
         tabIndex={0}
       >
         <HelpCircle className="h-3.5 w-3.5" />

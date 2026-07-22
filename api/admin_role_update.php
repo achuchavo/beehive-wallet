@@ -3,6 +3,7 @@
 // status. Kept separate from user moderation so only super admins can touch
 // admin roles.
 require __DIR__ . '/common.php';
+require_post();
 
 $db = get_db();
 $superId = require_super_admin($db);

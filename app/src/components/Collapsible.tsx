@@ -22,12 +22,12 @@ export default function Collapsible({
       >
         <span className="flex items-baseline gap-2">
           <span className="font-medium">{title}</span>
-          {subtitle && <span className="text-xs text-slate-400">{subtitle}</span>}
+          {subtitle && <span className="text-xs text-slate-500">{subtitle}</span>}
         </span>
         {open ? (
-          <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+          <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" />
         ) : (
-          <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+          <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
         )}
       </button>
       {open && <div className="mt-2">{children}</div>}

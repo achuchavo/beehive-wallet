@@ -5,7 +5,7 @@ $db = get_db();
 $userId = require_user($db);
 
 $stmt = $db->prepare(
-    'SELECT id, chain_key, address, label, alarm_enabled, created_at
+    'SELECT id, chain_key, address, label, alarm_enabled, alarm_type, created_at
      FROM watched_addresses
      WHERE user_id = ?
      ORDER BY created_at DESC'

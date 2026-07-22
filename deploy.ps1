@@ -25,7 +25,7 @@ Write-Host "Deployed path build to $pathDest"
 if ($Sub) {
   # Subdomain build (base /) into a separate docroot
   $env:VITE_BASE = "/"
-  npm run build
+  cmd /c "npm run build 2>&1"
   if ($LASTEXITCODE -ne 0) { throw "subdomain build failed" }
   New-Item -ItemType Directory -Force -Path $subDest | Out-Null
   Deploy $subDest

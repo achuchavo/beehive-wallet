@@ -1,5 +1,6 @@
 import { fromBech32, toBech32 } from '@cosmjs/encoding'
 import type { ChainInfo } from '../chains'
+import { floorBaseUnits, sumBase, compareBase } from './amount'
 
 export interface DelegationDetail {
   validator: string
@@ -25,7 +26,7 @@ function accountToValoper(address: string, prefix: string): string {
 
 function sumUmed(chain: ChainInfo, coins: { denom: string; amount: string }[] | undefined): string {
   const coin = (coins ?? []).find((c) => c.denom === chain.denom)
-  return coin ? String(Math.floor(Number(coin.amount))) : '0'
+  return coin ? floorBaseUnits(coin.amount) : '0'
 }
 
 // operator_address -> moniker, for the bonded validator set.
@@ -73,22 +74,21 @@ export async function fetchWalletPortfolio(
   }
 
   const delegations: DelegationDetail[] = []
-  let staked = 0
   if (delRes.ok) {
     const dd = await delRes.json()
     for (const d of dd.delegation_responses ?? []) {
       const v = d.delegation.validator_address
-      const amount = d.balance.amount
-      staked += Number(amount)
       delegations.push({
         validator: v,
         moniker: monikers[v] ?? `${v.slice(0, 16)}...`,
-        amount,
+        amount: String(d.balance.amount),
         reward: rewardByVal[v] ?? '0',
       })
     }
   }
-  delegations.sort((a, b) => Number(b.amount) - Number(a.amount))
+  // Exact sum and sort over base-unit strings (delegations can exceed 2^53).
+  const staked = sumBase(delegations.map((d) => d.amount))
+  delegations.sort((a, b) => compareBase(b.amount, a.amount))
 
   const isValidator = valRes.ok
   let commission = '0'
@@ -96,5 +96,5 @@ export async function fetchWalletPortfolio(
     commission = sumUmed(chain, (await comRes.json()).commission?.commission)
   }
 
-  return { address, available, delegations, staked: String(staked), rewards, commission, isValidator }
+  return { address, available, delegations, staked, rewards, commission, isValidator }
 }

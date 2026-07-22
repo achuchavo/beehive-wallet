@@ -1,11 +1,18 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Plus, Import, TriangleAlert, Copy, Check } from 'lucide-react'
-import { DEFAULT_CHAIN } from '../chains'
 import { useWallet, generateMnemonic } from '../wallet/WalletContext'
+import { useChains } from '../chainStore'
 import PasswordInput from '../components/PasswordInput'
+import CopyAddress from '../components/CopyAddress'
+import ChainPicker from '../components/ChainPicker'
+import RemoveWalletDialog from '../components/RemoveWalletDialog'
+import Checkbox from '../components/Checkbox'
+import { walletPasswordError, walletPasswordWeak } from '../wallet/password'
+import { useT } from '../i18n/I18nContext'
 
 function CopyButton({ text, label }: { text: string; label: string }) {
+  const { t } = useT()
   const [copied, setCopied] = useState(false)
   async function copy() {
     await navigator.clipboard.writeText(text)
@@ -18,8 +25,8 @@ function CopyButton({ text, label }: { text: string; label: string }) {
       onClick={copy}
       className="flex items-center gap-1 text-xs text-amber-700 hover:underline"
     >
-      {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
-      {copied ? 'Copied' : label}
+      {copied ? <Check className="h-3.5 w-3.5 text-green-700" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? t('send.copied') : label}
     </button>
   )
 }
@@ -27,6 +34,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 type Mode = 'list' | 'create' | 'import'
 
 export default function Settings() {
+  const { t } = useT()
   const [params, setParams] = useSearchParams()
   const initialMode: Mode =
     params.get('action') === 'create'
@@ -46,7 +54,7 @@ export default function Settings() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold">Settings</h1>
+      <h1 className="text-xl font-semibold">{t('settings.title')}</h1>
       {mode === 'list' && <WalletList onCreate={() => setMode('create')} onImport={() => setMode('import')} />}
       {mode === 'create' && <CreateWallet onDone={goList} />}
       {mode === 'import' && <ImportWallet onDone={goList} />}
@@ -55,6 +63,7 @@ export default function Settings() {
 }
 
 function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: () => void }) {
+  const { t } = useT()
   const { wallets, active, setActive, removeWallet, revealSecret } = useWallet()
   const [revealFor, setRevealFor] = useState<string | null>(null)
   const [password, setPassword] = useState('')
@@ -66,8 +75,9 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
     try {
       const r = await revealSecret(address, password)
       setSecret(r.secret)
+      setPassword('') // the password is no longer needed once decrypted
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed')
+      setError(e instanceof Error ? e.message : t('settings.errFailed'))
     }
   }
 
@@ -78,26 +88,41 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
     setError('')
   }
 
-  function remove(address: string) {
-    if (
-      window.confirm(
-        'Remove this wallet from this browser? Make sure you have the seed phrase written down - without it the wallet cannot be restored.',
-      )
-    ) {
-      removeWallet(address)
+  // A revealed secret is auto-hidden after a short time, and immediately when the
+  // tab is backgrounded (shoulder-surfing / screen-share / app-switch defence).
+  // NOTE: JavaScript cannot guarantee the plaintext is scrubbed from memory; this
+  // only removes it from the screen and React state.
+  useEffect(() => {
+    if (!secret) return
+    const timer = setTimeout(() => setSecret(''), 45000)
+    const onHide = () => {
+      if (document.hidden) setSecret('')
     }
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onHide)
+    }
+  }, [secret])
+
+  // Accessible confirmation dialog instead of window.confirm (audit #27).
+  const [removing, setRemoving] = useState<{ address: string; name: string } | null>(null)
+
+  function confirmRemove() {
+    if (!removing) return
+    removeWallet(removing.address)
+    // Drop any revealed secret still on screen for the wallet being removed.
+    setSecret('')
+    setRemoving(null)
   }
 
   return (
     <div className="space-y-4">
       <section className="space-y-2">
-        <h2 className="font-medium">Your wallets</h2>
-        <p className="text-sm text-slate-500">
-          Wallets live only in this browser, encrypted with your password. The Beehive server
-          never sees your seed phrase or keys.
-        </p>
+        <h2 className="font-medium">{t('settings.yourWallets')}</h2>
+        <p className="text-sm text-slate-500">{t('settings.walletsDesc')}</p>
         {wallets.length === 0 ? (
-          <p className="text-sm text-slate-500">No wallets yet.</p>
+          <p className="text-sm text-slate-500">{t('settings.noWallets')}</p>
         ) : (
           <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
             {wallets.map((w) => (
@@ -108,24 +133,27 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
                     name="active"
                     checked={active?.address === w.address}
                     onChange={() => setActive(w.address)}
-                    title="Active wallet"
+                    title={t('settings.activeWallet')}
                   />
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium">{w.name}</div>
-                    <div className="truncate font-mono text-xs text-slate-400">{w.address}</div>
+                    <CopyAddress address={w.address} className="max-w-full text-xs text-slate-500" />
                   </div>
                   <button
                     onClick={() => (revealFor === w.address ? closeReveal() : setRevealFor(w.address))}
                     className="text-xs text-amber-700 hover:underline"
                   >
                     {revealFor === w.address
-                      ? 'Close'
+                      ? t('common.close')
                       : w.kind === 'privkey'
-                        ? 'Show key'
-                        : 'Show seed'}
+                        ? t('settings.showKey')
+                        : t('settings.showSeed')}
                   </button>
-                  <button onClick={() => remove(w.address)} className="text-xs text-red-600 hover:underline">
-                    Remove
+                  <button
+                    onClick={() => setRemoving({ address: w.address, name: w.name })}
+                    className="text-xs text-red-600 hover:underline"
+                  >
+                    {t('common.remove')}
                   </button>
                 </div>
                 {revealFor === w.address && (
@@ -135,11 +163,18 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
                         <div className="flex items-center justify-between">
                           <p className="flex items-center gap-1.5 text-xs font-medium text-red-600">
                             <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
-                            Never share this. Anyone with it controls the wallet.
+                            {t('settings.neverShare')}
                           </p>
-                          <CopyButton text={secret} label={w.kind === 'privkey' ? 'Copy key' : 'Copy seed'} />
+                          <div className="flex items-center gap-2">
+                            <CopyButton text={secret} label={w.kind === 'privkey' ? t('settings.copyKey') : t('settings.copySeed')} />
+                            <button onClick={() => setSecret('')} className="text-xs text-slate-500 hover:text-amber-700">
+                              {t('common.close')}
+                            </button>
+                          </div>
                         </div>
                         <p className="break-all rounded bg-white p-2 font-mono text-sm">{secret}</p>
+                        <p className="text-xs text-slate-500">{t('settings.autoHide')}</p>
+                        <p className="text-xs text-amber-700">{t('settings.clipboardWarn')}</p>
                       </>
                     ) : (
                       <div className="flex gap-2">
@@ -147,15 +182,16 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
                           name="beehive-reveal-password"
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
-                          placeholder="Wallet password"
+                          placeholder={t('settings.walletPassword')}
+                          aria-label={t('settings.walletPassword')}
                           autoComplete="new-password"
                           className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
                         />
                         <button
                           onClick={() => reveal(w.address)}
-                          className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-white hover:bg-amber-600"
+                          className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600"
                         >
-                          Reveal
+                          {t('settings.reveal')}
                         </button>
                       </div>
                     )}
@@ -170,17 +206,29 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
       <div className="flex gap-2">
         <button
           onClick={onCreate}
-          className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
+          className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600"
         >
-          <Plus className="h-4 w-4" /> Create new wallet
+          <Plus className="h-4 w-4" /> {t('settings.createNew')}
         </button>
         <button
           onClick={onImport}
           className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm hover:border-amber-500"
         >
-          <Import className="h-4 w-4" /> Import wallet
+          <Import className="h-4 w-4" /> {t('settings.import')}
         </button>
       </div>
+
+      {removing && (
+        <RemoveWalletDialog
+          walletName={removing.name}
+          address={removing.address}
+          // Block removal while a secret is revealed for that wallet - a
+          // wallet-sensitive operation is in progress.
+          busy={revealFor === removing.address && secret !== ''}
+          onConfirm={confirmRemove}
+          onClose={() => setRemoving(null)}
+        />
+      )}
     </div>
   )
 }
@@ -196,50 +244,100 @@ function PasswordFields({
   setPassword: (v: string) => void
   setConfirm: (v: string) => void
 }) {
+  const { t } = useT()
   return (
     <>
-      <PasswordInput
-        name="beehive-new-password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        placeholder="Wallet password (10+ characters)"
-        minLength={10}
-        required
-        autoComplete="new-password"
-        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-      />
-      <PasswordInput
-        name="beehive-confirm-password"
-        value={confirm}
-        onChange={(e) => setConfirm(e.target.value)}
-        placeholder="Repeat password"
-        required
-        autoComplete="new-password"
-        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-      />
+      <div>
+        <label htmlFor="wallet-password" className="mb-1 block text-xs font-medium text-slate-600">
+          {t('settings.walletPassword')}
+        </label>
+        <PasswordInput
+          id="wallet-password"
+          name="beehive-new-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder={t('settings.newPassword')}
+          minLength={10}
+          required
+          autoComplete="new-password"
+          aria-describedby="wallet-password-hint"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+        />
+        <p id="wallet-password-hint" className="mt-1 text-xs text-slate-500">
+          {t('settings.newPassword')}
+        </p>
+      </div>
+      <div>
+        <label htmlFor="wallet-password-confirm" className="mb-1 block text-xs font-medium text-slate-600">
+          {t('settings.repeatPassword')}
+        </label>
+        <PasswordInput
+          id="wallet-password-confirm"
+          name="beehive-confirm-password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          placeholder={t('settings.repeatPassword')}
+          required
+          autoComplete="new-password"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+        />
+      </div>
     </>
   )
 }
 
 function CreateWallet({ onDone }: { onDone: () => void }) {
-  const chain = DEFAULT_CHAIN
+  const { t } = useT()
+  const { chains } = useChains()
+  // Explicit network choice: it fixes the derivation path, address prefix and
+  // denom for the life of the wallet, so it must not be an implicit default.
+  const [chainKey, setChainKey] = useState(chains[0]?.key ?? '')
+  const chain = chains.find((c) => c.key === chainKey) ?? chains[0]
   const { addWallet } = useWallet()
   const [name, setName] = useState('')
   const [mnemonic, setMnemonic] = useState('')
   const [confirmedSaved, setConfirmedSaved] = useState(false)
+  const [positions, setPositions] = useState<number[]>([])
+  const [answers, setAnswers] = useState<Record<number, string>>({})
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
   async function start() {
-    setMnemonic(await generateMnemonic(chain))
+    const m = await generateMnemonic(chain)
+    const words = m.split(' ')
+    // Three distinct random positions the user must reproduce from their backup.
+    const pos: number[] = []
+    while (pos.length < 3) {
+      const i = Math.floor(Math.random() * words.length)
+      if (!pos.includes(i)) pos.push(i)
+    }
+    pos.sort((a, b) => a - b)
+    setMnemonic(m)
+    setPositions(pos)
+    setAnswers({})
+    setConfirmedSaved(false)
   }
+
+  const words = mnemonic ? mnemonic.split(' ') : []
+  const verified =
+    positions.length > 0 &&
+    positions.every((p) => (answers[p] ?? '').trim().toLowerCase() === words[p])
 
   async function finish(e: React.FormEvent) {
     e.preventDefault()
+    if (!verified) {
+      setError(t('settings.verifyFail'))
+      return
+    }
+    const pwErr = walletPasswordError(password)
+    if (pwErr) {
+      setError(t(pwErr))
+      return
+    }
     if (password !== confirm) {
-      setError('Passwords do not match')
+      setError(t('alarms.passwordsNoMatch'))
       return
     }
     setBusy(true)
@@ -248,7 +346,7 @@ function CreateWallet({ onDone }: { onDone: () => void }) {
       await addWallet(name, mnemonic, password, chain)
       onDone()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed')
+      setError(err instanceof Error ? err.message : t('settings.errFailed'))
     } finally {
       setBusy(false)
     }
@@ -256,18 +354,24 @@ function CreateWallet({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="max-w-lg space-y-4">
-      <h2 className="font-medium">Create new wallet</h2>
+      <h2 className="font-medium">{t('settings.createNew')}</h2>
       {!mnemonic ? (
         <>
-          <p className="text-sm text-slate-500">
-            A new 24-word seed phrase will be generated in your browser. You must write it down
-            on paper and keep it safe - it is the only way to recover the wallet.
-          </p>
+          <p className="text-sm text-slate-500">{t('settings.createDesc')}</p>
+          {/* Chosen BEFORE generating: the network fixes the derivation path
+              and address prefix this wallet will use. */}
+          <ChainPicker
+            id="create-chain"
+            label={t('settings.network')}
+            value={chainKey}
+            onChange={setChainKey}
+          />
           <button
             onClick={start}
-            className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
+            disabled={!chain}
+            className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
           >
-            Generate seed phrase
+            {t('settings.generateSeed')}
           </button>
         </>
       ) : (
@@ -276,46 +380,79 @@ function CreateWallet({ onDone }: { onDone: () => void }) {
             <div className="mb-2 flex items-start justify-between gap-2">
               <p className="flex items-start gap-1.5 text-xs font-medium text-red-600">
                 <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                Write these 24 words down on paper, in order. Never store them digitally or share
-                them. Anyone with these words controls your funds.
+                {t('settings.seedWarning')}
               </p>
-              <CopyButton text={mnemonic} label="Copy" />
+              <CopyButton text={mnemonic} label={t('settings.copy')} />
             </div>
             <p className="font-mono text-sm leading-relaxed">{mnemonic}</p>
           </div>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={confirmedSaved}
-              onChange={(e) => setConfirmedSaved(e.target.checked)}
-              required
-            />
-            I wrote the seed phrase down on paper
-          </label>
-          <input
-            name="beehive-create-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Wallet name (e.g. Main wallet)"
-            autoComplete="off"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+          <p className="rounded-lg bg-slate-50 p-2 text-xs text-slate-500">{t('settings.seedBackupNote')}</p>
+          <Checkbox
+            checked={confirmedSaved}
+            onChange={setConfirmedSaved}
+            label={t('settings.wroteDown')}
           />
+
+          {confirmedSaved && (
+            <div className="space-y-2 rounded-lg border border-slate-200 p-3">
+              <p className="text-xs font-medium text-slate-600">{t('settings.verifyPrompt')}</p>
+              <div className="grid grid-cols-3 gap-2">
+                {positions.map((p) => (
+                  <label key={p} className="text-xs text-slate-500">
+                    {t('settings.wordN', { n: p + 1 })}
+                    <input
+                      value={answers[p] ?? ''}
+                      onChange={(e) => setAnswers((a) => ({ ...a, [p]: e.target.value }))}
+                      autoComplete="off"
+                      spellCheck={false}
+                      className="mt-0.5 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-amber-500 focus:outline-none"
+                    />
+                  </label>
+                ))}
+              </div>
+              {verified && <p className="text-xs font-medium text-green-700">{t('settings.verifyOk')}</p>}
+            </div>
+          )}
+
+          {/* Network is fixed once the seed is generated - show it, don't let
+              it change underneath an already-derived wallet. */}
+          <p className="text-xs text-slate-500">
+            {t('settings.network')}: <span className="font-medium">{chain?.chainName}</span>{' '}
+            <span className="font-mono text-slate-500">({chain?.chainId})</span>
+          </p>
+          <div>
+            <label htmlFor="create-name" className="mb-1 block text-xs font-medium text-slate-600">
+              {t('settings.walletName')}
+            </label>
+            <input
+              id="create-name"
+              name="beehive-create-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t('settings.walletNamePlaceholder')}
+              autoComplete="off"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+            />
+          </div>
           <PasswordFields
             password={password}
             confirm={confirm}
             setPassword={setPassword}
             setConfirm={setConfirm}
           />
+          {walletPasswordWeak(password) && (
+            <p className="text-xs text-amber-700">{t('settings.pwWeak')}</p>
+          )}
           {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
           <div className="flex gap-2">
             <button
-              disabled={busy || !confirmedSaved}
-              className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+              disabled={busy || !verified}
+              className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
             >
-              {busy ? 'Encrypting...' : 'Save wallet'}
+              {busy ? t('settings.encrypting') : t('settings.saveWallet')}
             </button>
             <button type="button" onClick={onDone} className="px-3 py-2 text-sm text-slate-500 hover:underline">
-              Cancel
+              {t('common.cancel')}
             </button>
           </div>
         </form>
@@ -325,7 +462,11 @@ function CreateWallet({ onDone }: { onDone: () => void }) {
 }
 
 function ImportWallet({ onDone }: { onDone: () => void }) {
-  const chain = DEFAULT_CHAIN
+  const { t } = useT()
+  const { chains } = useChains()
+  // Same as create: the network must be chosen, not inherited from a default.
+  const [chainKey, setChainKey] = useState(chains[0]?.key ?? '')
+  const chain = chains.find((c) => c.key === chainKey) ?? chains[0]
   const { addWallet } = useWallet()
   const [kind, setKind] = useState<'mnemonic' | 'privkey'>('mnemonic')
   const [name, setName] = useState('')
@@ -341,13 +482,18 @@ function ImportWallet({ onDone }: { onDone: () => void }) {
     if (kind === 'mnemonic') {
       const words = cleanSecret.split(/\s+/)
       if (words.length !== 12 && words.length !== 24) {
-        setError('Seed phrase must be 12 or 24 words')
+        setError(t('settings.errSeedWords'))
         return
       }
       cleanSecret = words.join(' ').toLowerCase()
     }
+    const pwErr = walletPasswordError(password)
+    if (pwErr) {
+      setError(t(pwErr))
+      return
+    }
     if (password !== confirm) {
-      setError('Passwords do not match')
+      setError(t('alarms.passwordsNoMatch'))
       return
     }
     setBusy(true)
@@ -360,8 +506,8 @@ function ImportWallet({ onDone }: { onDone: () => void }) {
         err instanceof Error
           ? err.message
           : kind === 'privkey'
-            ? 'Invalid private key'
-            : 'Invalid seed phrase',
+            ? t('settings.errInvalidKey')
+            : t('settings.errInvalidSeed'),
       )
     } finally {
       setBusy(false)
@@ -370,12 +516,12 @@ function ImportWallet({ onDone }: { onDone: () => void }) {
 
   return (
     <form onSubmit={finish} className="max-w-lg space-y-3">
-      <h2 className="font-medium">Import wallet</h2>
+      <h2 className="font-medium">{t('settings.import')}</h2>
       <div className="flex gap-1">
         {(
           [
-            ['mnemonic', 'Seed phrase'],
-            ['privkey', 'Private key'],
+            ['mnemonic', t('settings.seedPhrase')],
+            ['privkey', t('settings.privateKey')],
           ] as const
         ).map(([k, label]) => (
           <button
@@ -387,37 +533,60 @@ function ImportWallet({ onDone }: { onDone: () => void }) {
               setError('')
             }}
             className={`rounded-full px-4 py-1.5 text-sm ${
-              kind === k ? 'bg-amber-500 font-medium text-white' : 'bg-slate-100 text-slate-600'
+              kind === k ? 'bg-amber-500 font-medium text-slate-900' : 'bg-slate-100 text-slate-600'
             }`}
           >
             {label}
           </button>
         ))}
       </div>
-      <p className="text-sm text-slate-500">
-        {kind === 'mnemonic'
-          ? 'Enter your 12 or 24 word seed phrase. It is encrypted with your password and stored only in this browser.'
-          : 'Enter your private key as 64 hex characters (with or without 0x). It is encrypted with your password and stored only in this browser.'}
+      <p id="import-secret-desc" className="text-sm text-slate-500">
+        {kind === 'mnemonic' ? t('settings.importMnemonicDesc') : t('settings.importPrivkeyDesc')}
       </p>
-      <textarea
-        name="beehive-import-secret"
-        value={secret}
-        onChange={(e) => setSecret(e.target.value)}
-        placeholder={kind === 'mnemonic' ? 'word1 word2 word3 ...' : '0x... or plain hex'}
-        rows={kind === 'mnemonic' ? 3 : 2}
-        required
-        autoComplete="off"
-        spellCheck={false}
-        className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
+      <div>
+        <label htmlFor="import-secret" className="mb-1 block text-xs font-medium text-slate-600">
+          {kind === 'mnemonic' ? t('settings.seedPhrase') : t('settings.privateKey')}
+        </label>
+        <textarea
+          id="import-secret"
+          name="beehive-import-secret"
+          value={secret}
+          onChange={(e) => setSecret(e.target.value)}
+          placeholder={kind === 'mnemonic' ? t('settings.mnemonicPlaceholder') : t('settings.privkeyPlaceholder')}
+          rows={kind === 'mnemonic' ? 3 : 2}
+          required
+          // A secret must never reach a cloud spellchecker, a password manager,
+          // or autofill history.
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          data-lpignore="true"
+          data-1p-ignore="true"
+          aria-describedby="import-secret-desc"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
+        />
+      </div>
+      <ChainPicker
+        id="import-chain"
+        label={t('settings.network')}
+        value={chainKey}
+        onChange={setChainKey}
       />
-      <input
-        name="beehive-wallet-name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="Wallet name (e.g. Main wallet)"
-        autoComplete="off"
-        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-      />
+      <div>
+        <label htmlFor="import-name" className="mb-1 block text-xs font-medium text-slate-600">
+          {t('settings.walletName')}
+        </label>
+        <input
+          id="import-name"
+          name="beehive-wallet-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={t('settings.walletNamePlaceholder')}
+          autoComplete="off"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+        />
+      </div>
       <PasswordFields
         password={password}
         confirm={confirm}
@@ -428,12 +597,12 @@ function ImportWallet({ onDone }: { onDone: () => void }) {
       <div className="flex gap-2">
         <button
           disabled={busy}
-          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
         >
-          {busy ? 'Encrypting...' : 'Import wallet'}
+          {busy ? t('settings.encrypting') : t('settings.import')}
         </button>
         <button type="button" onClick={onDone} className="px-3 py-2 text-sm text-slate-500 hover:underline">
-          Cancel
+          {t('common.cancel')}
         </button>
       </div>
     </form>

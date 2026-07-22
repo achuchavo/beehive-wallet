@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ChevronLeft, ChevronRight, ExternalLink, Wallet } from 'lucide-react'
-import { DEFAULT_CHAIN, formatAmount } from '../chains'
+import { DEFAULT_CHAIN, chainForAddress, formatAmount, type ChainInfo } from '../chains'
 import { api, type WatchedAddress } from '../api'
 import { useWallet } from '../wallet/WalletContext'
+import { useT } from '../i18n/I18nContext'
+
+type Translate = (key: string, vars?: Record<string, string | number>) => string
 
 interface TxRow {
   hash: string
@@ -33,8 +36,13 @@ function msgTypeName(type: string) {
   return last.replace(/^Msg/, '')
 }
 
-function classify(resp: LcdTxResponse, address: string, fromQuery: 'sent' | 'received'): TxRow {
-  const chain = DEFAULT_CHAIN
+function classify(
+  resp: LcdTxResponse,
+  address: string,
+  fromQuery: 'sent' | 'received',
+  t: Translate,
+  chain: ChainInfo,
+): TxRow {
   const messages = resp.tx?.body?.messages ?? []
   let direction: TxRow['direction'] = fromQuery === 'sent' ? 'other' : 'received'
   let summary = ''
@@ -48,18 +56,18 @@ function classify(resp: LcdTxResponse, address: string, fromQuery: 'sent' | 'rec
       const amt = coins[0] ? `${formatAmount(coins[0].amount, chain)} ${chain.displayDenom}` : ''
       if (from === address) {
         direction = 'sent'
-        summary = `Sent ${amt} to ${shortAddr(to)}`
+        summary = t('history.sentTo', { amt, to: shortAddr(to) })
       } else if (to === address) {
         direction = 'received'
-        summary = `Received ${amt} from ${shortAddr(from)}`
+        summary = t('history.receivedFrom', { amt, from: shortAddr(from) })
       }
       break
     }
   }
 
   if (!summary) {
-    const type = messages[0] ? msgTypeName(String(messages[0]['@type'] ?? '')) : 'Transaction'
-    summary = direction === 'received' ? `Received (${type})` : type
+    const type = messages[0] ? msgTypeName(String(messages[0]['@type'] ?? '')) : t('history.txDefault')
+    summary = direction === 'received' ? t('history.receivedType', { type }) : type
   }
 
   return {
@@ -71,8 +79,7 @@ function classify(resp: LcdTxResponse, address: string, fromQuery: 'sent' | 'rec
   }
 }
 
-async function fetchTxs(address: string): Promise<TxRow[]> {
-  const chain = DEFAULT_CHAIN
+async function fetchTxs(address: string, t: Translate, chain: ChainInfo): Promise<TxRow[]> {
   const queries: { events: string; kind: 'sent' | 'received' }[] = [
     { events: `message.sender='${address}'`, kind: 'sent' },
     { events: `transfer.recipient='${address}'`, kind: 'received' },
@@ -86,13 +93,13 @@ async function fetchTxs(address: string): Promise<TxRow[]> {
       const data = await res.json()
       return ((data.tx_responses ?? []) as LcdTxResponse[])
         .slice(0, MAX_ROWS)
-        .map((r) => classify(r, address, q.kind))
+        .map((r) => classify(r, address, q.kind, t, chain))
     }),
   )
 
   const ok = results.filter((r) => r.status === 'fulfilled').flatMap((r) => r.value)
   if (ok.length === 0 && results.some((r) => r.status === 'rejected')) {
-    throw new Error('Could not load transactions from the chain API')
+    throw new Error(t('history.errLcd'))
   }
 
   const byHash = new Map<string, TxRow>()
@@ -112,7 +119,7 @@ interface Chip {
 }
 
 export default function History() {
-  const chain = DEFAULT_CHAIN
+  const { t } = useT()
   const { wallets, active } = useWallet()
   const [address, setAddress] = useState('')
   const [loadedAddress, setLoadedAddress] = useState('')
@@ -132,8 +139,15 @@ export default function History() {
 
   const load = useCallback(
     async (addr: string) => {
-      if (!addr.startsWith(chain.bech32Prefix)) {
-        setError(`Enter a ${chain.chainName} address (starts with "${chain.bech32Prefix}")`)
+      // Chain resolved from the address's own Bech32 prefix.
+      const chain = chainForAddress(addr)
+      if (!addr.startsWith(chain.bech32Prefix + '1')) {
+        setError(
+          t('history.errAddress', {
+            chain: DEFAULT_CHAIN.chainName,
+            prefix: DEFAULT_CHAIN.bech32Prefix,
+          }),
+        )
         return
       }
       setAddress(addr)
@@ -144,15 +158,18 @@ export default function History() {
       setFilter('all')
       setPage(0)
       try {
-        setRows(await fetchTxs(addr))
+        setRows(await fetchTxs(addr, t, chain))
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Lookup failed')
+        setError(e instanceof Error ? e.message : t('history.errLookup'))
       } finally {
         setLoading(false)
       }
     },
-    [chain.bech32Prefix, chain.chainName],
+    [t],
   )
+
+  // Chain of the currently-shown address, for explorer links and placeholder.
+  const displayChain = chainForAddress(loadedAddress)
 
   // Auto-load the active wallet's history on first visit.
   useEffect(() => {
@@ -178,10 +195,21 @@ export default function History() {
     received: 'bg-green-100 text-green-700',
     other: 'bg-slate-100 text-slate-600',
   }
+  const dirLabel: Record<TxRow['direction'], string> = {
+    sent: t('history.filterSent'),
+    received: t('history.filterReceived'),
+    other: t('history.filterOther'),
+  }
+  const filterLabel: Record<Filter, string> = {
+    all: t('history.filterAll'),
+    sent: t('history.filterSent'),
+    received: t('history.filterReceived'),
+    other: t('history.filterOther'),
+  }
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">History</h1>
+      <h1 className="text-xl font-semibold">{t('history.title')}</h1>
       <form
         onSubmit={(e) => {
           e.preventDefault()
@@ -193,16 +221,17 @@ export default function History() {
           name="beehive-history-address"
           value={address}
           onChange={(e) => setAddress(e.target.value.trim())}
-          placeholder={`${chain.bech32Prefix}1...`}
+          placeholder={`${displayChain.bech32Prefix}1...`}
+          aria-label={t('history.addressLabel')}
           required
           autoComplete="off"
           className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
         />
         <button
           disabled={loading}
-          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
         >
-          {loading ? 'Loading...' : 'Load'}
+          {loading ? t('common.loading') : t('history.load')}
         </button>
       </form>
 
@@ -223,7 +252,7 @@ export default function History() {
                 {c.mine && <Wallet className="h-3 w-3" />}
                 {c.label}
                 {c.mine && (
-                  <span className="rounded bg-amber-100 px-1 text-[10px] text-amber-700">mine</span>
+                  <span className="rounded bg-amber-100 px-1 text-[10px] text-amber-700">{t('history.mine')}</span>
                 )}
               </button>
             )
@@ -232,15 +261,10 @@ export default function History() {
       )}
 
       {loadedAddress && (
-        <p className="font-mono text-xs text-slate-400">Showing {shortAddr(loadedAddress)}</p>
+        <p className="font-mono text-xs text-slate-500">{t('history.showing', { addr: shortAddr(loadedAddress) })}</p>
       )}
 
-      {loading && (
-        <p className="text-sm text-slate-500">
-          Querying the chain... the public LCD can take up to a minute. Our own node will make
-          this fast.
-        </p>
-      )}
+      {loading && <p className="text-sm text-slate-500">{t('history.querying')}</p>}
       {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
       {rows !== null && (
@@ -253,16 +277,16 @@ export default function History() {
                   setFilter(f)
                   setPage(0)
                 }}
-                className={`rounded-full px-3 py-1 text-xs capitalize ${
-                  filter === f ? 'bg-amber-500 font-medium text-white' : 'bg-slate-100 text-slate-600'
+                className={`rounded-full px-3 py-1 text-xs ${
+                  filter === f ? 'bg-amber-500 font-medium text-slate-900' : 'bg-slate-100 text-slate-600'
                 }`}
               >
-                {f}
+                {filterLabel[f]}
               </button>
             ))}
           </div>
           {visible.length === 0 ? (
-            <p className="text-sm text-slate-500">No transactions found.</p>
+            <p className="text-sm text-slate-500">{t('history.noTx')}</p>
           ) : (
             <>
               <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
@@ -270,15 +294,15 @@ export default function History() {
                   <li key={r.hash} className="px-4 py-3">
                     <div className="flex items-center justify-between gap-2">
                       <span
-                        className={`rounded px-1.5 py-0.5 text-xs font-medium capitalize ${dirStyle[r.direction]}`}
+                        className={`rounded px-1.5 py-0.5 text-xs font-medium ${dirStyle[r.direction]}`}
                       >
-                        {r.direction}
+                        {dirLabel[r.direction]}
                       </span>
-                      <span className="text-xs text-slate-400">{r.time}</span>
+                      <span className="text-xs text-slate-500">{r.time}</span>
                     </div>
                     <div className="mt-1 text-sm">{r.summary}</div>
                     <a
-                      href={`${chain.explorerTxUrl}${r.hash}`}
+                      href={`${displayChain.explorerTxUrl}${r.hash}`}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex items-center gap-1 font-mono text-xs text-amber-700 hover:underline"
@@ -296,17 +320,17 @@ export default function History() {
                     disabled={page === 0}
                     className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 hover:border-amber-500 disabled:opacity-40"
                   >
-                    <ChevronLeft className="h-4 w-4" /> Prev
+                    <ChevronLeft className="h-4 w-4" /> {t('common.prev')}
                   </button>
                   <span className="text-xs text-slate-500">
-                    Page {page + 1} of {pageCount} · {visible.length} txs
+                    {t('history.page', { page: page + 1, total: pageCount, count: visible.length })}
                   </span>
                   <button
                     onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
                     disabled={page >= pageCount - 1}
                     className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 hover:border-amber-500 disabled:opacity-40"
                   >
-                    Next <ChevronRight className="h-4 w-4" />
+                    {t('common.next')} <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
               )}

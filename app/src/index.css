@@ -3,3 +3,47 @@
 body {
   @apply bg-slate-50 text-slate-900 antialiased;
 }
+
+/* iOS Safari zooms into any focused input whose font-size is under 16px.
+   Force 16px on small screens so tapping a field never zooms the page.
+   (Pinch-to-zoom stays available - this only affects the focus behaviour.) */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Keyboard focus visibility (audit #25).
+   One consistent, high-contrast ring on every interactive element, applied via
+   :focus-visible so it appears for keyboard/AT users without ringing on mouse
+   clicks. Several components previously used focus:outline-none with only a
+   colour change, which is invisible in forced-colors mode and fails at 200%
+   zoom; the outline below is never removed, only replaced. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid #b45309; /* amber-700 - meets AA against light backgrounds */
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+
+/* In forced-colors / high-contrast mode the browser's own system colour must
+   win, otherwise the ring can disappear entirely against the forced palette. */
+@media (forced-colors: active) {
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 3px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
+/* Respect the OS "reduce motion" preference: near-instant transitions/animations. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
