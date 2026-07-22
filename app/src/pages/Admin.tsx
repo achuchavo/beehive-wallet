@@ -69,7 +69,10 @@ export default function Admin() {
   }
 
   const { stats } = data
-  const watcherHealthy = stats.watcher_age_seconds !== null && stats.watcher_age_seconds < 300
+  const watcherHealthy =
+    stats.watcher_age_seconds !== null &&
+    stats.watcher_age_seconds !== undefined &&
+    stats.watcher_age_seconds < 300
 
   const allTabs: { id: Tab; label: string; show: boolean }[] = [
     { id: 'overview', label: 'Overview', show: true },
@@ -109,34 +112,43 @@ export default function Admin() {
 
       {activeTab === 'overview' && (
         <div className="space-y-4">
+          {/* Sections the server withheld (no feature grant) are simply absent. */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatCard label="Users" value={stats.users} />
-            <StatCard label="Watched addresses" value={stats.watched_addresses} />
-            <StatCard label="Alerts (24h)" value={stats.alerts_24h} />
-            <StatCard label="Failed logins (24h)" value={stats.failed_logins_24h} />
+            {stats.users !== undefined && <StatCard label="Users" value={stats.users} />}
+            {stats.watched_addresses !== undefined && (
+              <StatCard label="Watched addresses" value={stats.watched_addresses} />
+            )}
+            {stats.alerts_24h !== undefined && (
+              <StatCard label="Alerts (24h)" value={stats.alerts_24h} />
+            )}
+            {stats.failed_logins_24h !== undefined && (
+              <StatCard label="Failed logins (24h)" value={stats.failed_logins_24h} />
+            )}
           </div>
 
-          <div
-            className={`flex items-center justify-between rounded-xl border px-4 py-3 text-sm ${
-              watcherHealthy
-                ? 'border-green-200 bg-green-50 text-green-800'
-                : 'border-red-200 bg-red-50 text-red-800'
-            }`}
-          >
-            <span className="font-medium">
-              Watcher: {watcherHealthy ? 'healthy' : 'not running or stale'}
-            </span>
-            <span>
-              Last check:{' '}
-              {stats.watcher_last_run
-                ? `${stats.watcher_last_run} (${stats.watcher_age_seconds}s ago)`
-                : 'never'}
-            </span>
-          </div>
+          {can('uptime') && (
+            <div
+              className={`flex items-center justify-between rounded-xl border px-4 py-3 text-sm ${
+                watcherHealthy
+                  ? 'border-green-200 bg-green-50 text-green-800'
+                  : 'border-red-200 bg-red-50 text-red-800'
+              }`}
+            >
+              <span className="font-medium">
+                Watcher: {watcherHealthy ? 'healthy' : 'not running or stale'}
+              </span>
+              <span>
+                Last check:{' '}
+                {stats.watcher_last_run
+                  ? `${stats.watcher_last_run} (${stats.watcher_age_seconds}s ago)`
+                  : 'never'}
+              </span>
+            </div>
+          )}
 
           <section className="space-y-2">
             <h2 className="font-medium">Recent alerts (all users)</h2>
-            {data.recent_alerts.length === 0 ? (
+            {!data.recent_alerts?.length ? (
               <p className="text-sm text-slate-500">No alerts yet.</p>
             ) : (
               <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
@@ -173,7 +185,7 @@ export default function Admin() {
       )}
 
       {activeTab === 'access' && isSuper && (
-        <RoleManager users={data.users} onChanged={load} onError={setError} />
+        <RoleManager users={data.users ?? []} onChanged={load} onError={setError} />
       )}
 
       {activeTab === 'users' && can('users') && (
@@ -192,7 +204,7 @@ export default function Admin() {
               </tr>
             </thead>
             <tbody>
-              {data.users.map((u) => (
+              {(data.users ?? []).map((u) => (
                 <tr key={u.id} className="border-b border-slate-100 last:border-0">
                   <td className="px-4 py-2">
                     {u.email}
@@ -263,7 +275,7 @@ function RoleManager({
   onChanged,
   onError,
 }: {
-  users: AdminOverview['users']
+  users: NonNullable<AdminOverview['users']>
   onChanged: () => void
   onError: (msg: string) => void
 }) {
@@ -273,7 +285,7 @@ function RoleManager({
   const [feats, setFeats] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
 
-  function startEdit(u: AdminOverview['users'][number]) {
+  function startEdit(u: NonNullable<AdminOverview['users']>[number]) {
     setEditing(u.id)
     setIsAdmin(u.is_admin === 1)
     setIsSuper(u.is_super_admin === 1)

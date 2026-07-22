@@ -92,8 +92,11 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
   return data as T
 }
 
+// Sections are gated server-side by admin feature grant (admin_overview.php):
+// an admin without the matching permission simply does not receive that key.
 export interface AdminOverview {
-  stats: {
+  permissions: string[]
+  stats: Partial<{
     users: number
     watched_addresses: number
     alerts_total: number
@@ -101,8 +104,8 @@ export interface AdminOverview {
     failed_logins_24h: number
     watcher_last_run: string | null
     watcher_age_seconds: number | null
-  }
-  users: {
+  }>
+  users?: {
     id: number
     email: string
     is_admin: number
@@ -113,7 +116,7 @@ export interface AdminOverview {
     created_at: string
     watched_count: number
   }[]
-  recent_alerts: {
+  recent_alerts?: {
     id: number
     tx_hash: string
     amount: string
