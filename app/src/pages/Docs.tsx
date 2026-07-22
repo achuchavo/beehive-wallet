@@ -83,7 +83,7 @@ const DOCS: Record<Lang, Content> = {
       },
       {
         q: 'Send tokens',
-        a: 'Open Send, enter the recipient and amount (use the 25/50/75/Max buttons for quick amounts), enter your wallet password to sign, and broadcast. The network fee is paid in the chain’s token.',
+        a: 'Open Send, enter the recipient and amount (use the 25/50/75/Max buttons for quick amounts), pick a transaction speed, and enter your wallet password. Sending is a two-step, seven-stage process: (1) we confirm the node really is the network you expect by checking its chain ID, (2) we simulate the transaction against that node, (3) the fee is calculated from the simulated gas and your chosen speed, (4) a review shows the network, destination, amount, fee and total debit, (5) nothing is signed until you explicitly confirm, (6) the transaction is signed on your device and broadcast, (7) you get the transaction hash on success. If it is rejected you see the reason and nothing was sent. If the result is ever unknown, do NOT simply retry — check the transaction hash or your balance first, because the transaction may already be on-chain.',
       },
       {
         q: 'Stake / delegate',
@@ -96,6 +96,22 @@ const DOCS: Record<Lang, Content> = {
       {
         q: 'Set up alarms',
         a: 'On Alarms, create an account (email + password — never your keys), add an address to watch, choose the alarm type (sent, received, both, or unbonding), and enable push to get alerts even when the app is closed.',
+      },
+      {
+        q: 'Link your wallet address to your account',
+        a: 'On Alarms, choose one of your wallets and enter its password. You sign a one-time message proving you hold that key — nothing is sent on-chain, no funds move, and the key never leaves your device. Only a verified address can be used to sign in. An address linked before we required this shows as Unverified until you re-verify it. You can unlink at any time without signing.',
+      },
+      {
+        q: 'Stay signed in, safely',
+        a: '"Keep me signed in" is off by default. When you enable it we store a random token — not your password — and its secret half is only ever kept as a hash on the server. It is replaced every time it is used, expires after 30 days, and is revoked when you log out, sign in again, or if an old copy is ever replayed. Leave it off on shared devices.',
+      },
+      {
+        q: 'Using more than one network',
+        a: 'Each wallet is tied to the network you pick when you create or import it, which fixes its address prefix, denomination and derivation path. Balances, fees and totals are always calculated per network — amounts from different chains are never added together. If a network is unavailable, that wallet is shown as unavailable rather than as a zero balance.',
+      },
+      {
+        q: 'Back up or remove a wallet',
+        a: 'Your seed phrase is the only way to restore a wallet — write it on paper, never store it digitally. Removing a wallet deletes the encrypted copy from this device only; your funds on-chain are untouched, but without the seed phrase or private key the wallet cannot be restored. Removal asks you to confirm you have a backup and to type the wallet name.',
       },
     ],
     securityTitle: 'Security & risks',
@@ -206,6 +222,22 @@ const DOCS: Record<Lang, Content> = {
         q: '알림 설정',
         a: '알림 화면에서 계정을 만들고(이메일 + 비밀번호 — 키는 절대 아님), 감시할 주소를 추가하고, 알림 유형(보냄·받음·둘 다·위임 해제)을 선택한 뒤, 앱이 닫혀 있어도 알림을 받도록 푸시를 활성화하세요.',
       },
+      {
+        q: '지갑 주소를 계정에 연결하기',
+        a: '알림 화면에서 지갑을 선택하고 비밀번호를 입력하세요. 해당 키를 보유하고 있음을 증명하는 일회용 메시지에 서명합니다 — 온체인으로 전송되지 않고, 자금이 이동하지 않으며, 키는 기기를 벗어나지 않습니다. 확인된 주소만 로그인에 사용할 수 있습니다. 이 요구사항 이전에 연결된 주소는 다시 확인할 때까지 미확인으로 표시됩니다. 서명 없이 언제든 연결을 해제할 수 있습니다.',
+      },
+      {
+        q: '안전하게 로그인 상태 유지하기',
+        a: '"로그인 상태 유지"는 기본적으로 꺼져 있습니다. 활성화하면 비밀번호가 아닌 임의의 토큰을 저장하며, 그 비밀 부분은 서버에 해시로만 보관됩니다. 사용할 때마다 교체되고, 30일 후 만료되며, 로그아웃·재로그인 시 또는 오래된 사본이 재사용되면 폐기됩니다. 공용 기기에서는 꺼 두세요.',
+      },
+      {
+        q: '여러 네트워크 사용하기',
+        a: '각 지갑은 생성하거나 가져올 때 선택한 네트워크에 묶이며, 이는 주소 접두사·단위·파생 경로를 결정합니다. 잔액·수수료·합계는 항상 네트워크별로 계산되며, 서로 다른 체인의 금액은 절대 합산되지 않습니다. 네트워크를 사용할 수 없으면 잔액 0이 아니라 사용 불가로 표시됩니다.',
+      },
+      {
+        q: '지갑 백업 또는 삭제',
+        a: '시드 문구는 지갑을 복구할 수 있는 유일한 방법입니다 — 종이에 적고 디지털로 저장하지 마세요. 지갑을 삭제하면 이 기기의 암호화된 사본만 삭제되며 온체인 자금은 그대로입니다. 다만 시드 문구나 개인 키가 없으면 복구할 수 없습니다. 삭제 시 백업 보유 확인과 지갑 이름 입력을 요구합니다.',
+      },
     ],
     securityTitle: '보안 및 위험',
     securityLead:
@@ -276,6 +308,10 @@ const TUTORIAL_LINKS = [
   '/staking',
   '/rewards',
   '/alarms',
+  '/alarms', // link your address
+  '/alarms', // stay signed in
+  '/settings', // multi-network
+  '/settings', // backup / remove
 ]
 
 type Tab = 'start' | 'services' | 'security' | 'data'

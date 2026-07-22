@@ -15,6 +15,27 @@ body {
   }
 }
 
+/* Keyboard focus visibility (audit #25).
+   One consistent, high-contrast ring on every interactive element, applied via
+   :focus-visible so it appears for keyboard/AT users without ringing on mouse
+   clicks. Several components previously used focus:outline-none with only a
+   colour change, which is invisible in forced-colors mode and fails at 200%
+   zoom; the outline below is never removed, only replaced. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid #b45309; /* amber-700 - meets AA against light backgrounds */
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+
+/* In forced-colors / high-contrast mode the browser's own system colour must
+   win, otherwise the ring can disappear entirely against the forced palette. */
+@media (forced-colors: active) {
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 3px solid Highlight;
+    outline-offset: 2px;
+  }
+}
+
 /* Respect the OS "reduce motion" preference: near-instant transitions/animations. */
 @media (prefers-reduced-motion: reduce) {
   *,

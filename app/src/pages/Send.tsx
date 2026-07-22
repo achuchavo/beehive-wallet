@@ -358,6 +358,11 @@ function SendForm() {
           {error}
         </div>
       )}
+      {/* Non-visual users get told what stage the transaction is at, not just
+          that a button became disabled. */}
+      <span className="sr-only" role="status" aria-live="polite">
+        {busy ? t('send.simulating') : confirming ? t('review.broadcasting') : ''}
+      </span>
       {txHash && (
         <div
           role="status"
