@@ -26,6 +26,7 @@ import argparse
 import base64
 import hashlib
 import json
+import signal
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -735,13 +736,43 @@ def main() -> None:
         run_once()
         return
 
+    # Graceful shutdown. NSSM stops the service by sending Ctrl+C, which lands
+    # as a KeyboardInterrupt - almost always inside the sleep below - and used
+    # to dump a traceback to watcher_stderr.log on every single restart. That
+    # noise is worse than untidy: it camouflages real faults, since a genuine
+    # crash looks much the same at a glance. Note KeyboardInterrupt is a
+    # BaseException, so the `except Exception` inside the loop never caught it.
+    stopping = False
+
+    def _request_stop(_signum, _frame):
+        nonlocal stopping
+        stopping = True
+
+    # SIGTERM is handled too, in case the service is reconfigured to use it.
+    # Not available in every context, so failure to register is non-fatal.
+    try:
+        signal.signal(signal.SIGTERM, _request_stop)
+    except (ValueError, AttributeError, OSError):
+        pass
+
     log("INFO", f"Wallet watcher started. Interval={POLL_INTERVAL_SECONDS}s")
-    while True:
-        try:
-            run_once()
-        except Exception as e:
-            log("ERROR", f"Watcher loop error: {e}")
-        time.sleep(POLL_INTERVAL_SECONDS)
+    try:
+        while not stopping:
+            try:
+                run_once()
+            except Exception as e:
+                log("ERROR", f"Watcher loop error: {e}")
+            # Sleep in one-second slices so a stop is noticed promptly instead
+            # of after a full poll interval - otherwise NSSM waits out its
+            # timeout and hard-kills the process mid-cycle.
+            for _ in range(POLL_INTERVAL_SECONDS):
+                if stopping:
+                    break
+                time.sleep(1)
+    except KeyboardInterrupt:
+        stopping = True
+
+    log("INFO", "Wallet watcher stopped cleanly.")
 
 
 if __name__ == "__main__":

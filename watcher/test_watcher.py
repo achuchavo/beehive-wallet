@@ -3,6 +3,9 @@
 Run:  ./venv/Scripts/python.exe -m unittest test_watcher -v
 No DB or network: fetch_tx_page is monkeypatched; classify functions are pure.
 """
+import contextlib
+import io
+import sys
 import unittest
 
 import watcher
@@ -203,6 +206,64 @@ class Classify(unittest.TestCase):
         self.assertTrue(matched)
         self.assertEqual(amount, "250")
         self.assertEqual(val, "panaceavaloper1v")
+
+
+class GracefulShutdown(unittest.TestCase):
+    """The service manager stops us with Ctrl+C, which arrives as a
+    KeyboardInterrupt (a BaseException, so the loop's `except Exception` does
+    not catch it). It must not escape as a traceback: watcher_stderr.log would
+    then fill with routine-stop noise that camouflages genuine faults."""
+
+    def setUp(self):
+        self._run_once = watcher.run_once
+        self._sleep = watcher.time.sleep
+        self._argv = sys.argv
+
+    def tearDown(self):
+        watcher.run_once = self._run_once
+        watcher.time.sleep = self._sleep
+        sys.argv = self._argv
+
+    def _run_main_interrupted_in(self, where):
+        """Run main() with the interrupt raised from `where` ('sleep'|'cycle')."""
+        calls = {"n": 0}
+
+        def fake_run_once():
+            calls["n"] += 1
+            if where == "cycle":
+                raise KeyboardInterrupt
+
+        def fake_sleep(_s):
+            raise KeyboardInterrupt
+
+        watcher.run_once = fake_run_once
+        watcher.time.sleep = fake_sleep
+        sys.argv = ["watcher.py"]
+
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            watcher.main()  # must return, not raise
+        return out.getvalue(), err.getvalue(), calls["n"]
+
+    def test_interrupt_during_sleep_exits_cleanly(self):
+        out, err, n = self._run_main_interrupted_in("sleep")
+        self.assertEqual(n, 1)
+        self.assertIn("stopped cleanly", out)
+        self.assertEqual(err, "")
+
+    def test_interrupt_mid_cycle_exits_cleanly(self):
+        # An interrupt while actually polling must also not produce a traceback.
+        out, err, _ = self._run_main_interrupted_in("cycle")
+        self.assertIn("stopped cleanly", out)
+        self.assertEqual(err, "")
+
+    def test_once_mode_still_runs_a_single_cycle(self):
+        calls = {"n": 0}
+        watcher.run_once = lambda: calls.__setitem__("n", calls["n"] + 1)
+        sys.argv = ["watcher.py", "--once"]
+        with contextlib.redirect_stdout(io.StringIO()):
+            watcher.main()
+        self.assertEqual(calls["n"], 1)
 
 
 if __name__ == "__main__":
