@@ -92,14 +92,28 @@ if (Test-Path $PhpExe) {
     }
 
     # Report what Apache actually managed to load, which is what matters.
+    #
+    # Only lines AFTER the most recent "resuming normal operations" describe the
+    # RUNNING server. A plain tail also returns warnings from previous startups,
+    # which makes an already-fixed extension look broken forever - this script
+    # did exactly that and reported a resolved OCI8 failure for hours.
     $apacheLog = "D:\WebServer\Apache24\logs\error.log"
     if (Test-Path $apacheLog) {
-        $recent = Get-Content $apacheLog -Tail 200 | Select-String 'Unable to load dynamic library'
-        if ($recent) {
-            $libs = ($recent | ForEach-Object { ([regex]::Match($_, "library '([^']+)'")).Groups[1].Value }) |
-                Sort-Object -Unique
-            Warn ("Apache SAPI failed to load: " + ($libs -join ', ') + " (restart Apache after php.ini changes)")
-        } else { Ok "Apache SAPI loaded all configured extensions" }
+        $lines = Get-Content $apacheLog -Tail 400
+        $lastStart = -1
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match 'resuming normal operations') { $lastStart = $i }
+        }
+        if ($lastStart -lt 0) {
+            Warn "could not find an Apache startup marker in the recent log - extension state unknown"
+        } else {
+            $sinceStart = $lines[$lastStart..($lines.Count - 1)] | Select-String 'Unable to load dynamic library'
+            if ($sinceStart) {
+                $libs = ($sinceStart | ForEach-Object { ([regex]::Match($_, "library '([^']+)'")).Groups[1].Value }) |
+                    Sort-Object -Unique
+                Warn ("Apache SAPI failed to load (current run): " + ($libs -join ', '))
+            } else { Ok "Apache SAPI loaded all configured extensions" }
+        }
     }
     # Rate-limit backend: APCu preferred, DB fallback otherwise (see audit #4).
     if ($out -match '(?im)^\s*apcu\s*$') { Ok "ext apcu (in-memory rate limiting)" }

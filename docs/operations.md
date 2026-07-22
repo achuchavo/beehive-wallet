@@ -24,9 +24,33 @@ Verified automatically by `docs/verify-deployment.ps1`.
 | `apcu` | proxy rate limiting falls back to the shared DB counter (`rate_counters`), then to per-server file counters. Correct, just slower. |
 | `curl` | **currently NOT loadable in this deployment's Apache SAPI.** `api/common.php` therefore uses the HTTPS stream wrapper for outbound proxy calls. The cost is that a connection cannot be pinned to the pre-validated IP (no `CURLOPT_RESOLVE`), leaving a narrow DNS-rebinding window. Installing `php_curl.dll` and restarting Apache closes it. |
 
-> The CLI and Apache SAPIs load `php.ini` **independently**. `php -m` on the
-> command line is not evidence that Apache loaded the same set — check
-> `D:\WebServer\Apache24\logs\error.log` for `Unable to load dynamic library`.
+### The php.ini trap
+
+Apache and the CLI read the **same file** — `httpd.conf` sets
+`PHPIniDir "D:/WebServer/php"`, so both use `D:\WebServer\php\php.ini` — but
+each only re-reads it **when that process restarts**. Editing php.ini therefore
+fixes the CLI immediately and does nothing for the web server until Apache is
+restarted. `php -m` on the command line is not evidence of what Apache loaded.
+
+The authoritative check is Apache's own log, read **by timestamp**:
+
+```powershell
+Get-Content D:\WebServer\Apache24\logs\error.log -Tail 40 |
+  Select-String 'resuming normal operations|Unable to load dynamic library'
+```
+
+Only the `Unable to load` lines appearing **after** the most recent
+`resuming normal operations` reflect the running server. Reading a plain tail
+will happily show you warnings from a startup days ago and send you chasing a
+problem that is already fixed.
+
+Known state after the 2026-07-22 restart:
+
+| Extension | Status |
+|---|---|
+| `php_oci8_19.dll` | resolved — the extension line is commented out in php.ini (it was never used; the app is PDO MySQL) |
+| `pdo_sqlite` | still failing, harmless — unused |
+| `php_curl.dll` | still failing — see the table above; this is why outbound HTTP uses stream wrappers |
 
 ---
 
@@ -84,12 +108,47 @@ Verify against the running site — never assume:
 powershell -File docs/verify-deployment.ps1
 ```
 
-Known remaining warning: Apache still advertises its exact version. Fix in the
-main server config (needs a restart):
+### Version disclosure — applied 2026-07-22
 
-```apache
-ServerTokens Prod
-ServerSignature Off
+Responses used to advertise `Apache/2.4.57 (Win64) OpenSSL/3.0.8 PHP/8.2.5`,
+a free CVE-matching inventory. Now `Server: Apache`, with no `X-Powered-By`.
+
+Two settings, both requiring an Apache restart:
+
+| Setting | File | Line |
+|---|---|---|
+| `ServerTokens Prod` + `ServerSignature Off` | `D:\WebServer\Apache24\conf\httpd.conf` | ~232 |
+| `expose_php=Off` | `D:\WebServer\php\php.ini` | ~369 |
+
+**Do not "fix" this in `conf/extra/httpd-default.conf`.** That file already
+contains `ServerTokens Full`, but `httpd.conf` does **not** `Include` it, so
+editing it changes nothing while looking entirely correct. The real cause was
+that Apache's built-in default for `ServerTokens` *is* `Full` when unset. Check
+what is actually loaded before editing:
+
+```powershell
+Select-String -Path D:\WebServer\Apache24\conf\httpd.conf -Pattern '^\s*Include'
+```
+
+**Always validate before restarting** — a bad config leaves the site down:
+
+```powershell
+D:\WebServer\Apache24\bin\httpd.exe -t      # must print "Syntax OK"
+Restart-Service Apache2.4                   # needs an ELEVATED shell
+```
+
+Restarting Apache or the watcher requires administrator rights; a normal shell
+fails with `Cannot open <service> service on computer '.'`. The stop is refused
+outright rather than half-applied, so a failed attempt is harmless.
+
+Config backups live in `D:\WebServer\backups\` (`httpd.conf.bak-*`,
+`php.ini.bak-*`). These are **server files, outside the repo** — they are not
+under version control, so record changes here.
+
+Confirm afterwards:
+
+```powershell
+(Invoke-WebRequest https://wallet.achumuamah.com/ -UseBasicParsing).Headers['Server']
 ```
 
 ---
