@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Wallet,
   Coins,
@@ -9,6 +11,7 @@ import {
   Lock,
   Database,
   EyeOff,
+  ArrowRight,
 } from 'lucide-react'
 import { useT } from '../i18n/I18nContext'
 import type { Lang } from '../i18n/i18n'
@@ -263,20 +266,76 @@ const DOCS: Record<Lang, Content> = {
 
 const SERVICE_ICONS = [Wallet, Coins, Gift, Bell, Activity]
 
+// Where each tutorial's action lives, by tutorial order (create, import, send,
+// stake, claim/restake, alarms).
+const TUTORIAL_LINKS = [
+  '/settings?action=create',
+  '/settings?action=import',
+  '/send',
+  '/staking',
+  '/rewards',
+  '/alarms',
+]
+
+type Tab = 'start' | 'services' | 'security' | 'data'
+
 export default function Docs() {
   const { t, lang } = useT()
   const d = DOCS[lang] ?? DOCS.en
+  const [tab, setTab] = useState<Tab>('start')
+
+  const tabs: { id: Tab; label: string }[] = [
+    { id: 'start', label: d.tutorialsTitle },
+    { id: 'services', label: d.servicesTitle },
+    { id: 'security', label: d.securityTitle },
+    { id: 'data', label: d.dataTitle },
+  ]
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       <div>
         <h1 className="text-xl font-semibold">{t('nav.docs')}</h1>
         <p className="mt-1 text-sm text-slate-500">{d.intro}</p>
       </div>
 
-      {/* Services */}
-      <section className="space-y-3">
-        <h2 className="font-medium">{d.servicesTitle}</h2>
+      {/* Section tabs - keeps each topic on its own screen instead of one scroll */}
+      <div className="flex flex-wrap gap-1 border-b border-slate-200">
+        {tabs.map((tb) => (
+          <button
+            key={tb.id}
+            onClick={() => setTab(tb.id)}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm ${
+              tab === tb.id
+                ? 'border-amber-500 font-medium text-amber-700'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            {tb.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'start' && (
+        <div className="space-y-2">
+          {d.tutorials.map((tut, i) => (
+            <Collapsible key={tut.q} title={tut.q}>
+              <div className="space-y-2 pb-2">
+                <p className="text-sm text-slate-600">{tut.a}</p>
+                {TUTORIAL_LINKS[i] && (
+                  <Link
+                    to={TUTORIAL_LINKS[i]}
+                    className="inline-flex items-center gap-1 rounded-lg bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-100"
+                  >
+                    {t('docs.open')} <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                )}
+              </div>
+            </Collapsible>
+          ))}
+        </div>
+      )}
+
+      {tab === 'services' && (
         <div className="grid gap-2 sm:grid-cols-2">
           {d.services.map((s, i) => {
             const Icon = SERVICE_ICONS[i] ?? Wallet
@@ -290,73 +349,58 @@ export default function Docs() {
             )
           })}
         </div>
-      </section>
+      )}
 
-      {/* Tutorials */}
-      <section className="space-y-2">
-        <h2 className="font-medium">{d.tutorialsTitle}</h2>
-        <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white px-4 py-1">
-          {d.tutorials.map((tut) => (
-            <Collapsible key={tut.q} title={tut.q}>
-              <p className="pb-2 text-sm text-slate-600">{tut.a}</p>
-            </Collapsible>
-          ))}
-        </div>
-      </section>
-
-      {/* Security */}
-      <section className="space-y-3">
-        <h2 className="flex items-center gap-2 font-medium">
-          <ShieldCheck className="h-4 w-4 text-amber-600" /> {d.securityTitle}
-        </h2>
-        <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
-          <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-          <p className="text-sm text-amber-900">{d.securityLead}</p>
-        </div>
-        <ul className="space-y-2">
-          {d.securityPoints.map((p) => (
-            <li key={p.title} className="rounded-xl border border-slate-200 bg-white p-4">
-              <div className="text-sm font-medium">{p.title}</div>
-              <p className="mt-1 text-sm text-slate-500">{p.body}</p>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      {/* Data & privacy */}
-      <section className="space-y-3">
-        <h2 className="flex items-center gap-2 font-medium">
-          <Database className="h-4 w-4 text-amber-600" /> {d.dataTitle}
-        </h2>
-        <p className="text-sm text-slate-500">{d.dataIntro}</p>
-
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="flex items-center gap-2 text-sm font-medium text-green-700">
-            <EyeOff className="h-4 w-4" /> {d.dataNeverTitle}
+      {tab === 'security' && (
+        <div className="space-y-3">
+          <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+            <p className="text-sm text-amber-900">{d.securityLead}</p>
           </div>
-          <ul className="mt-2 space-y-1 text-sm text-slate-600">
-            {d.dataNever.map((n) => (
-              <li key={n} className="flex items-start gap-2">
-                <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-600" /> {n}
+          <ul className="space-y-2">
+            {d.securityPoints.map((p) => (
+              <li key={p.title} className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <ShieldCheck className="h-4 w-4 shrink-0 text-amber-600" /> {p.title}
+                </div>
+                <p className="mt-1 text-sm text-slate-500">{p.body}</p>
               </li>
             ))}
           </ul>
         </div>
+      )}
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="text-sm font-medium">{d.dataCollectTitle}</div>
-          <ul className="mt-2 space-y-2">
-            {d.dataCollect.map((c) => (
-              <li key={c.title} className="text-sm">
-                <span className="font-medium text-slate-700">{c.title}</span>
-                <span className="text-slate-500"> — {c.body}</span>
-              </li>
-            ))}
-          </ul>
+      {tab === 'data' && (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-500">{d.dataIntro}</p>
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="flex items-center gap-2 text-sm font-medium text-green-700">
+              <EyeOff className="h-4 w-4" /> {d.dataNeverTitle}
+            </div>
+            <ul className="mt-2 space-y-1 text-sm text-slate-600">
+              {d.dataNever.map((n) => (
+                <li key={n} className="flex items-start gap-2">
+                  <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-600" /> {n}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Database className="h-4 w-4 text-amber-600" /> {d.dataCollectTitle}
+            </div>
+            <ul className="mt-2 space-y-2">
+              {d.dataCollect.map((c) => (
+                <li key={c.title} className="text-sm">
+                  <span className="font-medium text-slate-700">{c.title}</span>
+                  <span className="text-slate-500"> — {c.body}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <p className="text-xs text-slate-400">{d.disclaimer}</p>
         </div>
-
-        <p className="text-xs text-slate-400">{d.disclaimer}</p>
-      </section>
+      )}
     </div>
   )
 }
