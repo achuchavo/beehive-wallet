@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, ExternalLink, Wallet } from 'lucide-react'
 import { DEFAULT_CHAIN, chainForAddress, formatAmount, type ChainInfo } from '../chains'
 import { api, type WatchedAddress } from '../api'
 import { useWallet } from '../wallet/WalletContext'
+import { fetchTxSearch } from '../wallet/txsearch'
 import { useT } from '../i18n/I18nContext'
 
 type Translate = (key: string, vars?: Record<string, string | number>) => string
@@ -87,10 +88,9 @@ async function fetchTxs(address: string, t: Translate, chain: ChainInfo): Promis
 
   const results = await Promise.allSettled(
     queries.map(async (q) => {
-      const url = `${chain.lcd}/cosmos/tx/v1beta1/txs?events=${encodeURIComponent(q.events)}&order_by=2`
-      const res = await fetch(url)
-      if (!res.ok) throw new Error(`LCD returned ${res.status}`)
-      const data = await res.json()
+      // Parameter name differs by SDK version - see txsearch.ts.
+      const data = await fetchTxSearch(chain, q.events, '&order_by=2')
+      if (!data) throw new Error('LCD tx search failed')
       return ((data.tx_responses ?? []) as LcdTxResponse[])
         .slice(0, MAX_ROWS)
         .map((r) => classify(r, address, q.kind, t, chain))

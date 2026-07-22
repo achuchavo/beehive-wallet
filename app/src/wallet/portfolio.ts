@@ -53,13 +53,25 @@ export async function fetchWalletPortfolio(
   monikers: Record<string, string>,
 ): Promise<WalletPortfolio> {
   const valoper = accountToValoper(address, chain.bech32Prefix)
-  const [balRes, delRes, rewRes, valRes, comRes] = await Promise.all([
+  const [balRes, delRes, rewRes, valRes] = await Promise.all([
     fetch(`${chain.lcd}/cosmos/bank/v1beta1/balances/${address}`),
     fetch(`${chain.lcd}/cosmos/staking/v1beta1/delegations/${address}`),
     fetch(`${chain.lcd}/cosmos/distribution/v1beta1/delegators/${address}/rewards`),
     fetch(`${chain.lcd}/cosmos/staking/v1beta1/validators/${valoper}`),
-    fetch(`${chain.lcd}/cosmos/distribution/v1beta1/validators/${valoper}/commission`),
   ])
+
+  const isValidator = valRes.ok
+
+  // Only a validator has a commission pool, and this used to be fetched in the
+  // batch above even though the result is discarded for everyone else. That is
+  // not merely wasteful: chains whose LCD answers 5xx (rather than 404) for a
+  // non-existent validator make lcd_proxy fail over across EVERY configured
+  // endpoint before giving up - measured at 32s on Chihuahua against 1s for the
+  // validator lookup beside it - and the dashboard blocked on it the whole
+  // time. Medibloc answers fast, which is why this never showed with one chain.
+  const comRes = isValidator
+    ? await fetch(`${chain.lcd}/cosmos/distribution/v1beta1/validators/${valoper}/commission`)
+    : null
 
   let available = '0'
   if (balRes.ok) available = sumUmed(chain, (await balRes.json()).balances)
@@ -90,9 +102,8 @@ export async function fetchWalletPortfolio(
   const staked = sumBase(delegations.map((d) => d.amount))
   delegations.sort((a, b) => compareBase(b.amount, a.amount))
 
-  const isValidator = valRes.ok
   let commission = '0'
-  if (isValidator && comRes.ok) {
+  if (comRes?.ok) {
     commission = sumUmed(chain, (await comRes.json()).commission?.commission)
   }
 

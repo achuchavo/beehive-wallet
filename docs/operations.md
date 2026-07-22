@@ -342,3 +342,30 @@ they run before `chains_public.php` resolves, every DB-only chain resolves to
 `chainsSettled` from `useChains()`. Medibloc hid this for as long as it was the
 only chain, because it is the one entry in the bootstrap array. Any new page
 that resolves a chain per wallet needs the same gate.
+
+### Trap: the tx-search parameter name is not the same on every chain
+
+The LCD tx-search filter parameter was renamed across Cosmos SDK versions, and
+the two spellings are mutually exclusive (verified 2026-07-23):
+
+| chain | `events=` | `query=` |
+|---|---|---|
+| Medibloc (`panacea-3`, older SDK) | 200 | 400 |
+| Chihuahua (`chihuahua-1`, newer SDK) | 500 | 200 |
+
+`app/src/wallet/txsearch.ts` detects this rather than making it configuration,
+because chains are added by an admin who should not need to know their node's
+SDK version. It probes `query=` first and caches the winner per chain key.
+
+The order is deliberate and load-bearing: a chain that rejects `query=` answers
+**4xx**, which `lcd_proxy` returns immediately, whereas a chain that rejects
+`events=` answers **5xx**, which makes the proxy fail over across every
+configured endpoint first — 32s measured on Chihuahua. Probing in the other
+order would put that 32s stall on every newer chain. There is a test pinning
+this; do not "simplify" it by reordering.
+
+The same 5xx-triggers-failover behaviour is why `fetchWalletPortfolio` no longer
+requests `/distribution/.../validators/<valoper>/commission` unconditionally:
+the result is discarded for non-validators, but on Chihuahua the request itself
+cost 32s and blocked the dashboard behind it. Only ask once the validator lookup
+has confirmed the address actually is one.

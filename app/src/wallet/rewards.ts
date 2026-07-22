@@ -1,6 +1,7 @@
 import { fromBech32, toBech32 } from '@cosmjs/encoding'
 import type { ChainInfo } from '../chains'
 import { floorBaseUnits, isPositiveBase, sumBase } from './amount'
+import { fetchTxSearch } from './txsearch'
 
 // An account address and its validator (valoper) address share the same key
 // bytes, only the bech32 prefix differs.
@@ -96,6 +97,13 @@ export function parseDenomAmount(raw: string, denom: string): string {
   return total.toString()
 }
 
+/** Only the fields this function reads off an LCD tx response. */
+interface LcdClaimTx {
+  txhash: string
+  timestamp: string
+  events?: { type: string; attributes?: { key: string; value?: unknown }[] }[]
+}
+
 export async function fetchClaimHistory(
   chain: ChainInfo,
   addresses: string[],
@@ -103,15 +111,16 @@ export async function fetchClaimHistory(
   const records: ClaimRecord[] = []
   const perAddress = await Promise.all(
     addresses.map(async (address) => {
-      const url = `${chain.lcd}/cosmos/tx/v1beta1/txs?events=${encodeURIComponent(
-        `message.sender='${address}'`,
-      )}&order_by=2&pagination.limit=50`
       try {
-        const res = await fetch(url)
-        if (!res.ok) return []
-        const data = await res.json()
+        // Parameter name differs by SDK version - see txsearch.ts.
+        const data = await fetchTxSearch(
+          chain,
+          `message.sender='${address}'`,
+          '&order_by=2&pagination.limit=50',
+        )
+        if (!data) return []
         const out: ClaimRecord[] = []
-        for (const tx of data.tx_responses ?? []) {
+        for (const tx of (data.tx_responses ?? []) as LcdClaimTx[]) {
           // Exact BigInt accumulation: reward attributes can exceed 2^53.
           let rewards = 0n
           let commission = 0n
