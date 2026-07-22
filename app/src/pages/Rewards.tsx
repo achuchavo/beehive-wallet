@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Gift, Landmark, ExternalLink, ShieldCheck, Plus, Import, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react'
-import { DEFAULT_CHAIN, resolveChain, formatAmount, type ChainInfo } from '../chains'
+import { DEFAULT_CHAIN, resolveChain, findChain, formatAmount, type ChainInfo } from '../chains'
 import { sumBase, addBase, isPositiveBase } from '../wallet/amount'
 import { useWallet } from '../wallet/WalletContext'
 import type { OfflineDirectSigner, EncodeObject } from '@cosmjs/proto-signing'
@@ -16,7 +17,9 @@ import {
   type ClaimRecord,
 } from '../wallet/rewards'
 import EmptyState from '../components/EmptyState'
+import OptionPicker from '../components/OptionPicker'
 import Collapsible from '../components/Collapsible'
+import { useChains } from '../chainStore'
 import { useT } from '../i18n/I18nContext'
 
 interface Row {
@@ -36,6 +39,19 @@ interface BatchPlan {
 export default function Rewards() {
   const { wallets, getSigner } = useWallet()
   const { t } = useT()
+  const { status: chainsStatus } = useChains()
+  const chainsSettled = chainsStatus !== 'loading'
+  const [params, setParams] = useSearchParams()
+  // Deep-linkable: "Claim" on a chain's dashboard card arrives as
+  // /rewards?chain=<key>, so the page opens already scoped to the network the
+  // user was looking at rather than to everything they own.
+  const chainFilter = params.get('chain') ?? ''
+  const setChainFilter = (key: string) => {
+    const next = new URLSearchParams(params)
+    if (key) next.set('chain', key)
+    else next.delete('chain')
+    setParams(next, { replace: true })
+  }
   const [rows, setRows] = useState<Row[] | null>(null)
   const [history, setHistory] = useState<ClaimRecord[]>([])
   const [error, setError] = useState('')
@@ -47,6 +63,12 @@ export default function Rewards() {
 
   const load = useCallback(async () => {
     if (wallets.length === 0) return
+    // Same registry gate as the dashboard. resolveChain() THROWS for a chain
+    // that has not arrived from chains_public.php yet, and this callback is
+    // memoised - so loading early left "Chain X is not configured" on screen
+    // permanently, with no retry. Medibloc hid it by being the one chain in the
+    // bootstrap array; Chihuahua failed every time.
+    if (!chainsSettled) return
     setLoading(true)
     setError('')
     try {
@@ -67,7 +89,7 @@ export default function Rewards() {
     } finally {
       setLoading(false)
     }
-  }, [wallets, t])
+  }, [wallets, t, chainsSettled])
 
   useEffect(() => {
     load()
@@ -90,23 +112,51 @@ export default function Rewards() {
     )
   }
 
-  // Exact sums. NOTE: these totals assume a single denomination across wallets,
-  // which holds for the current single-chain product. A future multi-chain build
-  // must group these by denom rather than summing base units directly.
-  const totalRewards = rows ? sumBase(rows.map((r) => r.earnings.rewards)) : '0'
-  const totalCommission = rows ? sumBase(rows.map((r) => r.earnings.commission)) : '0'
-  const claimable = rows
-    ? rows.filter((r) => isPositiveBase(r.earnings.rewards) || isPositiveBase(r.earnings.commission))
-    : []
-  const displayChain = rows?.[0]?.chain ?? DEFAULT_CHAIN
+  // Everything below is scoped to the network filter, and totals are grouped
+  // per chain.
+  //
+  // This previously summed every wallet's rewards into ONE figure and labelled
+  // it with rows[0].chain - safe while Medibloc was the only network, and the
+  // comment here said as much. Adding Chihuahua made it wrong: it added MED and
+  // HUAHUA base units together and presented the result as MED. Different
+  // assets with different prices are never a single number.
+  const shownRows = rows
+    ? rows.filter((r) => !chainFilter || r.chain.key === chainFilter)
+    : null
+
+  const groups = Array.from(new Set((shownRows ?? []).map((r) => r.chain.key))).map((key) => {
+    const inChain = (shownRows ?? []).filter((r) => r.chain.key === key)
+    return {
+      chain: inChain[0].chain,
+      rows: inChain,
+      rewards: sumBase(inChain.map((r) => r.earnings.rewards)),
+      commission: sumBase(inChain.map((r) => r.earnings.commission)),
+      // "Claim all" is offered per network, never across them. The review
+      // dialog totals a claim amount and a fee, and both are denominated - a
+      // batch spanning two chains could only show those as one meaningless
+      // sum. It is also scoped to what the filter is showing, so the dialog
+      // can never authorise a wallet that is off screen.
+      claimable: inChain.filter(
+        (r) => isPositiveBase(r.earnings.rewards) || isPositiveBase(r.earnings.commission),
+      ),
+    }
+  })
+
+  // Only for chrome that is not a per-chain amount (batch fee lines, empty
+  // states). Never used to format a total any more.
+  const displayChain = groups[0]?.chain ?? rows?.[0]?.chain ?? DEFAULT_CHAIN
+
+  const walletChains = Array.from(new Set((rows ?? []).map((r) => r.chain.key))).map(
+    (k) => (rows ?? []).find((r) => r.chain.key === k)!.chain,
+  )
 
   // Multi-wallet claim: build + simulate each wallet's claim, then review the
   // whole batch before broadcasting each as its own transaction.
-  async function claimAll(password: string) {
+  async function claimAll(password: string, forChain: Row[]) {
     setNotice('')
     setError('')
     const plans: BatchPlan[] = []
-    for (const row of claimable) {
+    for (const row of forChain) {
       const signer = await getSigner(row.earnings.address, password)
       const commissionValoper =
         row.earnings.isValidator && isPositiveBase(row.earnings.commission)
@@ -143,14 +193,24 @@ export default function Rewards() {
 
   function batchRows(): ReviewRow[] {
     const b = batch ?? []
+    // Derived from the batch itself, not from page-level state. Every plan in a
+    // batch is on one chain (claimAll is invoked per group), so this formats
+    // and denominates against that chain rather than whichever happened to be
+    // first on the page.
+    const chain = b[0]?.row.chain ?? displayChain
     const totalFee = b.reduce((s, p) => addBase(s, p.est.amount), '0')
+    const totalClaim = b.reduce(
+      (s, p) => addBase(s, addBase(p.row.earnings.rewards, p.row.earnings.commission)),
+      '0',
+    )
     return [
+      { label: t('review.network'), value: chain.chainName },
       { label: t('review.wallets'), value: String(b.length) },
       {
         label: t('review.claimAmount'),
-        value: `${formatAmount(totalRewards, displayChain)} ${displayChain.displayDenom}`,
+        value: `${formatAmount(totalClaim, chain)} ${chain.displayDenom}`,
       },
-      { label: t('review.fee'), value: `~${formatAmount(totalFee, displayChain)} ${displayChain.displayDenom}` },
+      { label: t('review.fee'), value: `~${formatAmount(totalFee, chain)} ${chain.displayDenom}` },
       { label: t('review.action'), value: t('review.actionClaim') },
     ]
   }
@@ -158,8 +218,10 @@ export default function Rewards() {
   // Average monthly income for the displayed chain. Shared with the Dashboard
   // via averageMonthly() so the two views cannot report different figures.
   const HISTORY_PER_PAGE = 10
-  const chainOf = (h: { chainKey: string }) => resolveChain(h.chainKey)
-  const { amount: avgMonthly, months: monthsSpan } = averageMonthly(history, displayChain.key)
+  // findChain, not resolveChain: this runs during render for every history
+  // row, and a throw there would blank the whole page rather than one line.
+  // Falling back only affects how an old row is formatted, never a balance.
+  const chainOf = (h: { chainKey: string }) => findChain(h.chainKey) ?? displayChain
   const historyPageCount = Math.max(1, Math.ceil(history.length / HISTORY_PER_PAGE))
   const historyRows = history.slice(
     historyPage * HISTORY_PER_PAGE,
@@ -168,52 +230,72 @@ export default function Rewards() {
 
   return (
     <div className="space-y-5">
-      <h1 className="text-xl font-semibold">{t('rewards.title')}</h1>
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="text-xl font-semibold">{t('rewards.title')}</h1>
+        {walletChains.length > 1 && (
+          <OptionPicker
+            label={t('dash.chainFilter')}
+            value={chainFilter}
+            onChange={setChainFilter}
+            options={[
+              { value: '', label: t('dash.allChains') },
+              ...walletChains.map((c) => ({ value: c.key, label: c.chainName })),
+            ]}
+          />
+        )}
+      </div>
 
       {notice && (
         <div className="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">{notice}</div>
       )}
       {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="flex items-center gap-1.5 text-xs text-slate-500">
-            <Gift className="h-3.5 w-3.5" /> {t('rewards.claimableRewards')}
+      {/* One pair of totals per network. Never a single combined figure: two
+          chains are two assets, and a sum of their base units means nothing. */}
+      {groups.map((g) => (
+        <div key={g.chain.key} className="space-y-2">
+          {walletChains.length > 1 && (
+            <div className="text-xs font-medium text-slate-500">{g.chain.chainName}</div>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                <Gift className="h-3.5 w-3.5" /> {t('rewards.claimableRewards')}
+              </div>
+              <div className="text-2xl font-semibold">{formatAmount(g.rewards, g.chain)}</div>
+              <div className="text-xs text-slate-500">
+                {g.chain.displayDenom} · {t('rewards.acrossWallets', { count: g.rows.length })}
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                <Landmark className="h-3.5 w-3.5" /> {t('rewards.claimableCommission')}
+              </div>
+              <div className="text-2xl font-semibold">{formatAmount(g.commission, g.chain)}</div>
+              <div className="text-xs text-slate-500">
+                {g.chain.displayDenom} · {t('rewards.validatorWallets')}
+              </div>
+            </div>
           </div>
-          <div className="text-2xl font-semibold">
-            {rows ? formatAmount(totalRewards, displayChain) : '...'}
-          </div>
-          <div className="text-xs text-slate-500">
-            {displayChain.displayDenom} · {t('rewards.acrossWallets', { count: wallets.length })}
-          </div>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="flex items-center gap-1.5 text-xs text-slate-500">
-            <Landmark className="h-3.5 w-3.5" /> {t('rewards.claimableCommission')}
-          </div>
-          <div className="text-2xl font-semibold">
-            {rows ? formatAmount(totalCommission, displayChain) : '...'}
-          </div>
-          <div className="text-xs text-slate-500">{displayChain.displayDenom} · {t('rewards.validatorWallets')}</div>
-        </div>
-      </div>
 
-      {claimable.length > 1 && (
-        <ClaimForm
-          label={t('rewards.claimAllLabel', { count: claimable.length })}
-          submitLabel={t('rewards.claimAll')}
-          onSubmit={claimAll}
-          onError={setError}
-          hint={t('rewards.claimAllHint')}
-        />
-      )}
+          {g.claimable.length > 1 && (
+            <ClaimForm
+              label={t('rewards.claimAllLabel', { count: g.claimable.length })}
+              submitLabel={t('rewards.claimAll')}
+              onSubmit={(pw) => claimAll(pw, g.claimable)}
+              onError={setError}
+              hint={t('rewards.claimAllHint')}
+            />
+          )}
+        </div>
+      ))}
 
       {loading && !rows && <p className="text-sm text-slate-500">{t('rewards.loading')}</p>}
 
       <section className="space-y-2">
         <h2 className="font-medium">{t('rewards.yourWallets')}</h2>
         <div className="space-y-2">
-          {rows?.map((row) => (
+          {shownRows?.map((row) => (
             <WalletCard
               key={row.earnings.address}
               row={row}
@@ -225,23 +307,33 @@ export default function Rewards() {
         </div>
       </section>
 
-      {isPositiveBase(avgMonthly) && (
-        <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600">
-          <TrendingUp className="h-4 w-4 shrink-0 text-green-700" />
-          <span>
-            {monthsSpan > 1
-              ? t('rewards.averagingOver', {
-                  amount: formatAmount(avgMonthly, displayChain),
-                  denom: displayChain.displayDenom,
-                  months: monthsSpan,
-                })
-              : t('rewards.averaging', {
-                  amount: formatAmount(avgMonthly, displayChain),
-                  denom: displayChain.displayDenom,
-                })}
-          </span>
-        </div>
-      )}
+      {/* One line per network on screen. This used to render a single average
+          for whichever chain happened to sort first, which read as though it
+          covered everything above it. */}
+      {groups.map((g) => {
+        const avg = averageMonthly(history, g.chain.key)
+        if (!isPositiveBase(avg.amount)) return null
+        return (
+          <div
+            key={g.chain.key}
+            className="flex items-center gap-2 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600"
+          >
+            <TrendingUp className="h-4 w-4 shrink-0 text-green-700" />
+            <span>
+              {avg.months > 1
+                ? t('rewards.averagingOver', {
+                    amount: formatAmount(avg.amount, g.chain),
+                    denom: g.chain.displayDenom,
+                    months: avg.months,
+                  })
+                : t('rewards.averaging', {
+                    amount: formatAmount(avg.amount, g.chain),
+                    denom: g.chain.displayDenom,
+                  })}
+            </span>
+          </div>
+        )
+      })}
 
       {history.length > 0 && (
         <Collapsible title={t('rewards.claimHistory')} subtitle={t('rewards.claimsCount', { count: history.length })}>

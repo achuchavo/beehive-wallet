@@ -2,7 +2,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
   loadSnapshot,
-  saveSnapshot,
+  saveSnapshotRows,
+  saveSnapshotMonthly,
   clearSnapshot,
   chainDelta,
   type SnapshotRow,
@@ -28,7 +29,7 @@ beforeEach(() => {
 
 describe('snapshot persistence', () => {
   it('round-trips rows exactly', () => {
-    saveSnapshot([row({ available: '9007199254740993' })])
+    saveSnapshotRows([row({ available: '9007199254740993' })])
     const back = loadSnapshot()
     expect(back?.rows).toHaveLength(1)
     // Beyond 2^53: the digit string must survive untouched.
@@ -74,6 +75,73 @@ describe('snapshot validation', () => {
       JSON.stringify({ savedAt: 'x', rows: [row(), { ...row(), available: 'oops' }] }),
     )
     expect(loadSnapshot()).toBeNull()
+  })
+
+  const monthlyCases: [string, unknown][] = [
+    ['monthly not an object', { savedAt: 'x', rows: [], monthly: 'nope' }],
+    ['monthly is an array', { savedAt: 'x', rows: [], monthly: [] }],
+    ['fractional amount', { savedAt: 'x', rows: [], monthly: { medibloc: { amount: '1.5', months: 3 } } }],
+    ['negative months', { savedAt: 'x', rows: [], monthly: { medibloc: { amount: '1', months: -1 } } }],
+    ['fractional months', { savedAt: 'x', rows: [], monthly: { medibloc: { amount: '1', months: 1.5 } } }],
+    ['months missing', { savedAt: 'x', rows: [], monthly: { medibloc: { amount: '1' } } }],
+  ]
+  for (const [name, payload] of monthlyCases) {
+    it(`rejects monthly: ${name}`, () => {
+      localStorage.setItem(KEY, JSON.stringify(payload))
+      expect(loadSnapshot()).toBeNull()
+    })
+  }
+
+  it('accepts a snapshot written before monthly existed', () => {
+    localStorage.setItem(KEY, JSON.stringify({ savedAt: 'x', rows: [row()] }))
+    const back = loadSnapshot()
+    expect(back?.rows).toHaveLength(1)
+    expect(back?.monthly).toEqual({})
+  })
+})
+
+// Balances and claim history land seconds apart, so each half is written on its
+// own. Neither writer may clobber the other's data.
+describe('monthly cache', () => {
+  it('keeps rows when monthly is written', () => {
+    saveSnapshotRows([row({ address: 'a' })])
+    saveSnapshotMonthly({ medibloc: { amount: '500', months: 4 } })
+    const back = loadSnapshot()
+    expect(back?.rows).toHaveLength(1)
+    expect(back?.monthly.medibloc).toEqual({ amount: '500', months: 4 })
+  })
+
+  it('keeps monthly when rows are rewritten by a later refresh', () => {
+    saveSnapshotRows([row({ address: 'a' })])
+    saveSnapshotMonthly({ medibloc: { amount: '500', months: 4 } })
+    saveSnapshotRows([row({ address: 'a', available: '999' })])
+    const back = loadSnapshot()
+    expect(back?.rows[0].available).toBe('999')
+    // Survives so the income card does not flash empty on the next return.
+    expect(back?.monthly.medibloc).toEqual({ amount: '500', months: 4 })
+  })
+
+  // Regression: claim history is one tx query while balances are several
+  // requests per wallet, so monthly genuinely lands first on a fast chain. An
+  // earlier version bailed out here on the assumption that rows always came
+  // first, which silently dropped the figure on every first run.
+  it('stores monthly even when it arrives before any rows', () => {
+    saveSnapshotMonthly({ medibloc: { amount: '500', months: 4 } })
+    expect(loadSnapshot()?.monthly.medibloc).toEqual({ amount: '500', months: 4 })
+  })
+
+  it('carries monthly forward when rows arrive afterwards', () => {
+    saveSnapshotMonthly({ medibloc: { amount: '500', months: 4 } })
+    saveSnapshotRows([row({ address: 'a' })])
+    const back = loadSnapshot()
+    expect(back?.rows).toHaveLength(1)
+    expect(back?.monthly.medibloc).toEqual({ amount: '500', months: 4 })
+  })
+
+  it('keeps monthly amounts exact beyond 2^53', () => {
+    saveSnapshotRows([row()])
+    saveSnapshotMonthly({ medibloc: { amount: '9007199254740993', months: 2 } })
+    expect(loadSnapshot()?.monthly.medibloc.amount).toBe('9007199254740993')
   })
 })
 

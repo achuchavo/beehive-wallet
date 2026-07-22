@@ -15,6 +15,8 @@ export const en: Record<string, string> = {
     'Could not load the network configuration. Sending and staking are disabled until this succeeds — reload to retry.',
   'dash.allChains': 'All networks',
   'dash.chainFilter': 'Network',
+  'dash.foldChain': 'Hide {chain} details',
+  'dash.unfoldChain': 'Show {chain} details',
   'dash.currency': 'Currency',
   'dash.partialFailure': '{count} wallet(s) on this network could not be loaded. Totals below are incomplete.',
   'dash.balanceUnavailable': 'Balance unavailable',
@@ -323,6 +325,7 @@ export const en: Record<string, string> = {
   'settings.walletsDesc':
     'Wallets live only on this device, encrypted with your password. The Beehive server never sees your seed phrase or keys.',
   'settings.noWallets': 'No wallets yet.',
+  'settings.noWalletsOnChain': 'No wallets on this network.',
   'settings.activeWallet': 'Active wallet',
   'settings.showKey': 'Show key',
   'settings.showSeed': 'Show seed',

@@ -29,9 +29,28 @@ export interface SnapshotRow {
   isValidator: boolean
 }
 
+/** Average claimed per month for one chain, as shown on the income card. */
+export interface MonthlyEntry {
+  /** Base-unit integer string. */
+  amount: string
+  /** Calendar months the average spans. */
+  months: number
+}
+
 export interface DashboardSnapshot {
   savedAt: string
   rows: SnapshotRow[]
+  /**
+   * Keyed by chain. Written separately from `rows` because claim history is a
+   * much slower set of queries than balances - without caching it, the income
+   * card flashes its empty state on every return even though the totals above
+   * it are already populated.
+   *
+   * Safe to show beside cached rows without an address-set check: it is only
+   * ever displayed alongside the very rows it was computed from, and live data
+   * replaces both together.
+   */
+  monthly: Record<string, MonthlyEntry>
 }
 
 const isBase = (v: unknown): v is string => typeof v === 'string' && /^\d+$/.test(v)
@@ -49,6 +68,27 @@ export function loadSnapshot(): DashboardSnapshot | null {
     if (!parsed || typeof parsed !== 'object') return null
     const o = parsed as Record<string, unknown>
     if (typeof o.savedAt !== 'string' || !Array.isArray(o.rows)) return null
+
+    // `monthly` is optional so a snapshot written before this field existed
+    // still loads. Anything malformed inside it drops the whole snapshot, same
+    // as a bad row - it is a figure on the income card, not a hint.
+    const monthly: Record<string, MonthlyEntry> = {}
+    if (o.monthly !== undefined) {
+      if (!o.monthly || typeof o.monthly !== 'object' || Array.isArray(o.monthly)) return null
+      for (const [key, raw] of Object.entries(o.monthly as Record<string, unknown>)) {
+        if (!raw || typeof raw !== 'object') return null
+        const m = raw as Record<string, unknown>
+        if (
+          !isBase(m.amount) ||
+          typeof m.months !== 'number' ||
+          !Number.isInteger(m.months) ||
+          m.months < 0
+        ) {
+          return null
+        }
+        monthly[key] = { amount: m.amount, months: m.months }
+      }
+    }
 
     const rows: SnapshotRow[] = []
     for (const r of o.rows) {
@@ -77,22 +117,47 @@ export function loadSnapshot(): DashboardSnapshot | null {
         isValidator: s.isValidator,
       })
     }
-    return { savedAt: o.savedAt, rows }
+    return { savedAt: o.savedAt, rows, monthly }
   } catch {
     return null
   }
 }
 
-export function saveSnapshot(rows: SnapshotRow[]): void {
+function write(snapshot: DashboardSnapshot): void {
   try {
-    localStorage.setItem(
-      KEY,
-      JSON.stringify({ savedAt: new Date().toISOString(), rows } satisfies DashboardSnapshot),
-    )
+    localStorage.setItem(KEY, JSON.stringify(snapshot))
   } catch {
     // Quota or private-mode failures are not worth surfacing - the dashboard
     // works perfectly well with no cache at all.
   }
+}
+
+/**
+ * Store the per-wallet rows, keeping any cached monthly figures.
+ *
+ * Balances and claim history land at very different times, so the two halves
+ * are written independently rather than one clobbering the other.
+ */
+export function saveSnapshotRows(rows: SnapshotRow[]): void {
+  write({ savedAt: new Date().toISOString(), rows, monthly: loadSnapshot()?.monthly ?? {} })
+}
+
+/**
+ * Store the monthly averages, keeping the rows already cached.
+ *
+ * Either half can land first - claim history is a single tx query while
+ * balances take several requests per wallet, so on a fast chain the monthly
+ * figure genuinely wins the race. Writing an otherwise-empty record here is
+ * what lets saveSnapshotRows() carry it forward moments later; bailing out
+ * instead silently dropped the value on every first run.
+ */
+export function saveSnapshotMonthly(monthly: Record<string, MonthlyEntry>): void {
+  const existing = loadSnapshot()
+  write({
+    savedAt: existing?.savedAt ?? new Date().toISOString(),
+    rows: existing?.rows ?? [],
+    monthly,
+  })
 }
 
 export function clearSnapshot(): void {

@@ -27,7 +27,8 @@ import CountUp from '../components/CountUp'
 import DeltaFloat from '../components/DeltaFloat'
 import {
   loadSnapshot,
-  saveSnapshot,
+  saveSnapshotRows,
+  saveSnapshotMonthly,
   chainDelta,
   type SnapshotRow,
 } from '../dashboardSnapshot'
@@ -74,10 +75,22 @@ export default function Dashboard() {
   const [prices, setPrices] = useState<Record<string, number | null>>({})
   // '' = show every chain.
   const [chainFilter, setChainFilter] = useState('')
+  // Per-chain override of the default expand state. Absent = use the default,
+  // which is "first chain open, the rest folded" - with several networks the
+  // page was otherwise a very long scroll before the second total came into
+  // view. Filtering to one chain always shows it in full.
+  const [openChains, setOpenChains] = useState<Record<string, boolean>>({})
   // Average claimed per month, per chain. Derived from claim history, which is
   // a separate (and slower) set of tx queries - kept out of the balance load so
   // it can never delay the numbers people actually come here for.
-  const [monthly, setMonthly] = useState<Record<string, { amount: string; months: number }>>({})
+  //
+  // Seeded from the snapshot: those queries are slower than the balance ones,
+  // so without a cached value the income card sits on its empty state ("shows
+  // once you claim rewards") for seconds after the totals above it have filled
+  // in - which reads as "you have earned nothing" rather than "still loading".
+  const [monthly, setMonthly] = useState<Record<string, { amount: string; months: number }>>(
+    () => loadSnapshot()?.monthly ?? {},
+  )
 
   // The distinct chains actually represented by the user's wallets.
   const walletChains = Array.from(new Set(wallets.map((w) => w.chainKey)))
@@ -161,7 +174,7 @@ export default function Dashboard() {
         commission: r.portfolio.commission,
         isValidator: r.portfolio.isValidator,
       }))
-    if (toStore.length > 0) saveSnapshot(toStore)
+    if (toStore.length > 0) saveSnapshotRows(toStore)
   }
 
   const load = useCallback(async () => {
@@ -246,13 +259,21 @@ export default function Dashboard() {
         const chain = findChain(key)!
         try {
           const history = await fetchClaimHistory(chain, addrs)
-          return [key, averageMonthly(history, key)] as const
+          return { key, value: averageMonthly(history, key), ok: true }
         } catch {
-          return [key, { amount: '0', months: 0 }] as const
+          return { key, value: { amount: '0', months: 0 }, ok: false }
         }
       }),
-    ).then((entries) => {
-      if (!cancelled) setMonthly(Object.fromEntries(entries))
+    ).then((results) => {
+      if (cancelled) return
+      setMonthly(Object.fromEntries(results.map((r) => [r.key, r.value])))
+      // Only cache chains whose history actually loaded. A failed fetch yields
+      // zero, and persisting that would cache "you have earned nothing" and
+      // show it confidently on the next visit.
+      const good = results.filter((r) => r.ok)
+      if (good.length > 0) {
+        saveSnapshotMonthly(Object.fromEntries(good.map((r) => [r.key, r.value])))
+      }
     })
     return () => {
       cancelled = true
@@ -405,7 +426,14 @@ export default function Dashboard() {
         <LoadingOverlay title={t('dash.loadingWallets')} subtitle={t('dash.loadingWalletsHint')} />
       )}
 
-      {groups.map((g) => (
+      {groups.map((g, gi) => {
+        // Collapsing only earns its keep when several chains are stacked. With
+        // one group there is nothing to scroll past, so the control would be
+        // pure friction.
+        const collapsible = groups.length > 1
+        const open = !collapsible || (openChains[g.chain.key] ?? gi === 0)
+        const panelId = `chain-panel-${g.chain.key}`
+        return (
         <div key={g.chain.key} className="space-y-4">
           {/* Hero card. Tinted with the brand amber so the headline figure
               reads as the primary surface rather than one more white card;
@@ -459,16 +487,34 @@ export default function Dashboard() {
               </div>
             )}
 
-            <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
-              <Stat icon={Wallet} label={t('dash.available')} value={formatAmount(g.available, g.chain)} />
-              <Stat icon={Coins} label={t('dash.staked')} value={formatAmount(g.staked, g.chain)} />
-              <Stat icon={Gift} label={t('dash.rewards')} value={formatAmount(g.rewards, g.chain)} />
-              {g.anyValidator && (
-                <Stat icon={Landmark} label={t('dash.commission')} value={formatAmount(g.commission, g.chain)} />
-              )}
-            </div>
+            {open && (
+              <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
+                <Stat icon={Wallet} label={t('dash.available')} value={formatAmount(g.available, g.chain)} />
+                <Stat icon={Coins} label={t('dash.staked')} value={formatAmount(g.staked, g.chain)} />
+                <Stat icon={Gift} label={t('dash.rewards')} value={formatAmount(g.rewards, g.chain)} />
+                {g.anyValidator && (
+                  <Stat icon={Landmark} label={t('dash.commission')} value={formatAmount(g.commission, g.chain)} />
+                )}
+              </div>
+            )}
+
+            {/* The headline total stays visible either way - folding hides the
+                breakdown, never the figure the card exists to show. */}
+            {collapsible && (
+              <button
+                type="button"
+                onClick={() => setOpenChains((s) => ({ ...s, [g.chain.key]: !open }))}
+                aria-expanded={open}
+                aria-controls={panelId}
+                className="mt-3 flex w-full items-center justify-center gap-1 rounded-lg border border-amber-200 bg-white/60 py-1.5 text-xs font-medium text-amber-900 hover:bg-white"
+              >
+                {t(open ? 'dash.foldChain' : 'dash.unfoldChain', { chain: g.chain.chainName })}
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+              </button>
+            )}
           </div>
 
+          <div id={panelId} hidden={!open} className="space-y-4">
           {/* Average monthly income - a headline metric, deliberately loud.
               Shown whenever this chain is actually earning (staked or accrued
               rewards), so someone who has staked but never claimed sees WHY it
@@ -477,7 +523,7 @@ export default function Dashboard() {
             isPositiveBase(g.staked) ||
             isPositiveBase(g.rewards)) && (
             <Link
-              to="/rewards"
+              to={`/rewards?chain=${g.chain.key}`}
               className="group block rounded-xl border-2 border-green-200 bg-green-50 p-4 transition-colors hover:border-green-300 hover:bg-green-100"
             >
               {/* Sized to fit 375px without wrapping. "per month" is NOT
@@ -528,7 +574,7 @@ export default function Dashboard() {
 
           {isPositiveBase(g.claimable) && (
             <Link
-              to="/rewards"
+              to={`/rewards?chain=${g.chain.key}`}
               className="flex items-center justify-between rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800 hover:bg-green-100"
             >
               <span className="flex items-center gap-2">
@@ -563,8 +609,10 @@ export default function Dashboard() {
               ))}
             </div>
           </section>
+          </div>
         </div>
-      ))}
+        )
+      })}
 
       {/* wrap + nowrap: labels like "Send / receive" must not break mid-phrase.
           The row reflows to a second line instead. */}

@@ -15,6 +15,8 @@ export const ko: Record<string, string> = {
     '네트워크 설정을 불러오지 못했습니다. 성공할 때까지 송금과 스테이킹이 비활성화됩니다 — 새로고침하여 다시 시도하세요.',
   'dash.allChains': '전체 네트워크',
   'dash.chainFilter': '네트워크',
+  'dash.foldChain': '{chain} 상세 숨기기',
+  'dash.unfoldChain': '{chain} 상세 보기',
   'dash.currency': '통화',
   'dash.partialFailure': '이 네트워크의 지갑 {count}개를 불러오지 못했습니다. 아래 합계는 불완전합니다.',
   'dash.balanceUnavailable': '잔액을 불러올 수 없음',
@@ -316,6 +318,7 @@ export const ko: Record<string, string> = {
   'settings.walletsDesc':
     '지갑은 비밀번호로 암호화되어 이 기기에만 저장됩니다. Beehive 서버는 시드 문구나 키를 절대 볼 수 없습니다.',
   'settings.noWallets': '아직 지갑이 없습니다.',
+  'settings.noWalletsOnChain': '이 네트워크에는 지갑이 없습니다.',
   'settings.activeWallet': '활성 지갑',
   'settings.showKey': '키 보기',
   'settings.showSeed': '시드 보기',

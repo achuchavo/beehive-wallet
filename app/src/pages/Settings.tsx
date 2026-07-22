@@ -3,9 +3,11 @@ import { useSearchParams } from 'react-router-dom'
 import { Plus, Import, TriangleAlert, Copy, Check } from 'lucide-react'
 import { useWallet, generateMnemonic } from '../wallet/WalletContext'
 import { useChains } from '../chainStore'
+import { findChain, type ChainInfo } from '../chains'
 import PasswordInput from '../components/PasswordInput'
 import CopyAddress from '../components/CopyAddress'
 import ChainPicker from '../components/ChainPicker'
+import OptionPicker from '../components/OptionPicker'
 import RemoveWalletDialog from '../components/RemoveWalletDialog'
 import Checkbox from '../components/Checkbox'
 import { walletPasswordError, walletPasswordWeak } from '../wallet/password'
@@ -69,6 +71,16 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
   const [password, setPassword] = useState('')
   const [secret, setSecret] = useState('')
   const [error, setError] = useState('')
+  // '' = every network.
+  const [chainFilter, setChainFilter] = useState('')
+
+  // Only the networks the user actually holds wallets on - offering a filter
+  // for a chain with nothing on it would just produce an empty list.
+  const walletChains = Array.from(new Set(wallets.map((w) => w.chainKey)))
+    .map((k) => findChain(k))
+    .filter((c): c is ChainInfo => c !== undefined)
+
+  const shown = wallets.filter((w) => !chainFilter || w.chainKey === chainFilter)
 
   async function reveal(address: string) {
     setError('')
@@ -119,13 +131,30 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
   return (
     <div className="space-y-4">
       <section className="space-y-2">
-        <h2 className="font-medium">{t('settings.yourWallets')}</h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="font-medium">{t('settings.yourWallets')}</h2>
+          {/* Only worth offering once wallets actually span more than one
+              network; with a single chain it filters nothing. */}
+          {walletChains.length > 1 && (
+            <OptionPicker
+              label={t('dash.chainFilter')}
+              value={chainFilter}
+              onChange={setChainFilter}
+              options={[
+                { value: '', label: t('dash.allChains') },
+                ...walletChains.map((c) => ({ value: c.key, label: c.chainName })),
+              ]}
+            />
+          )}
+        </div>
         <p className="text-sm text-slate-500">{t('settings.walletsDesc')}</p>
         {wallets.length === 0 ? (
           <p className="text-sm text-slate-500">{t('settings.noWallets')}</p>
+        ) : shown.length === 0 ? (
+          <p className="text-sm text-slate-500">{t('settings.noWalletsOnChain')}</p>
         ) : (
           <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
-            {wallets.map((w) => (
+            {shown.map((w) => (
               <li key={w.address} className="space-y-2 px-4 py-3">
                 <div className="flex items-center gap-3">
                   <input
@@ -136,7 +165,16 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
                     title={t('settings.activeWallet')}
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium">{w.name}</div>
+                    <div className="flex flex-wrap items-center gap-x-2 text-sm font-medium">
+                      {w.name}
+                      {/* The network was not shown at all before. With more
+                          than one chain configured, two wallets can look
+                          identical here while being entirely different
+                          accounts on different networks. */}
+                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-normal text-slate-600">
+                        {findChain(w.chainKey)?.chainName ?? w.chainKey}
+                      </span>
+                    </div>
                     <CopyAddress address={w.address} className="max-w-full text-xs text-slate-500" />
                   </div>
                   <button
