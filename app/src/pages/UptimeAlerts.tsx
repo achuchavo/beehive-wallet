@@ -10,7 +10,7 @@ import {
   ExternalLink,
 } from 'lucide-react'
 import { api, type UptimeSubscription, type UptimeAlert } from '../api'
-import { DEFAULT_CHAIN } from '../chains'
+import { DEFAULT_CHAIN, CHAINS, type ChainInfo } from '../chains'
 import { useAuth } from '../auth/AuthContext'
 import OptionPicker from '../components/OptionPicker'
 import { useT } from '../i18n/I18nContext'
@@ -23,8 +23,7 @@ interface Val {
   moniker: string
 }
 
-async function fetchValidators(): Promise<Val[]> {
-  const chain = DEFAULT_CHAIN
+async function fetchValidators(chain: ChainInfo): Promise<Val[]> {
   const res = await fetch(
     `${chain.lcd}/cosmos/staking/v1beta1/validators?pagination.limit=500&status=BOND_STATUS_BONDED`,
   )
@@ -61,7 +60,8 @@ export default function UptimeAlerts() {
 
 function UptimePanel() {
   const { t } = useT()
-  const chain = DEFAULT_CHAIN
+  const [chainKey, setChainKey] = useState(DEFAULT_CHAIN.key)
+  const chain = CHAINS.find((c) => c.key === chainKey) ?? DEFAULT_CHAIN
   const [enabled, setEnabled] = useState(true)
   const [subs, setSubs] = useState<UptimeSubscription[]>([])
   const [alerts, setAlerts] = useState<UptimeAlert[]>([])
@@ -86,13 +86,29 @@ function UptimePanel() {
 
   useEffect(() => {
     refresh()
-    fetchValidators().then(setValidators).catch(() => {})
     const id = setInterval(refresh, POLL_MS)
     return () => clearInterval(id)
   }, [refresh])
 
+  // Re-fetch whenever the chosen network changes: a validator list is
+  // chain-specific and offering Medibloc validators for a Chihuahua
+  // subscription would register an operator that does not exist there.
+  useEffect(() => {
+    setValidators([])
+    setValidator('')
+    fetchValidators(chain).then(setValidators).catch(() => {})
+  }, [chain])
+
+  // Client-side HRP check; uptime_apply.php re-validates server-side.
+  const validatorMatchesChain =
+    validator.trim() === '' || validator.trim().startsWith(chain.bech32Prefix + 'valoper1')
+
   async function apply(e: React.FormEvent) {
     e.preventDefault()
+    if (!validatorMatchesChain) {
+      setError(t('uptime.errWrongNetwork', { chain: chain.chainName }))
+      return
+    }
     setBusy(true)
     setError('')
     setNotice('')
@@ -139,35 +155,71 @@ function UptimePanel() {
       {/* Apply */}
       <form onSubmit={apply} className="space-y-2 rounded-xl border border-slate-200 bg-white p-4">
         <div className="text-sm font-medium">{t('uptime.applyTitle')}</div>
-        {/* The one list that genuinely needs the search field - 251 bonded
-            validators on Chihuahua. Monikers are long and often emoji-heavy,
-            so this is a list rather than a grid, with the operator address as
-            a hint so two similar monikers stay distinguishable. */}
-        <OptionPicker
-          full
-          label={t('uptime.selectValidator')}
-          value={validators.some((v) => v.operator === validator) ? validator : ''}
-          onChange={setValidator}
-          className="py-2"
-          layout="list"
-          options={[
-            { value: '', label: t('uptime.selectValidator') },
-            ...validators.map((v) => ({
-              value: v.operator,
-              label: v.moniker,
-              hint: `${v.operator.slice(0, 20)}...${v.operator.slice(-6)}`,
-            })),
-          ]}
-        />
-        <input
-          value={validator}
-          onChange={(e) => setValidator(e.target.value.trim())}
-          placeholder={t('uptime.validatorPlaceholder')}
-          aria-label={t('uptime.validatorPlaceholder')}
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
-        />
+
+        {/* Network first: the validator list, the stored subscription and the
+            explorer link are all chain-specific. */}
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-600">
+            {t('dash.chainFilter')}
+          </span>
+          <OptionPicker
+            full
+            label={t('dash.chainFilter')}
+            value={chainKey}
+            onChange={setChainKey}
+            options={CHAINS.map((c) => ({
+              value: c.key,
+              label: c.chainName,
+              hint: c.chainId,
+            }))}
+          />
+        </label>
+
+        {/* Two distinct ways in, previously stacked with no explanation of how
+            they related. The 251-entry list is the one place the picker's
+            search genuinely earns its keep. */}
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-600">
+            {t('uptime.chooseFromList')}
+          </span>
+          <OptionPicker
+            full
+            label={t('uptime.selectValidator')}
+            value={validators.some((v) => v.operator === validator) ? validator : ''}
+            onChange={setValidator}
+            className="py-2"
+            layout="list"
+            options={[
+              { value: '', label: t('uptime.selectValidator') },
+              ...validators.map((v) => ({
+                value: v.operator,
+                label: v.moniker,
+                hint: `${v.operator.slice(0, 20)}...${v.operator.slice(-6)}`,
+              })),
+            ]}
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-600">
+            {t('uptime.orEnterManually')}
+          </span>
+          <input
+            value={validator}
+            onChange={(e) => setValidator(e.target.value.trim())}
+            placeholder={`${chain.bech32Prefix}valoper1...`}
+            aria-label={t('uptime.orEnterManually')}
+            aria-invalid={validatorMatchesChain ? undefined : true}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
+          />
+        </label>
+        {!validatorMatchesChain && (
+          <p className="text-xs text-red-600">
+            {t('uptime.errWrongNetwork', { chain: chain.chainName })}
+          </p>
+        )}
         <button
-          disabled={busy || !validator}
+          disabled={busy || !validator || !validatorMatchesChain}
           className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
         >
           {t('uptime.apply')}
@@ -243,7 +295,10 @@ function SubRow({
   onChange: () => void
 }) {
   const { t } = useT()
-  const chain = DEFAULT_CHAIN
+  // The subscription's own chain. This was DEFAULT_CHAIN, so a Chihuahua
+  // subscription rendered a Medibloc explorer link - a dead link to a
+  // validator that does not exist on that network.
+  const chain = CHAINS.find((c) => c.key === sub.chain_key) ?? DEFAULT_CHAIN
   const snoozed = sub.snooze_until !== null && new Date(sub.snooze_until.replace(' ', 'T')) > new Date()
 
   const statusBadge = {

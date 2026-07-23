@@ -537,6 +537,9 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
   const [error, setError] = useState('')
 
   const [newAddress, setNewAddress] = useState('')
+  // Which network this alert is filed under. Defaults to the first configured
+  // chain but is always visible and changeable before submit.
+  const [newChain, setNewChain] = useState(DEFAULT_CHAIN.key)
   const [newLabel, setNewLabel] = useState('')
   const [newType, setNewType] = useState<AlarmType>('both')
   const [busy, setBusy] = useState(false)
@@ -560,12 +563,27 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
     return () => clearInterval(t)
   }, [refresh])
 
+  const selectedChain = CHAINS.find((c) => c.key === newChain) ?? DEFAULT_CHAIN
+  // Client-side HRP check. The server re-validates (watched_add.php) - this is
+  // for feedback, not enforcement.
+  const addressMatchesChain =
+    newAddress.trim() === '' || newAddress.trim().startsWith(selectedChain.bech32Prefix + '1')
+
   async function addAddress(e: React.FormEvent) {
     e.preventDefault()
+    if (!addressMatchesChain) {
+      setError(t('alarms.errWrongNetwork', { chain: selectedChain.chainName }))
+      return
+    }
     setBusy(true)
     setError('')
     try {
-      await api.watchedAdd(DEFAULT_CHAIN.key, newAddress.trim(), newLabel.trim(), newType)
+      // The selected network, never a global default. This submitted
+      // DEFAULT_CHAIN.key regardless of what the address actually was, so a
+      // Chihuahua address was filed under Medibloc and the watcher then polled
+      // a Medibloc node for an address that does not exist there - alerts the
+      // user believed were armed silently never fired.
+      await api.watchedAdd(newChain, newAddress.trim(), newLabel.trim(), newType)
       setNewAddress('')
       setNewLabel('')
       setNewType('both')
@@ -630,14 +648,44 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
 
         {showAddForm && (
           <form onSubmit={addAddress} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
-            <input
-              value={newAddress}
-              onChange={(e) => setNewAddress(e.target.value)}
-              placeholder={`${DEFAULT_CHAIN.bech32Prefix}1...`}
-              required
-              autoComplete="off"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
-            />
+            {/* Network first, and always visible: which chain an alert is filed
+                under decides which node the watcher polls, so it must be a
+                deliberate choice rather than an invisible default. */}
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-600">
+                {t('dash.chainFilter')}
+              </span>
+              <OptionPicker
+                full
+                label={t('dash.chainFilter')}
+                value={newChain}
+                onChange={setNewChain}
+                options={CHAINS.map((c) => ({
+                  value: c.key,
+                  label: c.chainName,
+                  hint: `${c.chainId} · ${c.bech32Prefix}1…`,
+                }))}
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-600">
+                {t('alarms.addressLabel')}
+              </span>
+              <input
+                value={newAddress}
+                onChange={(e) => setNewAddress(e.target.value)}
+                placeholder={`${selectedChain.bech32Prefix}1...`}
+                required
+                autoComplete="off"
+                aria-invalid={!addressMatchesChain}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
+              />
+            </label>
+            {!addressMatchesChain && (
+              <p className="text-xs text-red-600">
+                {t('alarms.errWrongNetwork', { chain: selectedChain.chainName })}
+              </p>
+            )}
             <input
               value={newLabel}
               onChange={(e) => setNewLabel(e.target.value)}
@@ -660,15 +708,21 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
                 <span className="text-xs text-slate-500">{t('alarms.yourWallets')}</span>
                 {wallets.map((w) => (
                   <button
-                    key={w.address}
+                    key={w.id}
                     type="button"
                     onClick={() => {
+                      // Picking a saved wallet must bring its network with it -
+                      // otherwise the address and the chain disagree.
                       setNewAddress(w.address)
+                      setNewChain(w.chainKey)
                       if (!newLabel) setNewLabel(w.name)
                     }}
-                    className="rounded-full border border-slate-300 bg-white px-2.5 py-0.5 text-xs text-slate-600 hover:border-amber-500 hover:text-amber-700"
+                    className="flex items-center gap-1.5 rounded-full border border-slate-300 bg-white px-2.5 py-0.5 text-xs text-slate-600 hover:border-amber-500 hover:text-amber-700"
                   >
                     {w.name}
+                    <span className="rounded bg-slate-100 px-1 text-[10px] text-slate-600">
+                      {chainName(w.chainKey)}
+                    </span>
                   </button>
                 ))}
               </div>

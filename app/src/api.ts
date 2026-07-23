@@ -237,7 +237,7 @@ export const api = {
 
 export type UserAction = 'disable' | 'enable' | 'delete'
 
-export const ADMIN_FEATURES = ['users', 'chains', 'announcements', 'uptime'] as const
+export const ADMIN_FEATURES = ['users', 'chains', 'announcements', 'uptime', 'wallet_alerts'] as const
 export type AdminFeature = (typeof ADMIN_FEATURES)[number]
 
 export interface AdminChain {

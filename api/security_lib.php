@@ -323,7 +323,94 @@ function verify_address_ownership(
 // --- CSRF / origin policy ---------------------------------------------------
 // See common.php require_same_origin() for how these are applied.
 
-function origin_denied_reason(string $site, string $origin, string $host, bool $isMutation): string
+/**
+ * Reduce an origin to a comparable canonical form: lowercase scheme and host,
+ * with the default port for the scheme removed.
+ *
+ * Returns '' if the input is not a usable absolute origin.
+ */
+function canonical_origin(string $origin): string
+{
+    $origin = trim($origin);
+    if ($origin === '' || strcasecmp($origin, 'null') === 0) {
+        return '';
+    }
+    $scheme = parse_url($origin, PHP_URL_SCHEME);
+    $host = parse_url($origin, PHP_URL_HOST);
+    if (!is_string($scheme) || !is_string($host) || $scheme === '' || $host === '') {
+        return '';
+    }
+    $scheme = strtolower($scheme);
+    $host = strtolower($host);
+    if ($scheme !== 'http' && $scheme !== 'https') {
+        return '';
+    }
+    $port = parse_url($origin, PHP_URL_PORT);
+    $default = $scheme === 'https' ? 443 : 80;
+    $port = $port === null ? $default : (int) $port;
+
+    return $port === $default ? "{$scheme}://{$host}" : "{$scheme}://{$host}:{$port}";
+}
+
+/**
+ * Is `$origin` one of the deployment's own origins?
+ *
+ * `$trusted` is the configured canonical list. Comparing against a configured
+ * value rather than the request's own Host header is the point: Host is
+ * client-supplied and reflected, and the previous check ignored scheme
+ * entirely, so http://wallet.example validated happily against an HTTPS-only
+ * deployment.
+ */
+function origin_is_trusted(string $origin, array $trusted): bool
+{
+    $c = canonical_origin($origin);
+    if ($c === '') {
+        return false;
+    }
+    foreach ($trusted as $t) {
+        if ($c === canonical_origin((string) $t)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @param string[] $trusted Canonical origins for this deployment. When empty,
+ *                          falls back to comparing against the Host header -
+ *                          weaker, but it keeps an unconfigured deployment
+ *                          working rather than locking every mutation out.
+ */
+function origin_denied_reason(
+    string $site,
+    string $origin,
+    string $host,
+    bool $isMutation,
+    array $trusted = []
+): string {
+    // With a configured origin list, that list is the whole policy: exact
+    // scheme + host + port, no reliance on reflected headers.
+    if ($trusted !== []) {
+        if ($site === 'cross-site' || $site === 'same-site') {
+            return 'cross_site';
+        }
+        if ($origin !== '') {
+            if (strcasecmp($origin, 'null') === 0) {
+                return 'opaque_origin';
+            }
+            return origin_is_trusted($origin, $trusted) ? '' : 'origin_mismatch';
+        }
+        if ($isMutation && $site !== 'same-origin') {
+            return 'missing_origin';
+        }
+        return '';
+    }
+
+    return origin_denied_reason_by_host($site, $origin, $host, $isMutation);
+}
+
+/** Legacy Host-based comparison. Retained only as the unconfigured fallback. */
+function origin_denied_reason_by_host(string $site, string $origin, string $host, bool $isMutation): string
 {
     // `same-site` is a sibling subdomain - NOT us. Reject alongside cross-site.
     if ($site === 'cross-site' || $site === 'same-site') {

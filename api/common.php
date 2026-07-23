@@ -278,10 +278,44 @@ function json_error(string $message, int $status = 400): void
     json_out(['ok' => false, 'error' => $message], $status);
 }
 
-function read_body(): array
+/**
+ * Default cap on a JSON request body.
+ *
+ * Every endpoint here takes small structured JSON - addresses, labels, a
+ * password. 64 KB is far above any legitimate payload and far below anything
+ * that costs memory. Push subscriptions carry a slightly larger blob, so they
+ * pass their own limit.
+ */
+const MAX_BODY_BYTES = 65536;
+
+/**
+ * Parse the JSON request body, refusing anything oversized.
+ *
+ * The read is BOUNDED rather than "read it all, then check": measuring after
+ * the fact means the whole body is already in memory, which is precisely what
+ * the limit is meant to prevent. Content-Length is checked first as a cheap
+ * rejection, but it is client-supplied, so the stream read is capped too and
+ * that is what actually enforces the limit.
+ */
+function read_body(int $maxBytes = MAX_BODY_BYTES): array
 {
-    $raw = file_get_contents('php://input');
-    $data = json_decode($raw === false ? '' : $raw, true);
+    $declared = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
+    if ($declared > $maxBytes) {
+        json_out(['error' => 'Request body too large'], 413);
+    }
+
+    $in = fopen('php://input', 'rb');
+    if ($in === false) {
+        return [];
+    }
+    // One byte past the limit is enough to know it was exceeded.
+    $raw = (string) stream_get_contents($in, $maxBytes + 1);
+    fclose($in);
+    if (strlen($raw) > $maxBytes) {
+        json_out(['error' => 'Request body too large'], 413);
+    }
+
+    $data = json_decode($raw, true);
     return is_array($data) ? $data : [];
 }
 
@@ -307,6 +341,26 @@ function get_db(): PDO
 // `same-site` is NOT trusted, so a compromised sibling subdomain cannot drive
 // authenticated mutations. CosmJS RPC/LCD proxy traffic is unauthenticated
 // (no session cookie) so it never reaches this check.
+/**
+ * The deployment's own canonical origins (scheme + host + port).
+ *
+ * Configure BEEHIVE_TRUSTED_ORIGINS in api/db_config.php as a PHP array to make
+ * CSRF policy independent of the reflected Host header. With none configured
+ * the check falls back to Host comparison, which is weaker but keeps an
+ * unconfigured deployment working instead of blocking every mutation.
+ */
+function trusted_origins(): array
+{
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+    $cached = defined('BEEHIVE_TRUSTED_ORIGINS') && is_array(BEEHIVE_TRUSTED_ORIGINS)
+        ? BEEHIVE_TRUSTED_ORIGINS
+        : [];
+    return $cached;
+}
+
 function require_same_origin(): void
 {
     $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -314,7 +368,8 @@ function require_same_origin(): void
         $_SERVER['HTTP_SEC_FETCH_SITE'] ?? '',
         $_SERVER['HTTP_ORIGIN'] ?? '',
         $_SERVER['HTTP_HOST'] ?? '',
-        is_mutating_method($method)
+        is_mutating_method($method),
+        trusted_origins()
     );
     if ($reason !== '') {
         json_error('Cross-origin request blocked', 403);
@@ -366,7 +421,10 @@ function require_user(PDO $db): int
 }
 
 // Admin features that can be granted individually. Super admins have all.
-const ADMIN_FEATURES = ['users', 'chains', 'announcements', 'uptime'];
+// 'wallet_alerts' is separate from 'uptime' on purpose: uptime is about
+// validator liveness, while wallet-alert data exposes users' watched ADDRESSES
+// and labels. Granting one should not grant the other.
+const ADMIN_FEATURES = ['users', 'chains', 'announcements', 'uptime', 'wallet_alerts'];
 
 /**
  * Best-effort audit trail for administrator account changes. Never allowed to
@@ -898,6 +956,67 @@ function proxy_rate_limit(string $ip, int $perIpPerMin = 300, int $globalPerMin 
 }
 
 /**
+ * Rate limit for SENSITIVE endpoints (auth, registration, admin mutations,
+ * ownership challenges), which fails CLOSED.
+ *
+ * The distinction from proxy_rate_limit() is deliberate and is the whole point
+ * of having two functions:
+ *
+ *   - The RPC/LCD proxies serve public, read-only chain data. Failing closed
+ *     there 429s every balance read and takes the entire wallet offline, which
+ *     has actually happened here. Availability wins.
+ *   - These endpoints gate credentials and privileged state. With no working
+ *     limiter an attacker gets unmetered password guesses, so refusing service
+ *     is strictly better than serving unlimited attempts. Security wins.
+ *
+ * Returns nothing; it either allows the request, 429s (limit hit) or 503s (no
+ * limiter available at all).
+ */
+function sensitive_rate_limit(string $scopeKey, int $perMin = 30): void
+{
+    $bucket = (int) floor(time() / 60);
+    $scopes = [[$scopeKey, $perMin]];
+
+    if (function_exists('apcu_enabled') && @apcu_enabled()) {
+        $n = apcu_inc("sens_{$scopeKey}_{$bucket}", 1, $ok, 90);
+        if ($n !== false && $n > $perMin) {
+            rate_limit_exceeded();
+        }
+        return;
+    }
+
+    try {
+        $db = get_db();
+        $stmt = $db->prepare(
+            'INSERT INTO rate_counters (scope, bucket, hits) VALUES (?, ?, 1)
+             ON DUPLICATE KEY UPDATE hits = hits + 1'
+        );
+        $stmt->execute([mb_substr("sens_{$scopeKey}", 0, 64), $bucket]);
+        $stmt = $db->prepare('SELECT hits FROM rate_counters WHERE scope = ? AND bucket = ?');
+        $stmt->execute([mb_substr("sens_{$scopeKey}", 0, 64), $bucket]);
+        if ((int) $stmt->fetchColumn() > $perMin) {
+            rate_limit_exceeded();
+        }
+        return;
+    } catch (Throwable $e) {
+        error_log('sensitive_rate_limit: shared storage unavailable (' . $e->getMessage() . ')');
+    }
+
+    // File counters are per-server, but for a single-server deployment they are
+    // a real limit and better than nothing.
+    if (file_rate_limit($scopes, $bucket)) {
+        return;
+    }
+
+    // Nothing worked. Refuse rather than allow unmetered attempts against an
+    // authentication surface. 503 + Retry-After, not 429: the client did
+    // nothing wrong, the server cannot currently meter it.
+    error_log('sensitive_rate_limit: no limiter backend available, failing closed');
+    header('Retry-After: 60');
+    json_out(['error' => 'Service temporarily unavailable. Please try again shortly.'], 503);
+}
+
+/**
  * Last-resort limiter backed by counter files in the system temp dir.
  *
  * LIMITATIONS (documented per audit #4): this is per-server, not shared across
@@ -907,16 +1026,19 @@ function proxy_rate_limit(string $ip, int $perIpPerMin = 300, int $globalPerMin 
  * Infrastructure-level limiting (mod_ratelimit / reverse proxy) should back
  * this up regardless; see docs/security-headers.md.
  */
-function file_rate_limit(array $scopes, int $bucket): void
+function file_rate_limit(array $scopes, int $bucket): bool
 {
     $dir = sys_get_temp_dir() . '/beehive_rl';
     if (!is_dir($dir)) {
         @mkdir($dir, 0700, true);
     }
     if (!is_dir($dir) || !is_writable($dir)) {
-        error_log('proxy_rate_limit: file fallback unavailable, request allowed unmetered');
-        return;
+        error_log('rate_limit: file fallback unavailable');
+        return false;
     }
+    // True only if at least one scope was actually counted - a caller that
+    // fails closed must not treat "every open() failed" as enforcement.
+    $enforced = false;
 
     foreach ($scopes as [$scope, $limit]) {
         $file = $dir . '/' . hash('sha256', $scope . '_' . $bucket) . '.cnt';
@@ -925,6 +1047,7 @@ function file_rate_limit(array $scopes, int $bucket): void
             continue;
         }
         if (flock($fh, LOCK_EX)) {
+            $enforced = true;
             $n = (int) stream_get_contents($fh) + 1;
             ftruncate($fh, 0);
             rewind($fh);
@@ -948,6 +1071,7 @@ function file_rate_limit(array $scopes, int $bucket): void
             }
         }
     }
+    return $enforced;
 }
 
 function rate_limit_exceeded(): void
@@ -986,14 +1110,37 @@ function count_recent_failures(PDO $db, string $column, string $value, string $k
     return (int) $stmt->fetchColumn();
 }
 
-// Enforce login rate limits. Call before checking the password.
+/**
+ * Enforce login rate limits. Call before checking the password.
+ *
+ * Fails CLOSED, explicitly. It already did so by accident - count_recent_failures()
+ * has no error handling, so an unavailable login_attempts table threw and PHP
+ * returned a bare 500 before any password was checked. That was the right
+ * outcome reached the wrong way: no operator signal, and one refactor away from
+ * becoming fail-open. Now the refusal is deliberate and says why.
+ *
+ * Unlike proxy_rate_limit(), which stays fail-open because 429ing public chain
+ * reads takes the whole wallet down, an authentication surface with no working
+ * limiter must refuse: the alternative is unmetered password guessing.
+ */
 function enforce_login_rate_limit(PDO $db, string $ip, string $identifier): void
 {
-    if (count_recent_failures($db, 'ip', $ip, 'login') >= RATE_MAX_PER_IP) {
+    try {
+        $ipFailures = count_recent_failures($db, 'ip', $ip, 'login');
+        $idFailures = $identifier !== ''
+            ? count_recent_failures($db, 'identifier', $identifier, 'login')
+            : 0;
+    } catch (Throwable $e) {
+        error_log('enforce_login_rate_limit: attempt store unavailable, refusing login: ' . $e->getMessage());
+        header('Retry-After: 60');
+        json_out(['error' => 'Sign-in is temporarily unavailable. Please try again shortly.'], 503);
+        return; // unreachable; json_out exits
+    }
+
+    if ($ipFailures >= RATE_MAX_PER_IP) {
         rate_limited();
     }
-    if ($identifier !== '' &&
-        count_recent_failures($db, 'identifier', $identifier, 'login') >= RATE_MAX_PER_IDENTIFIER) {
+    if ($idFailures >= RATE_MAX_PER_IDENTIFIER) {
         rate_limited();
     }
 }

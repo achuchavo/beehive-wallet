@@ -24,7 +24,10 @@ if ($can('users')) {
          WHERE kind = 'login' AND success = 0 AND attempted_at > NOW() - INTERVAL 1 DAY"
     )->fetchColumn();
 }
-if ($can('uptime')) {
+// Wallet-alert analytics: counts over users' watched addresses. Gated on
+// 'wallet_alerts', not 'uptime' - an operator who only monitors validator
+// liveness has no need for these.
+if ($can('wallet_alerts')) {
     $stats['watched_addresses'] = (int) $db->query('SELECT COUNT(*) FROM watched_addresses')->fetchColumn();
     $stats['alerts_total'] = (int) $db->query('SELECT COUNT(*) FROM wallet_alerts')->fetchColumn();
     $stats['alerts_24h'] = (int) $db->query(
@@ -58,7 +61,9 @@ if ($can('users')) {
 }
 
 // --- Recent alert activity (watched addresses + labels) ---------------------
-if ($can('uptime')) {
+// This is user PII - the addresses people watch and the names they gave them.
+// It was readable with only the 'uptime' permission.
+if ($can('wallet_alerts')) {
     $out['recent_alerts'] = $db->query(
         'SELECT a.id, a.tx_hash, a.amount, a.denom, a.detected_at,
                 w.chain_key, w.address, w.label

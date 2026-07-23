@@ -196,6 +196,44 @@ check(
 );
 
 // =============================================================================
+// Canonical CSRF origin (audit #10)
+// =============================================================================
+// Policy must depend on a CONFIGURED origin, not the reflected Host header,
+// and must compare scheme + host + port. The old check ignored scheme, so
+// plain http validated happily against an HTTPS-only deployment.
+
+$TRUSTED = ['https://wallet.achumuamah.com'];
+
+check('canonical: default https port dropped', canonical_origin('https://a.example:443'), 'https://a.example');
+check('canonical: default http port dropped', canonical_origin('http://a.example:80'), 'http://a.example');
+check('canonical: non-default port kept', canonical_origin('https://a.example:8443'), 'https://a.example:8443');
+check('canonical: case normalised', canonical_origin('HTTPS://A.Example'), 'https://a.example');
+check('canonical: non-http scheme rejected', canonical_origin('ftp://a.example'), '');
+check('canonical: garbage rejected', canonical_origin('not a url'), '');
+check('canonical: null origin rejected', canonical_origin('null'), '');
+
+check('trusted origin accepted',
+    origin_denied_reason('same-origin', 'https://wallet.achumuamah.com', 'wallet.achumuamah.com', true, $TRUSTED), '');
+check('http rejected against an https deployment',
+    origin_denied_reason('same-origin', 'http://wallet.achumuamah.com', 'wallet.achumuamah.com', true, $TRUSTED), 'origin_mismatch');
+check('alternate port rejected',
+    origin_denied_reason('same-origin', 'https://wallet.achumuamah.com:8443', 'wallet.achumuamah.com', true, $TRUSTED), 'origin_mismatch');
+check('sibling subdomain rejected',
+    origin_denied_reason('same-origin', 'https://evil.achumuamah.com', 'wallet.achumuamah.com', true, $TRUSTED), 'origin_mismatch');
+check('spoofed Host cannot authorise a foreign origin',
+    origin_denied_reason('same-origin', 'https://attacker.example', 'attacker.example', true, $TRUSTED), 'origin_mismatch');
+check('same-site sibling still rejected outright',
+    origin_denied_reason('same-site', 'https://wallet.achumuamah.com', 'wallet.achumuamah.com', true, $TRUSTED), 'cross_site');
+check('opaque origin rejected',
+    origin_denied_reason('same-origin', 'null', 'wallet.achumuamah.com', true, $TRUSTED), 'opaque_origin');
+check('mutation without origin or assertion rejected',
+    origin_denied_reason('', '', 'wallet.achumuamah.com', true, $TRUSTED), 'missing_origin');
+check('mutation without origin but same-origin asserted allowed',
+    origin_denied_reason('same-origin', '', 'wallet.achumuamah.com', true, $TRUSTED), '');
+check('unconfigured falls back to host comparison',
+    origin_denied_reason('same-origin', 'https://wallet.achumuamah.com', 'wallet.achumuamah.com', true, []), '');
+
+// =============================================================================
 echo "\n";
 if ($failed > 0) {
     echo implode("\n", $failures) . "\n\n";

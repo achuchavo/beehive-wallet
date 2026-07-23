@@ -11,6 +11,11 @@ require_post();
 
 $db = get_db();
 $userId = require_user($db);
+
+// Redeeming an ownership proof had no limiter of its own; only challenge
+// ISSUANCE was capped. Fails closed - see sensitive_rate_limit().
+sensitive_rate_limit('setaddr_' . $userId, 20);
+
 $body = read_body();
 
 $mainAddress = trim($body['main_address'] ?? '');
