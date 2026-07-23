@@ -350,6 +350,13 @@ export const ko: Record<string, string> = {
   'settings.generateSeed': '시드 문구 생성',
   'settings.seedWarning':
     '이 24개 단어를 순서대로 종이에 적으세요. 절대 디지털로 저장하거나 공유하지 마세요. 이 단어를 아는 사람은 누구나 자금을 제어할 수 있습니다.',
+  'settings.tapToReveal': '탭하여 표시',
+  'settings.hide': '숨기기',
+  'settings.copyConfirm': '클립보드는 다른 앱이 읽을 수 있고 클라우드로 동기화될 수 있습니다.',
+  'settings.copyAnyway': '그래도 복사',
+  'settings.copyFailed': '클립보드를 사용할 수 없습니다. 직접 적어 두세요.',
+  'settings.clipboardClears': '{seconds}초 후 클립보드가 지워집니다',
+  'settings.seedHiddenAfterBackup': '복구 문구를 숨겼습니다. 적어 둔 사본을 보고 아래 질문에 답하세요.',
   'settings.copy': '복사',
   'settings.wroteDown': '시드 문구를 종이에 적었습니다',
   'settings.walletNamePlaceholder': '지갑 이름 (예: 메인 지갑)',

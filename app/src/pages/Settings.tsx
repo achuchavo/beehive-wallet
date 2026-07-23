@@ -10,26 +10,69 @@ import ChainPicker from '../components/ChainPicker'
 import OptionPicker from '../components/OptionPicker'
 import RemoveWalletDialog from '../components/RemoveWalletDialog'
 import Checkbox from '../components/Checkbox'
+import SecretShield from '../components/SecretShield'
+import {
+  copySecretTemporarily,
+  cancelPendingSecretClear,
+  SECRET_CLIPBOARD_SECONDS,
+} from '../wallet/secretClipboard'
 import { walletPasswordError, walletPasswordWeak } from '../wallet/password'
 import { useT } from '../i18n/I18nContext'
 
+/**
+ * Copy control for SECRET material only.
+ *
+ * Two frictions the plain copy did not have: an explicit confirmation, because
+ * putting a seed phrase on the clipboard is a decision with consequences the
+ * user cannot see (cloud clipboard sync, clipboard history, the next paste
+ * target); and an automatic wipe afterwards - conditional, so it never destroys
+ * something the user copied in the meantime. See wallet/secretClipboard.ts.
+ */
 function CopyButton({ text, label }: { text: string; label: string }) {
   const { t } = useT()
   const [copied, setCopied] = useState(false)
+  const [asking, setAsking] = useState(false)
+  const [failed, setFailed] = useState(false)
+
   async function copy() {
-    await navigator.clipboard.writeText(text)
+    setAsking(false)
+    const ok = await copySecretTemporarily(text)
+    setFailed(!ok)
+    if (!ok) return
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
+  if (asking) {
+    return (
+      <span className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-red-600">{t('settings.copyConfirm')}</span>
+        <button type="button" onClick={copy} className="font-medium text-red-700 underline">
+          {t('settings.copyAnyway')}
+        </button>
+        <button type="button" onClick={() => setAsking(false)} className="text-slate-500 underline">
+          {t('common.cancel')}
+        </button>
+      </span>
+    )
+  }
+
   return (
-    <button
-      type="button"
-      onClick={copy}
-      className="flex items-center gap-1 text-xs text-amber-700 hover:underline"
-    >
-      {copied ? <Check className="h-3.5 w-3.5 text-green-700" /> : <Copy className="h-3.5 w-3.5" />}
-      {copied ? t('send.copied') : label}
-    </button>
+    <span className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => setAsking(true)}
+        className="flex items-center gap-1 text-xs text-amber-700 hover:underline"
+      >
+        {copied ? <Check className="h-3.5 w-3.5 text-green-700" /> : <Copy className="h-3.5 w-3.5" />}
+        {copied ? t('send.copied') : label}
+      </button>
+      {copied && (
+        <span className="text-[11px] text-slate-500">
+          {t('settings.clipboardClears', { seconds: SECRET_CLIPBOARD_SECONDS })}
+        </span>
+      )}
+      {failed && <span className="text-[11px] text-red-600">{t('settings.copyFailed')}</span>}
+    </span>
   )
 }
 
@@ -210,7 +253,9 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
                             </button>
                           </div>
                         </div>
-                        <p className="break-all rounded bg-white p-2 font-mono text-sm">{secret}</p>
+                        <SecretShield>
+                          <p className="break-all rounded bg-white p-2 font-mono text-sm">{secret}</p>
+                        </SecretShield>
                         <p className="text-xs text-slate-500">{t('settings.autoHide')}</p>
                         <p className="text-xs text-amber-700">{t('settings.clipboardWarn')}</p>
                       </>
@@ -358,6 +403,19 @@ function CreateWallet({ onDone }: { onDone: () => void }) {
     setConfirmedSaved(false)
   }
 
+  // Drop every secret when this step is left - navigating away, cancelling, or
+  // finishing. Without this the phrase and password stayed in React state for
+  // the life of the page. This cannot scrub the strings from memory (JS gives
+  // no such guarantee), but it removes the only references the app holds.
+  useEffect(() => {
+    return () => {
+      setMnemonic('')
+      setPassword('')
+      setConfirm('')
+      cancelPendingSecretClear()
+    }
+  }, [])
+
   const words = mnemonic ? mnemonic.split(' ') : []
   const verified =
     positions.length > 0 &&
@@ -420,9 +478,19 @@ function CreateWallet({ onDone }: { onDone: () => void }) {
                 <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 {t('settings.seedWarning')}
               </p>
-              <CopyButton text={mnemonic} label={t('settings.copy')} />
+              {!confirmedSaved && <CopyButton text={mnemonic} label={t('settings.copy')} />}
             </div>
-            <p className="font-mono text-sm leading-relaxed">{mnemonic}</p>
+            {/* Hidden once the user confirms they have written it down: there
+                is no reason for it to stay on screen through the verification
+                step, and leaving it there lets the "verify" check be answered
+                by reading rather than from the backup. */}
+            {confirmedSaved ? (
+              <p className="text-xs text-slate-500">{t('settings.seedHiddenAfterBackup')}</p>
+            ) : (
+              <SecretShield>
+                <p className="font-mono text-sm leading-relaxed">{mnemonic}</p>
+              </SecretShield>
+            )}
           </div>
           <p className="rounded-lg bg-slate-50 p-2 text-xs text-slate-500">{t('settings.seedBackupNote')}</p>
           <Checkbox
@@ -509,6 +577,16 @@ function ImportWallet({ onDone }: { onDone: () => void }) {
   const [kind, setKind] = useState<'mnemonic' | 'privkey'>('mnemonic')
   const [name, setName] = useState('')
   const [secret, setSecret] = useState('')
+
+  // Imported key material must not outlive this step - see CreateWallet.
+  useEffect(() => {
+    return () => {
+      setSecret('')
+      setPassword('')
+      setConfirm('')
+      cancelPendingSecretClear()
+    }
+  }, [])
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')

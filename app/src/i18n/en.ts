@@ -357,6 +357,13 @@ export const en: Record<string, string> = {
   'settings.generateSeed': 'Generate seed phrase',
   'settings.seedWarning':
     'Write these 24 words down on paper, in order. Never store them digitally or share them. Anyone with these words controls your funds.',
+  'settings.tapToReveal': 'Tap to reveal',
+  'settings.hide': 'Hide',
+  'settings.copyConfirm': 'Clipboard can be read by other apps and may sync to the cloud.',
+  'settings.copyAnyway': 'Copy anyway',
+  'settings.copyFailed': 'Clipboard unavailable - write it down instead.',
+  'settings.clipboardClears': 'Clipboard clears in {seconds}s',
+  'settings.seedHiddenAfterBackup': 'Recovery phrase hidden. Check your written copy to answer the questions below.',
   'settings.copy': 'Copy',
   'settings.wroteDown': 'I wrote the seed phrase down on paper',
   'settings.walletNamePlaceholder': 'Wallet name (e.g. Main wallet)',

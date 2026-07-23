@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 
 const FOCUSABLE =
@@ -77,7 +78,15 @@ export default function Modal({
     }
   }, [onClose, dismissible, initialFocus])
 
-  return (
+  // Rendered into document.body, not where it was declared.
+  //
+  // A dialog nested inside a <label> (several pickers are) receives the label's
+  // click forwarding: clicking an option bubbles to the label, which
+  // re-dispatches to its control - the trigger button - reopening the dialog
+  // that just closed. The visible symptom was "it selects but never closes".
+  // Escaping the DOM subtree fixes it for every caller at once, and is correct
+  // regardless: a full-screen overlay does not belong inside a form control.
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 py-10"
       onClick={dismissible ? onClose : undefined}
@@ -104,6 +113,7 @@ export default function Modal({
         </div>
         <div className="px-5 py-4">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
