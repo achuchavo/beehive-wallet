@@ -393,3 +393,30 @@ Do not write the file from scratch: the headers section lives in it, and
 `verify-deployment.ps1` asserts every one of those headers. `deploy.ps1` now
 derives the subdomain file from the deployed path-build copy for this reason.
 Write it without a BOM — Apache parses a BOM as part of the first directive.
+
+## Account model: the email is an UNVERIFIED USERNAME
+
+Decided 2026-07-23 (audit #12). The notification account's email field is a
+username in email format. It is **not** verified, and nothing in the codebase
+sends mail — `grep -rn "mail(\|smtp\|sendmail" api/ watcher/` returns only
+third-party library matches inside `watcher/venv`.
+
+Consequences that must not be quietly broken:
+
+- **Do not add email-based password reset.** With an unverified address that is
+  an account-takeover primitive: anyone can register any address, so a reset
+  link proves nothing about ownership. If password reset is ever wanted, verify
+  the address FIRST and update the UI copy in the same change.
+- **There is no password reset today.** A forgotten account password means the
+  account is unrecoverable. The sign-in screen says so, because users otherwise
+  assume "email = recovery".
+- **The account never touches wallets.** Wallets are local and encrypted with a
+  separate wallet password. The account stores public addresses and alarm
+  settings only. Losing it loses alerts, not funds.
+- A wallet address may act as a sign-in identifier only after ownership is
+  proved by signing a challenge (`main_address_verified = 1`) — that path IS
+  verified and is unaffected by any of the above.
+
+The UI states all of this on the sign-in/sign-up screen
+(`alarms.accountModel*` keys). If the model changes, change that copy in the
+same commit.

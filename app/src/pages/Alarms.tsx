@@ -240,6 +240,21 @@ function AuthForm() {
       )}
       <h1 className="text-xl font-semibold">{t('alarms.title')}</h1>
       <p className="text-sm text-slate-500">{t('alarms.signInDesc')}</p>
+
+      {/* The account model, stated where the decision is made.
+          The email is an UNVERIFIED username: nothing is ever sent to it, so
+          it proves nothing and cannot be used for recovery. Saying so here
+          prevents the reasonable-but-wrong assumption that signing up protects
+          or backs up a wallet. */}
+      <div className="space-y-1.5 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+        <p className="flex items-start gap-1.5 font-medium text-slate-700">
+          <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" />
+          {t('alarms.accountModelTitle')}
+        </p>
+        <p>{t('alarms.accountModelUsername')}</p>
+        <p>{t('alarms.accountModelNoWallets')}</p>
+        <p className="text-amber-800">{t('alarms.accountModelNoReset')}</p>
+      </div>
       <form onSubmit={submit} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
         {/* Persistent labels, not placeholders: a placeholder disappears the
             moment you type and is not reliably announced (audit #22). */}
@@ -263,7 +278,7 @@ function AuthForm() {
           <>
             <div>
               <label htmlFor="auth-email" className="mb-1 block text-xs font-medium text-slate-600">
-                {t('alarms.emailLabel')}
+                {t('alarms.usernameLabel')}
               </label>
               <input
                 id="auth-email"
@@ -272,9 +287,10 @@ function AuthForm() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="name@example.com"
-                autoComplete="email"
+                autoComplete="username"
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
               />
+              <p className="mt-1 text-xs text-slate-500">{t('alarms.usernameHelp')}</p>
             </div>
             {/* No address field at sign-up: the server ignores an unproven
                 address. It is linked after sign-in by signing a challenge. */}

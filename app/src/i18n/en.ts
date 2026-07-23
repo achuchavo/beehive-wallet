@@ -93,6 +93,12 @@ export const en: Record<string, string> = {
   // Placeholder example, NOT a label - see alarms.emailLabel.
   'alarms.email': 'name@example.com',
   'alarms.emailLabel': 'Email address',
+  'alarms.usernameLabel': 'Username (an email address, as the format)',
+  'alarms.usernameHelp': 'Used only to sign in. It is never verified and we never send anything to it.',
+  'alarms.accountModelTitle': 'What this account is',
+  'alarms.accountModelUsername': 'Your email is a username, nothing more. We do not verify it and we never send email, so anyone could type any address here.',
+  'alarms.accountModelNoWallets': 'It cannot access, recover or control your wallets. Those live only on this device, encrypted with your wallet password.',
+  'alarms.accountModelNoReset': 'There is no password reset. If you forget this password the account is gone - but your wallets are unaffected.',
   'alarms.password': 'Password',
   'alarms.passwordHint': 'Password (10+ characters)',
   'alarms.confirmPassword': 'Confirm password',

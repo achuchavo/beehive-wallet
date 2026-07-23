@@ -91,6 +91,12 @@ export const ko: Record<string, string> = {
   // 플레이스홀더 예시이며 라벨이 아닙니다 - alarms.emailLabel 참조.
   'alarms.email': 'name@example.com',
   'alarms.emailLabel': '이메일 주소',
+  'alarms.usernameLabel': '사용자 이름 (이메일 형식)',
+  'alarms.usernameHelp': '로그인에만 사용됩니다. 확인하지 않으며 어떤 메일도 보내지 않습니다.',
+  'alarms.accountModelTitle': '이 계정에 대해',
+  'alarms.accountModelUsername': '이메일은 사용자 이름일 뿐입니다. 확인하지 않고 메일도 보내지 않으므로 누구나 아무 주소나 입력할 수 있습니다.',
+  'alarms.accountModelNoWallets': '이 계정은 지갑에 접근하거나 지갑을 복구·제어할 수 없습니다. 지갑은 이 기기에만 지갑 비밀번호로 암호화되어 저장됩니다.',
+  'alarms.accountModelNoReset': '비밀번호 재설정 기능은 없습니다. 이 비밀번호를 잊으면 계정은 복구할 수 없지만 지갑은 영향을 받지 않습니다.',
   'alarms.password': '비밀번호',
   'alarms.passwordHint': '비밀번호 (10자 이상)',
   'alarms.confirmPassword': '비밀번호 확인',
