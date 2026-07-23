@@ -17,6 +17,7 @@ import {
   type ClaimRecord,
 } from '../wallet/rewards'
 import EmptyState from '../components/EmptyState'
+import LoadingOverlay from '../components/LoadingOverlay'
 import OptionPicker from '../components/OptionPicker'
 import Collapsible from '../components/Collapsible'
 import { useChains } from '../chainStore'
@@ -290,7 +291,12 @@ export default function Rewards() {
         </div>
       ))}
 
-      {loading && !rows && <p className="text-sm text-slate-500">{t('rewards.loading')}</p>}
+      {/* Unlike the dashboard there is no cached snapshot here, so an in-app
+          arrival has nothing to read either way - the modal is the honest state
+          whenever the page is empty and fetching, cold start or not. */}
+      {(loading || !chainsSettled) && !rows && (
+        <LoadingOverlay title={t('rewards.loading')} subtitle={t('rewards.loadingHint')} />
+      )}
 
       <section className="space-y-2">
         <h2 className="font-medium">{t('rewards.yourWallets')}</h2>

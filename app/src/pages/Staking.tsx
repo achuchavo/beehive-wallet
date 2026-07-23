@@ -14,6 +14,7 @@ import {
 import { useTxReview, type Prepare } from '../wallet/useTxReview'
 import type { ReviewRow } from '../components/TxReview'
 import EmptyState from '../components/EmptyState'
+import LoadingOverlay from '../components/LoadingOverlay'
 import PercentButtons from '../components/PercentButtons'
 import CopyAddress from '../components/CopyAddress'
 import OptionPicker from '../components/OptionPicker'
@@ -368,7 +369,9 @@ export default function Staking() {
         </div>
       </div>
 
-      {loading && !data && <p className="text-sm text-slate-500">{t('staking.loading')}</p>}
+      {loading && !data && (
+        <LoadingOverlay title={t('staking.loading')} subtitle={t('staking.loadingHint')} />
+      )}
 
       <div className="max-h-[60vh] overflow-y-auto rounded-xl border border-slate-200 bg-white">
         {ordered.map((v, i) => (

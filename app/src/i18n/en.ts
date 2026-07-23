@@ -241,6 +241,7 @@ export const en: Record<string, string> = {
   'rewards.claimAllHint':
     'Uses one password for every wallet. Wallets with a different password are reported and can be claimed individually below.',
   'rewards.loading': 'Loading rewards from the chain...',
+  'rewards.loadingHint': 'Fetching claimable rewards and claim history.',
   'rewards.yourWallets': 'Your wallets',
   'rewards.restake': 'Restake',
   'rewards.claim': 'Claim',
@@ -275,6 +276,7 @@ export const en: Record<string, string> = {
   'history.showing': 'Showing {addr}',
   'history.querying':
     'Querying the chain... the public LCD can take up to a minute. Our own node will make this fast.',
+  'history.queryingTitle': 'Querying the chain...',
   'history.filterAll': 'All',
   'history.filterSent': 'Sent',
   'history.filterReceived': 'Received',
@@ -298,6 +300,7 @@ export const en: Record<string, string> = {
   'staking.active': 'active',
   'staking.jailedInactive': 'jailed / inactive',
   'staking.loading': 'Loading validators...',
+  'staking.loadingHint': 'Fetching the validator set and your delegations.',
   'staking.noMatch': 'No validators match.',
   'staking.errLoad': 'Could not load staking data',
   'staking.free': 'Free',

@@ -4,6 +4,7 @@ import { DEFAULT_CHAIN, chainForAddress, formatAmount, type ChainInfo } from '..
 import { api, type WatchedAddress } from '../api'
 import { useWallet } from '../wallet/WalletContext'
 import { fetchTxSearch } from '../wallet/txsearch'
+import LoadingOverlay from '../components/LoadingOverlay'
 import { useT } from '../i18n/I18nContext'
 
 type Translate = (key: string, vars?: Record<string, string | number>) => string
@@ -264,7 +265,12 @@ export default function History() {
         <p className="font-mono text-xs text-slate-500">{t('history.showing', { addr: shortAddr(loadedAddress) })}</p>
       )}
 
-      {loading && <p className="text-sm text-slate-500">{t('history.querying')}</p>}
+      {/* history.querying is a full sentence written for an inline line of
+          text; as a modal heading it reads as a wall. Short title, explanation
+          underneath. */}
+      {loading && (
+        <LoadingOverlay title={t('history.queryingTitle')} subtitle={t('history.querying')} />
+      )}
       {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
       {rows !== null && (

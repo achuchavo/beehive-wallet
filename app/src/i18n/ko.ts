@@ -235,6 +235,7 @@ export const ko: Record<string, string> = {
   'rewards.claimAllHint':
     '모든 지갑에 하나의 비밀번호를 사용합니다. 비밀번호가 다른 지갑은 별도로 표시되며 아래에서 개별적으로 수령할 수 있습니다.',
   'rewards.loading': '체인에서 보상을 불러오는 중...',
+  'rewards.loadingHint': '수령 가능한 보상과 수령 내역을 가져오는 중입니다.',
   'rewards.yourWallets': '내 지갑',
   'rewards.restake': '재스테이킹',
   'rewards.claim': '수령',
@@ -268,6 +269,7 @@ export const ko: Record<string, string> = {
   'history.mine': '내 지갑',
   'history.showing': '{addr} 표시 중',
   'history.querying': '체인을 조회하는 중... 공용 LCD는 최대 1분이 걸릴 수 있습니다. 자체 노드를 사용하면 빨라집니다.',
+  'history.queryingTitle': '체인을 조회하는 중...',
   'history.filterAll': '전체',
   'history.filterSent': '보냄',
   'history.filterReceived': '받음',
@@ -291,6 +293,7 @@ export const ko: Record<string, string> = {
   'staking.active': '활성',
   'staking.jailedInactive': '정지 / 비활성',
   'staking.loading': '밸리데이터을 불러오는 중...',
+  'staking.loadingHint': '밸리데이터 목록과 위임 내역을 가져오는 중입니다.',
   'staking.noMatch': '일치하는 밸리데이터이 없습니다.',
   'staking.errLoad': '스테이킹 데이터를 불러올 수 없습니다',
   'staking.free': '무료',

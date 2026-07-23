@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { DEFAULT_CHAIN, findChain, formatAmount, type ChainInfo } from '../chains'
 import { useChains } from '../chainStore'
+import { useColdStart } from '../coldStart'
 import { addBase, sumBase, isPositiveBase } from '../wallet/amount'
 import { useWallet } from '../wallet/WalletContext'
 import EmptyState from '../components/EmptyState'
@@ -51,17 +52,6 @@ interface Row {
   failed?: string
 }
 
-/**
- * True until the dashboard has mounted once in this document.
- *
- * Module scope is exactly the lifetime we want: it survives every in-app route
- * change and resets only on a real page load - opening the app, reloading, or
- * coming back to a PWA the OS has since discarded. So the blocking modal marks
- * "you have just arrived", while moving between tabs inside the app leaves the
- * figures on screen with the quiet refreshing badge instead.
- */
-let coldStart = true
-
 export default function Dashboard() {
   const { t } = useT()
   const { wallets } = useWallet()
@@ -73,13 +63,7 @@ export default function Dashboard() {
   const [rows, setRows] = useState<Row[] | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  // Read the module flag, never written during render: StrictMode invokes this
-  // initializer twice, and mutating here would make the second pass observe a
-  // warm start and hide the modal on the very first visit.
-  const [isColdStart] = useState(() => coldStart)
-  useEffect(() => {
-    coldStart = false
-  }, [])
+  const isColdStart = useColdStart()
   // Read once, at mount: the figures the user saw when they last left. Held in
   // a ref as well so a re-render never re-reads a snapshot we have since
   // overwritten with this session's own numbers.
