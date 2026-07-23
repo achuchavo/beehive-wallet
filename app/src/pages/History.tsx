@@ -296,6 +296,9 @@ export default function History() {
                   setFilter(f)
                   setPage(0)
                 }}
+                // A selected filter is conveyed by colour alone otherwise;
+                // aria-pressed carries the same state non-visually.
+                aria-pressed={filter === f}
                 className={`rounded-full px-3 py-1 text-xs ${
                   filter === f ? 'bg-amber-500 font-medium text-slate-900' : 'bg-slate-100 text-slate-600'
                 }`}

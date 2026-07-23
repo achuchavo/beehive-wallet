@@ -16,11 +16,18 @@ export default function LoadingOverlay({
   subtitle?: string
 }) {
   // Hold the background still while it is up, and always restore on unmount.
+  //
+  // The root is also made inert: without it, Tab walks through the page behind
+  // a modal overlay the user cannot see past, landing focus on controls that
+  // are visually covered.
   useEffect(() => {
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    const root = document.getElementById('root')
+    root?.setAttribute('inert', '')
     return () => {
       document.body.style.overflow = previous
+      root?.removeAttribute('inert')
     }
   }, [])
 

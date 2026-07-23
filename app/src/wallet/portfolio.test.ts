@@ -15,7 +15,11 @@ const json = (body: unknown, status = 200) =>
  * like a validator; `onCommission` runs if the commission route is requested at
  * all, which is the thing under test.
  */
-function stubLcd(opts: { validatorStatus: number; onCommission?: () => void }) {
+function stubLcd(opts: {
+  validatorStatus: number
+  onCommission?: () => void
+  unbonding?: unknown
+}) {
   const calls: string[] = []
   vi.stubGlobal('fetch', (input: RequestInfo | URL) => {
     const url = String(input)
@@ -30,6 +34,8 @@ function stubLcd(opts: { validatorStatus: number; onCommission?: () => void }) {
       opts.onCommission?.()
       return Promise.resolve(json({ commission: { commission: [{ denom: 'umed', amount: '77' }] } }))
     }
+    if (url.includes('/unbonding_delegations'))
+      return Promise.resolve(json(opts.unbonding ?? { unbonding_responses: [] }))
     if (url.includes('/staking/v1beta1/validators/'))
       return Promise.resolve(json({ validator: {} }, opts.validatorStatus))
     throw new Error(`unstubbed route: ${url}`)
@@ -39,6 +45,47 @@ function stubLcd(opts: { validatorStatus: number; onCommission?: () => void }) {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+})
+
+// Unbonding funds are no longer staked but not yet spendable. Until this was
+// queried they were invisible for the entire unbonding period (21 days on both
+// configured chains) - a holder mid-unbond watched part of their balance
+// vanish from the dashboard with no explanation.
+describe('fetchWalletPortfolio unbonding', () => {
+  it('sums every entry across every unbonding delegation', async () => {
+    stubLcd({
+      validatorStatus: 404,
+      unbonding: {
+        unbonding_responses: [
+          { entries: [{ balance: '100', completion_time: '2026-08-10T00:00:00Z' },
+                      { balance: '250', completion_time: '2026-08-01T00:00:00Z' }] },
+          { entries: [{ balance: '5', completion_time: '2026-09-01T00:00:00Z' }] },
+        ],
+      },
+    })
+    const p = await fetchWalletPortfolio(chain, ADDR, {})
+    expect(p.unbonding).toBe('355')
+    // The SOONEST completion, not the first encountered.
+    expect(p.unbondingCompletesAt).toBe('2026-08-01T00:00:00Z')
+  })
+
+  it('is zero with no unbonding in flight', async () => {
+    stubLcd({ validatorStatus: 404 })
+    const p = await fetchWalletPortfolio(chain, ADDR, {})
+    expect(p.unbonding).toBe('0')
+    expect(p.unbondingCompletesAt).toBeNull()
+  })
+
+  it('stays exact beyond 2^53', async () => {
+    stubLcd({
+      validatorStatus: 404,
+      unbonding: { unbonding_responses: [{ entries: [
+        { balance: '9007199254740993' }, { balance: '1' },
+      ] }] },
+    })
+    const p = await fetchWalletPortfolio(chain, ADDR, {})
+    expect(p.unbonding).toBe('9007199254740994')
+  })
 })
 
 describe('fetchWalletPortfolio commission lookup', () => {

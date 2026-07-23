@@ -14,6 +14,10 @@ export interface WalletPortfolio {
   available: string
   delegations: DelegationDetail[]
   staked: string
+  /** In-flight undelegations: no longer staked, not yet spendable. */
+  unbonding: string
+  /** ISO time the soonest unbonding entry completes, or null. */
+  unbondingCompletesAt: string | null
   rewards: string
   commission: string
   isValidator: boolean
@@ -53,11 +57,16 @@ export async function fetchWalletPortfolio(
   monikers: Record<string, string>,
 ): Promise<WalletPortfolio> {
   const valoper = accountToValoper(address, chain.bech32Prefix)
-  const [balRes, delRes, rewRes, valRes] = await Promise.all([
+  const [balRes, delRes, rewRes, valRes, unbRes] = await Promise.all([
     fetch(`${chain.lcd}/cosmos/bank/v1beta1/balances/${address}`),
     fetch(`${chain.lcd}/cosmos/staking/v1beta1/delegations/${address}`),
     fetch(`${chain.lcd}/cosmos/distribution/v1beta1/delegators/${address}/rewards`),
     fetch(`${chain.lcd}/cosmos/staking/v1beta1/validators/${valoper}`),
+    // Unbonding was never queried, so for the whole unbonding period (21 days
+    // on both configured chains) undelegated funds were invisible: gone from
+    // "staked", not yet in "available", and absent from every total. Someone
+    // mid-unbond saw a chunk of their holdings simply disappear.
+    fetch(`${chain.lcd}/cosmos/staking/v1beta1/delegators/${address}/unbonding_delegations`),
   ])
 
   const isValidator = valRes.ok
@@ -85,6 +94,25 @@ export async function fetchWalletPortfolio(
     for (const r of rd.rewards ?? []) rewardByVal[r.validator_address] = sumUmed(chain, r.reward)
   }
 
+  // Sum of every in-flight unbonding entry. Each entry has its own completion
+  // time; the dashboard shows the total and the soonest completion.
+  let unbonding = '0'
+  let unbondingCompletesAt: string | null = null
+  if (unbRes.ok) {
+    const ud = await unbRes.json()
+    const amounts: string[] = []
+    for (const u of ud.unbonding_responses ?? []) {
+      for (const e of u.entries ?? []) {
+        amounts.push(floorBaseUnits(String(e.balance ?? '0')))
+        const done = String(e.completion_time ?? '')
+        if (done && (unbondingCompletesAt === null || done < unbondingCompletesAt)) {
+          unbondingCompletesAt = done
+        }
+      }
+    }
+    unbonding = sumBase(amounts)
+  }
+
   const delegations: DelegationDetail[] = []
   if (delRes.ok) {
     const dd = await delRes.json()
@@ -107,5 +135,15 @@ export async function fetchWalletPortfolio(
     commission = sumUmed(chain, (await comRes.json()).commission?.commission)
   }
 
-  return { address, available, delegations, staked, rewards, commission, isValidator }
+  return {
+    address,
+    available,
+    delegations,
+    staked,
+    unbonding,
+    unbondingCompletesAt,
+    rewards,
+    commission,
+    isValidator,
+  }
 }

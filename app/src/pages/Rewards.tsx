@@ -622,7 +622,14 @@ function ClaimForm({
     <form onSubmit={submit} className="space-y-2 rounded-lg bg-slate-50 p-3">
       <div className="text-xs text-slate-500">{label}</div>
       <div className="flex gap-2">
+        <label
+          htmlFor="beehive-claim-password"
+          className="w-full text-xs font-medium text-slate-600"
+        >
+          {t('send.signPassword')}
+        </label>
         <input
+          id="beehive-claim-password"
           type="password"
           name="beehive-claim-password"
           value={password}

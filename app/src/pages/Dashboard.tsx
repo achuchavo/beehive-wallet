@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Wallet,
@@ -14,10 +14,14 @@ import {
   ChevronRight,
   ShieldCheck,
   TrendingUp,
+  Undo2,
+  Eye,
+  EyeOff,
 } from 'lucide-react'
 import { DEFAULT_CHAIN, findChain, formatAmount, type ChainInfo } from '../chains'
 import { useChains } from '../chainStore'
 import { useColdStart } from '../coldStart'
+import { usePrivacyMode, setPrivacyMode } from '../privacyMode'
 import { addBase, sumBase, isPositiveBase } from '../wallet/amount'
 import { useWallet } from '../wallet/WalletContext'
 import EmptyState from '../components/EmptyState'
@@ -26,6 +30,7 @@ import LoadingOverlay from '../components/LoadingOverlay'
 import OptionPicker from '../components/OptionPicker'
 import CountUp from '../components/CountUp'
 import DeltaFloat from '../components/DeltaFloat'
+import { maskAmount } from '../privacyMode'
 import {
   loadSnapshot,
   saveSnapshotRows,
@@ -70,6 +75,7 @@ export default function Dashboard() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const isColdStart = useColdStart()
+  const hidden = usePrivacyMode()
   // Read once, at mount: the figures the user saw when they last left. Held in
   // a ref as well so a re-render never re-reads a snapshot we have since
   // overwritten with this session's own numbers.
@@ -353,6 +359,10 @@ export default function Dashboard() {
                 rewards: s.rewards,
                 commission: s.commission,
                 isValidator: s.isValidator,
+                // Not cached: unbonding is rare and its completion time makes
+                // a stale value actively misleading. It fills in on load.
+                unbonding: '0',
+                unbondingCompletesAt: null,
                 delegations: [], // not cached; the live load fills these in
               },
             }
@@ -385,18 +395,25 @@ export default function Dashboard() {
       const staked = of((p) => p.staked)
       const rewards = of((p) => p.rewards)
       const commission = of((p) => p.commission)
+      const unbonding = of((p) => p.unbonding)
+      // Soonest completion across the group, for the unbonding stat's caption.
+      const unbondingCompletesAt = inChain
+        .map((r) => r.portfolio.unbondingCompletesAt)
+        .filter((d): d is string => !!d)
+        .sort()[0] ?? null
       return {
         chain: c,
         rows: inChain,
         available,
         staked,
+        unbonding,
+        unbondingCompletesAt,
         rewards,
         commission,
-        // Named exactly what it is. This was labelled "Total value" while
-        // omitting unbonding balances and unclaimed rewards, so it understated
-        // holdings and did so silently. Unbonding is not queried yet (see the
-        // audit report); until it is, the label must not promise a total.
-        total: addBase(available, staked),
+        // Available + staked + unbonding. Unclaimed rewards are shown
+        // separately rather than folded in: they are not yet part of the
+        // balance and including them would overstate what can be moved.
+        total: addBase(addBase(available, staked), unbonding),
         claimable: addBase(rewards, commission),
         anyValidator: inChain.some((r) => r.portfolio.isValidator),
         failures: inChain.filter((r) => r.failed),
@@ -430,6 +447,19 @@ export default function Dashboard() {
           )}
         </div>
         <div className="flex gap-2">
+          {/* Display-only, and labelled as such in the tooltip: the figures
+              are still in the page and anyone with the device can switch this
+              back. It is for shoulder-surfing and screen sharing, not secrecy. */}
+          <button
+            type="button"
+            onClick={() => setPrivacyMode(!hidden)}
+            aria-pressed={hidden}
+            title={t('dash.privacyHint')}
+            className="rounded-lg border border-slate-300 bg-white px-2.5 text-slate-600 hover:border-amber-500 hover:text-amber-700"
+          >
+            {hidden ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            <span className="sr-only">{t('dash.privacyToggle')}</span>
+          </button>
           <OptionPicker
             label={t('dash.currency')}
             value={currency}
@@ -522,11 +552,17 @@ export default function Dashboard() {
             )}
 
             <div className="text-3xl font-bold text-amber-950">
-              <CountUp value={g.total} from={countFrom[g.chain.key]} format={(b) => formatAmount(b, g.chain)} />{' '}
+              {hidden ? (
+                <span>{maskAmount(formatAmount(g.total, g.chain), true)}</span>
+              ) : (
+                <CountUp value={g.total} from={countFrom[g.chain.key]} format={(b) => formatAmount(b, g.chain)} />
+              )}{' '}
               <span className="text-base font-semibold text-amber-800">{g.chain.displayDenom}</span>
             </div>
             {fiatFor(g.chain, g.total) && (
-              <div className="text-sm font-medium text-amber-800">≈ {fiatFor(g.chain, g.total)}</div>
+              <div className="text-sm font-medium text-amber-800">
+                ≈ {hidden ? maskAmount(fiatFor(g.chain, g.total) ?? '', true) : fiatFor(g.chain, g.total)}
+              </div>
             )}
 
             {/* Partial failure: say so rather than presenting a short total as current. */}
@@ -540,6 +576,14 @@ export default function Dashboard() {
               <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
                 <Stat icon={Wallet} label={t('dash.available')} base={g.available} from={countFromStat.available?.[g.chain.key]} chain={g.chain} />
                 <Stat icon={Coins} label={t('dash.staked')} base={g.staked} from={countFromStat.staked?.[g.chain.key]} chain={g.chain} />
+                {isPositiveBase(g.unbonding) && (
+                  <Stat
+                    icon={Undo2}
+                    label={t('dash.unbonding')}
+                    base={g.unbonding}
+                    chain={g.chain}
+                  />
+                )}
                 <Stat icon={Gift} label={t('dash.rewards')} base={g.rewards} from={countFromStat.rewards?.[g.chain.key]} chain={g.chain} />
                 {g.anyValidator && (
                   <Stat icon={Landmark} label={t('dash.commission')} base={g.commission} from={countFromStat.commission?.[g.chain.key]} chain={g.chain} />
@@ -772,6 +816,8 @@ function emptyPortfolio(address: string): WalletPortfolio {
     rewards: '0',
     commission: '0',
     isValidator: false,
+    unbonding: '0',
+    unbondingCompletesAt: null,
   }
 }
 
@@ -795,36 +841,42 @@ function WalletRow({
 }) {
   const { t } = useT()
   const [open, setOpen] = useState(false)
-  const total = addBase(p.available, p.staked)
+  // Disclosure semantics: the row expands a detail panel, so it must say so.
+  const panelId = useId()
+  const total = addBase(addBase(p.available, p.staked), p.unbonding)
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white">
-      <div className="flex items-center gap-3 px-4 py-3">
+      {/* ONE disclosure control, not three.
+          The icon, the name and the balance were each their own <button> firing
+          the same toggle, so assistive tech announced three separate unlabelled
+          controls for one action. This is a single button spanning the row;
+          CopyAddress stays outside it because a button cannot contain a button. */}
+      <div className="relative flex items-center gap-3 px-4 py-3">
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          aria-label={name}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700"
-        >
+          aria-expanded={open}
+          aria-controls={panelId}
+          aria-label={t('dash.walletRowToggle', { name })}
+          className="absolute inset-0 z-0 rounded-xl"
+        />
+        <span className="pointer-events-none z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
           <Wallet className="h-4.5 w-4.5" strokeWidth={1.8} />
-        </button>
-        <div className="min-w-0 flex-1">
-          <button
-            type="button"
-            onClick={() => setOpen((o) => !o)}
-            className="flex items-center gap-1.5 text-left text-sm font-medium"
-          >
+        </span>
+        <div className="z-10 min-w-0 flex-1">
+          <span className="pointer-events-none flex items-center gap-1.5 text-left text-sm font-medium">
             {name}
             {p.isValidator && (
               <span className="flex items-center gap-0.5 rounded bg-amber-100 px-1 text-[11px] text-amber-700">
                 <ShieldCheck className="h-2.5 w-2.5" /> {t('dash.validator')}
               </span>
             )}
-          </button>
+          </span>
           <CopyAddress
             address={p.address}
             display={`${p.address.slice(0, 16)}...${p.address.slice(-6)}`}
-            className="max-w-full text-xs text-slate-500"
+            className="relative z-10 max-w-full text-xs text-slate-500"
           />
           {/* Never present a failed fetch as a real zero balance. */}
           {/* An unsupported network is a different situation from a failed
@@ -843,11 +895,7 @@ function WalletRow({
             )
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          className="flex shrink-0 items-center gap-2"
-        >
+        <span className="pointer-events-none z-10 flex shrink-0 items-center gap-2">
           <span className="text-right">
             <span className="block text-sm font-semibold">{formatAmount(total, chain)}</span>
             <span className="block text-xs text-slate-500">
@@ -861,11 +909,10 @@ function WalletRow({
           ) : (
             <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
           )}
-        </button>
+        </span>
       </div>
 
-      {open && (
-        <div className="space-y-3 border-t border-slate-100 px-4 py-3 text-sm">
+      <div id={panelId} hidden={!open} className="space-y-3 border-t border-slate-100 px-4 py-3 text-sm">
           <div className="flex flex-wrap gap-x-6 gap-y-1">
             <span className="text-slate-500">
               {t('dash.available')} <span className="font-medium text-slate-800">{formatAmount(p.available, chain)}</span>
@@ -913,7 +960,6 @@ function WalletRow({
             </p>
           )}
         </div>
-      )}
     </div>
   )
 }

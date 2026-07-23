@@ -691,7 +691,7 @@ function ActionForm({
               value={amount}
               onChange={(e) => setAmount(e.target.value.trim())}
               placeholder={t('send.amount')}
-              aria-label={t('send.amount')}
+              aria-label={t('send.amountLabel', { denom: chain.displayDenom })}
               required
               inputMode="decimal"
               autoComplete="off"
@@ -709,13 +709,16 @@ function ActionForm({
           )}
         </>
       )}
+      <label className="block text-xs font-medium text-slate-600" htmlFor="beehive-stake-password">
+        {t('send.signPassword')}
+      </label>
       <input
+        id="beehive-stake-password"
         type="password"
         name="beehive-stake-password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         placeholder={t('send.signPassword')}
-        aria-label={t('send.signPassword')}
         required
         autoComplete="new-password"
         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
