@@ -353,7 +353,24 @@ def send_push(cursor, db, user_id: int, title: str, body: str, url: str = APP_UR
             log("ERROR", f"Push error for subscription id={sub['id']}: {e}")
 
 
-def format_push_body(row: dict, kind: str, amount: str, denom: str, chains: list) -> str:
+# Generic bodies for private mode. They say enough to be worth acting on -
+# something happened, and what kind - without naming a wallet or an amount.
+PRIVATE_BODY = {
+    "received": "Incoming transaction on a watched address",
+    "sent": "Outgoing transaction on a watched address",
+    "unbond": "Unbonding started on a watched address",
+}
+
+
+def format_push_body(
+    row: dict, kind: str, amount: str, denom: str, chains: list, private: bool = False
+) -> str:
+    # Private mode: no label, no amount. A push body is rendered on the lock
+    # screen, so "1250.5 MED left Savings wallet" discloses both a holding and
+    # a balance movement to anyone holding the phone.
+    if private:
+        return PRIVATE_BODY.get(kind, "Activity on a watched address")
+
     chain = get_chain(chains, row["chain_key"]) or {}
     label = row.get("label") or f"{row['address'][:14]}..."
     value = ""
@@ -428,7 +445,9 @@ def process_direction(cursor, db, chains: list, row: dict, kind: str) -> None:
                     db,
                     int(row["user_id"]),
                     "Wallet alarm",
-                    format_push_body(row, kind, amount, dnm, chains),
+                    format_push_body(
+                        row, kind, amount, dnm, chains, private=bool(row.get("push_private"))
+                    ),
                 )
 
     if found:
@@ -692,7 +711,12 @@ def run_once() -> None:
     try:
         chains = load_chains(cursor)
         cleanup(cursor, db)
-        cursor.execute("SELECT * FROM watched_addresses ORDER BY id")
+        # Join the owner's push privacy preference so format_push_body can
+        # redact without a second query per alert.
+        cursor.execute(
+            "SELECT w.*, u.push_private FROM watched_addresses w "
+            "JOIN users u ON u.id = w.user_id ORDER BY w.id"
+        )
         rows = cursor.fetchall()
         METRICS["addresses"] = len(rows)
         log("INFO", f"Checking {len(rows)} watched address(es).")

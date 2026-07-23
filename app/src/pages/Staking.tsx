@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Coins, Gift, ShieldCheck, Star, Search, Plus, Import, Wallet } from 'lucide-react'
+import { Coins, Gift, Search, Plus, Import, Wallet, ExternalLink } from 'lucide-react'
 import { findChain, formatAmount, toBaseUnits, feeReserve, type ChainInfo } from '../chains'
 import { sumBase, compareBase, addBase, floorBaseUnits, isPositiveBase } from '../wallet/amount'
 import { useWallet } from '../wallet/WalletContext'
@@ -250,7 +250,11 @@ export default function Staking() {
         // Show exactly one set: the online (active) validators, or the jailed/
         // inactive ones - never a mix.
         .filter((v) => (view === 'active' ? isUp(v) : !isUp(v)))
-        .filter((v) => q === '' || v.moniker.toLowerCase().includes(q))
+        // Operator address as well as moniker: monikers are not unique and can
+        // be chosen to impersonate, so the address is the reliable handle.
+        .filter(
+          (v) => q === '' || v.moniker.toLowerCase().includes(q) || v.operator.toLowerCase().includes(q),
+        )
         .sort((a, b) => {
           const af = isFree(chain, a.operator)
           const bf = isFree(chain, b.operator)
@@ -510,11 +514,22 @@ function ValidatorRow({
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 text-sm font-medium">
-            {free && <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-400" />}
             <span className="truncate">{validator.moniker}</span>
+            {/* A star and a shield read as "vetted" or "secure". We have made
+                no security assessment of any validator - the only thing this
+                marks is our own fee waiver, so it says exactly that in words
+                and carries no trust iconography. */}
             {free && (
-              <span className="flex shrink-0 items-center gap-0.5 rounded bg-green-100 px-1 text-[11px] font-medium text-green-700">
-                <ShieldCheck className="h-2.5 w-2.5" /> {t('staking.free')}
+              <span
+                title={t('staking.noFeeExplain')}
+                className="shrink-0 rounded bg-amber-100 px-1.5 text-[11px] font-medium text-amber-800"
+              >
+                {t('staking.noBeehiveFee')}
+              </span>
+            )}
+            {validator.jailed && (
+              <span className="shrink-0 rounded bg-red-100 px-1.5 text-[11px] font-medium text-red-700">
+                {t('staking.statusJailed')}
               </span>
             )}
           </div>
@@ -522,6 +537,20 @@ function ValidatorRow({
             <span>{t('staking.comm', { pct: (validator.commission * 100).toFixed(0) })}</span>
             <span>·</span>
             <span>{abbrev(power)} {chain.displayDenom}</span>
+            {chain.explorerValidatorUrl && (
+              <>
+                <span>·</span>
+                <a
+                  href={`${chain.explorerValidatorUrl}${validator.operator}`}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-0.5 text-amber-700 hover:underline"
+                >
+                  {validator.operator.slice(0, 12)}… <ExternalLink className="h-3 w-3" />
+                </a>
+              </>
+            )}
             {staked && (
               <>
                 <span>·</span>

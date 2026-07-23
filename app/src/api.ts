@@ -139,6 +139,8 @@ export const api = {
       main_address?: string | null
       /** False for addresses linked before ownership proofs existed. */
       main_address_verified?: boolean
+      /** True = push bodies omit wallet names and amounts (audit #13). */
+      push_private?: boolean
     }>('me.php'),
   // A wallet address is not accepted at registration: proving control of one
   // requires signing a challenge bound to an account, which does not exist yet.
@@ -233,6 +235,8 @@ export const api = {
   pushSubscribe: (subscription: PushSubscriptionJSON) =>
     call('push_subscribe.php', subscription),
   pushUnsubscribe: (endpoint: string) => call('push_unsubscribe.php', { endpoint }),
+  pushPrivacy: (pushPrivate: boolean) =>
+    call<{ push_private: boolean }>('push_privacy.php', { push_private: pushPrivate }),
 }
 
 export type UserAction = 'disable' | 'enable' | 'delete'

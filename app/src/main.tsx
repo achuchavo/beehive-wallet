@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.tsx'
+import ErrorBoundary from './components/ErrorBoundary'
 import { WalletProvider } from './wallet/WalletContext.tsx'
 import { AuthProvider } from './auth/AuthContext.tsx'
 import { I18nProvider } from './i18n/I18nContext.tsx'
@@ -17,7 +18,9 @@ createRoot(document.getElementById('root')!).render(
       <I18nProvider>
         <AuthProvider>
           <WalletProvider>
-            <App />
+            <ErrorBoundary>
+          <App />
+        </ErrorBoundary>
           </WalletProvider>
         </AuthProvider>
       </I18nProvider>

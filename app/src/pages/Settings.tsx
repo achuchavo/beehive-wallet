@@ -81,20 +81,31 @@ type Mode = 'list' | 'create' | 'import'
 export default function Settings() {
   const { t } = useT()
   const [params, setParams] = useSearchParams()
-  const initialMode: Mode =
-    params.get('action') === 'create'
-      ? 'create'
-      : params.get('action') === 'import'
-        ? 'import'
-        : 'list'
-  const [mode, setMode] = useState<Mode>(initialMode)
+
+  // The URL is the single source of truth for which step is showing.
+  //
+  // This used to seed useState from the query string ONCE. Settings stays
+  // mounted, so hitting "Create wallet" in the nav while already on Settings
+  // changed the URL and nothing else - and browser Back/Forward moved the URL
+  // without moving the UI. Deriving the mode on every render keeps the two in
+  // step in both directions and makes history work for free.
+  const action = params.get('action')
+  const mode: Mode = action === 'create' ? 'create' : action === 'import' ? 'import' : 'list'
+
+  function setMode(next: Mode) {
+    const p = new URLSearchParams(params)
+    if (next === 'list') p.delete('action')
+    else p.set('action', next)
+    // push, not replace: moving between steps is navigation the user can undo
+    // with Back. goList() below replaces instead, so finishing does not leave
+    // a Back button that returns to a completed flow.
+    setParams(p)
+  }
 
   function goList() {
-    setMode('list')
-    if (params.has('action')) {
-      params.delete('action')
-      setParams(params, { replace: true })
-    }
+    const p = new URLSearchParams(params)
+    p.delete('action')
+    setParams(p, { replace: true })
   }
 
   return (
@@ -462,16 +473,35 @@ function CreateWallet({ onDone }: { onDone: () => void }) {
             value={chainKey}
             onChange={setChainKey}
           />
-          <button
-            onClick={start}
-            disabled={!chain}
-            className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
-          >
-            {t('settings.generateSeed')}
-          </button>
+          {/* Step indicator: creating a wallet is a sequence with a point of
+              no return (the phrase you must write down), so showing where you
+              are - and that you can still leave - matters more than on an
+              ordinary form. */}
+          <p className="text-xs text-slate-500">{t('settings.stepOf', { step: 1, total: 4 })}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={start}
+              disabled={!chain}
+              className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
+            >
+              {t('settings.generateSeed')}
+            </button>
+            {/* Exit BEFORE anything is generated. There was no way back from
+                this step except browser navigation. */}
+            <button
+              type="button"
+              onClick={onDone}
+              className="rounded-lg px-4 py-2 text-sm text-slate-600 hover:text-slate-900"
+            >
+              {t('common.cancel')}
+            </button>
+          </div>
         </>
       ) : (
         <form onSubmit={finish} className="space-y-3">
+          <p className="text-xs text-slate-500">
+            {t('settings.stepOf', { step: confirmedSaved ? 3 : 2, total: 4 })}
+          </p>
           <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
             <div className="mb-2 flex items-start justify-between gap-2">
               <p className="flex items-start gap-1.5 text-xs font-medium text-red-600">

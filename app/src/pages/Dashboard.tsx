@@ -50,6 +50,12 @@ interface Row {
   portfolio: WalletPortfolio
   /** Set when this wallet's balances could not be loaded. */
   failed?: string
+  /**
+   * Set when the wallet's chainKey is not in the registry. `chain` then holds a
+   * placeholder purely so the row can render - it is NOT the wallet's network,
+   * and nothing may present it as such.
+   */
+  unknownChainKey?: string
 }
 
 export default function Dashboard() {
@@ -224,10 +230,14 @@ export default function Dashboard() {
         wallets.map(async (w): Promise<Row | null> => {
           const c = findChain(w.chainKey)
           if (!c) {
-            // Unknown chain key: never silently fall back to another network.
+            // Unknown chain key. The row still needs A chain object to render,
+            // but it must not be presented AS that network: unknownChain marks
+            // it so the card shows a dedicated unsupported state instead of a
+            // Medibloc badge over someone else's balance.
             return {
               name: w.name,
               chain: DEFAULT_CHAIN,
+              unknownChainKey: w.chainKey,
               portfolio: emptyPortfolio(w.address),
               failed: t('dash.unknownChain', { chain: w.chainKey }),
             }
@@ -644,6 +654,7 @@ export default function Dashboard() {
                   price={prices[r.chain.key] ?? null}
                   currency={currency}
                   failed={r.failed}
+                  unknownChainKey={r.unknownChainKey}
                 />
               ))}
             </div>
@@ -771,6 +782,7 @@ function WalletRow({
   price,
   currency,
   failed,
+  unknownChainKey,
 }: {
   name: string
   chain: ChainInfo
@@ -778,6 +790,8 @@ function WalletRow({
   price: number | null
   currency: string
   failed?: string
+  /** Wallet is on a chain this build does not know - see Row.unknownChainKey. */
+  unknownChainKey?: string
 }) {
   const { t } = useT()
   const [open, setOpen] = useState(false)
@@ -813,10 +827,20 @@ function WalletRow({
             className="max-w-full text-xs text-slate-500"
           />
           {/* Never present a failed fetch as a real zero balance. */}
-          {failed && (
-            <div role="status" className="mt-0.5 text-xs text-amber-700">
-              {t('dash.balanceUnavailable')}
+          {/* An unsupported network is a different situation from a failed
+              fetch: nothing is wrong with the connection, the wallet simply
+              belongs to a chain this build does not know. Saying "balance
+              unavailable" would suggest retrying would help. */}
+          {unknownChainKey ? (
+            <div role="status" className="mt-0.5 text-xs text-amber-800">
+              {t('dash.unsupportedNetwork', { chain: unknownChainKey })}
             </div>
+          ) : (
+            failed && (
+              <div role="status" className="mt-0.5 text-xs text-amber-700">
+                {t('dash.balanceUnavailable')}
+              </div>
+            )
           )}
         </div>
         <button

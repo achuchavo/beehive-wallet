@@ -78,6 +78,8 @@ export default function Send() {
 function Receive() {
   const { active } = useWallet()
   const { t } = useT()
+  // The wallet's OWN chain, so the warning names the network funds must arrive on.
+  const chain = active ? findChain(active.chainKey) : undefined
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [copied, setCopied] = useState(false)
 
@@ -98,6 +100,19 @@ function Receive() {
   return (
     <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
       <div className="text-sm font-medium">{active.name}</div>
+      {/* Network first and unmissable. Sending an asset on the wrong chain to a
+          correct-looking address is one of the few ways to lose funds outright
+          with no recovery, so the chain, its id and the asset are stated before
+          the address rather than implied by it. */}
+      {chain && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <div className="font-medium">
+            {t('send.receiveNetwork', { chain: chain.chainName, denom: chain.displayDenom })}
+          </div>
+          <div className="font-mono text-[11px] text-amber-800">{chain.chainId}</div>
+          <p className="mt-1">{t('send.receiveWarning', { chain: chain.chainName })}</p>
+        </div>
+      )}
       <canvas ref={canvasRef} className="rounded-lg border border-slate-100" />
       <div className="break-all font-mono text-sm text-slate-600">{active.address}</div>
       <button
@@ -327,23 +342,33 @@ function SendForm() {
           </span>
         )}
       </div>
-      <input
-        name="beehive-recipient"
-        value={to}
-        onChange={(e) => setTo(e.target.value.trim())}
-        placeholder={t('send.recipient', { prefix: chain.bech32Prefix })}
-        aria-label={t('send.recipientLabel')}
-        required
-        autoComplete="off"
-        className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
-      />
+      {/* Persistent labels, not placeholders: a placeholder vanishes the moment
+          you type, so the field loses its name exactly while it holds a value
+          you are meant to check. On money fields that matters more than usual. */}
+      <label className="block">
+        <span className="mb-1 block text-xs font-medium text-slate-600">
+          {t('send.recipientLabel')}
+        </span>
+        <input
+          name="beehive-recipient"
+          value={to}
+          onChange={(e) => setTo(e.target.value.trim())}
+          placeholder={t('send.recipient', { prefix: chain.bech32Prefix })}
+          required
+          autoComplete="off"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
+        />
+      </label>
+      <span className="mb-1 block text-xs font-medium text-slate-600">
+        {t('send.amountLabel', { denom: chain.displayDenom })}
+      </span>
       <div className="flex items-center gap-2">
         <input
           name="beehive-amount"
           value={amount}
           onChange={(e) => setAmount(e.target.value.trim())}
           placeholder={t('send.amount')}
-          aria-label={t('send.amount')}
+          aria-label={t('send.amountLabel', { denom: chain.displayDenom })}
           required
           inputMode="decimal"
           autoComplete="off"

@@ -12,7 +12,7 @@ if (empty($_SESSION['user_id'])) {
     json_out(['ok' => true, 'logged_in' => false]);
 }
 $stmt = $db->prepare(
-    'SELECT email, is_admin, is_disabled, main_address, main_address_verified FROM users WHERE id = ?'
+    'SELECT email, is_admin, is_disabled, main_address, main_address_verified, push_private FROM users WHERE id = ?'
 );
 $stmt->execute([(int) $_SESSION['user_id']]);
 $user = $stmt->fetch();
@@ -36,4 +36,6 @@ json_out([
     // False for anything linked before ownership proofs existed: the UI prompts
     // re-verification, and login.php will not accept it as an identifier.
     'main_address_verified' => (int) $user['main_address_verified'] === 1,
+    // Whether push bodies redact wallet names and amounts (audit #13).
+    'push_private' => (int) ($user['push_private'] ?? 1) === 1,
 ]);

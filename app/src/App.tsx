@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Routes, Route, NavLink, Navigate, Link, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard,
@@ -39,19 +39,52 @@ import { LANGUAGES } from './i18n/i18n'
 import OptionPicker from './components/OptionPicker'
 import { useChains } from './chainStore'
 
-const NAV = [
-  { to: '/', key: 'nav.dashboard', Icon: LayoutDashboard },
-  { to: '/send', key: 'nav.send', Icon: SendHorizontal },
-  { to: '/staking', key: 'nav.validators', Icon: Coins },
-  { to: '/rewards', key: 'nav.rewards', Icon: Gift },
-  { to: '/history', key: 'nav.history', Icon: HistoryIcon },
-  { to: '/alarms', key: 'nav.alarms', Icon: Bell },
-  { to: '/settings', key: 'nav.settings', Icon: SettingsIcon },
-  { to: '/docs', key: 'nav.docs', Icon: BookOpen },
+// Grouped rather than one flat list of eight. The groups answer "what am I
+// here to do" - hold, stake, monitor - instead of making the user scan.
+//
+// "Alarms" is now "Transaction alerts": alarm suggests something is wrong,
+// when these are ordinary activity notifications.
+const NAV_GROUPS: { key: string; items: { to: string; key: string; Icon: typeof LayoutDashboard }[] }[] = [
+  {
+    key: 'navGroup.portfolio',
+    items: [
+      { to: '/', key: 'nav.dashboard', Icon: LayoutDashboard },
+      { to: '/send', key: 'nav.send', Icon: SendHorizontal },
+      { to: '/history', key: 'nav.history', Icon: HistoryIcon },
+    ],
+  },
+  {
+    key: 'navGroup.staking',
+    items: [
+      { to: '/staking', key: 'nav.validators', Icon: Coins },
+      { to: '/rewards', key: 'nav.rewards', Icon: Gift },
+    ],
+  },
+  {
+    key: 'navGroup.monitoring',
+    items: [
+      { to: '/alarms', key: 'nav.alarms', Icon: Bell },
+      { to: '/uptime', key: 'nav.uptime', Icon: Activity },
+    ],
+  },
+  {
+    key: 'navGroup.account',
+    items: [
+      { to: '/settings', key: 'nav.settings', Icon: SettingsIcon },
+      { to: '/docs', key: 'nav.docs', Icon: BookOpen },
+    ],
+  },
 ]
 
-// The few items that get a spot on the mobile bottom bar (rest live in the drawer).
-const PRIMARY_PATHS = ['/', '/send', '/staking', '/alarms']
+const NAV = NAV_GROUPS.flatMap((g) => g.items)
+
+// Mobile bottom bar. Task-focused: the things people open the app TO DO.
+// Alerts moved into the drawer - they are something you react to, not a
+// destination you navigate to repeatedly.
+const PRIMARY_PATHS = ['/', '/send', '/staking', '/rewards']
+
+const DRAWER_FOCUSABLE =
+  'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
 const BANNER_STYLE: Record<Announcement['severity'], string> = {
   info: 'bg-blue-50 text-blue-800 border-blue-200',
@@ -76,6 +109,8 @@ function App() {
   const [banner, setBanner] = useState<Announcement | null>(null)
   const [uptimeEnabled, setUptimeEnabled] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const drawerRef = useRef<HTMLElement>(null)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     const loadBanner = () =>
@@ -98,9 +133,55 @@ function App() {
   // Close the mobile drawer whenever the route changes.
   useEffect(() => setMenuOpen(false), [location.pathname])
 
-  let nav = [...NAV]
-  if (uptimeEnabled) nav = [...nav, { to: '/uptime', key: 'nav.uptime', Icon: Activity }]
-  if (isAdmin) nav = [...nav, { to: '/admin', key: 'nav.admin', Icon: ShieldCheck }]
+  // Drawer focus management: move focus in on open, trap Tab inside, close on
+  // Escape, and hand focus back to the button that opened it.
+  useEffect(() => {
+    if (!menuOpen) return
+    const panel = drawerRef.current
+    // Captured now, not read in cleanup: the button is stable, and reading a
+    // ref during cleanup is a footgun the linter is right to flag.
+    const opener = menuButtonRef.current
+    const focusables = () =>
+      panel ? Array.from(panel.querySelectorAll<HTMLElement>(DRAWER_FOCUSABLE)) : []
+    ;(focusables()[0] ?? panel)?.focus()
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMenuOpen(false)
+        return
+      }
+      if (e.key !== 'Tab') return
+      const items = focusables()
+      if (items.length === 0) return
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      opener?.focus()
+    }
+  }, [menuOpen])
+
+  // Uptime is a server-gated feature; admin is role-gated. Filter within the
+  // groups rather than appending, so both keep their place in the structure.
+  const groups = NAV_GROUPS.map((g) => ({
+    ...g,
+    items: g.items.filter((i) => i.to !== '/uptime' || uptimeEnabled),
+  }))
+    .concat(
+      isAdmin
+        ? [{ key: 'navGroup.admin', items: [{ to: '/admin', key: 'nav.admin', Icon: ShieldCheck }] }]
+        : [],
+    )
+    .filter((g) => g.items.length > 0)
 
   // Data-heavy routes get a wider desktop column; simple forms stay focused.
   const WIDE_ROUTES = ['/admin', '/staking', '/history', '/rewards', '/uptime']
@@ -186,12 +267,19 @@ function App() {
           Beehive Wallet
         </div>
         <div className="mb-4 border-b border-slate-200 pb-4">{account}</div>
-        <div className="space-y-0.5">
-          {nav.map((item) => (
-            <NavLink key={item.to} to={item.to} end={item.to === '/'} className={navLinkClass}>
-              <item.Icon className="h-4 w-4" strokeWidth={1.8} />
-              {t(item.key)}
-            </NavLink>
+        <div className="space-y-3">
+          {groups.map((g) => (
+            <div key={g.key} className="space-y-0.5">
+              <div className="px-3 pb-0.5 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                {t(g.key)}
+              </div>
+              {g.items.map((item) => (
+                <NavLink key={item.to} to={item.to} end={item.to === '/'} className={navLinkClass}>
+                  <item.Icon className="h-4 w-4" strokeWidth={1.8} />
+                  {t(item.key)}
+                </NavLink>
+              ))}
+            </div>
           ))}
         </div>
         {quickActions}
@@ -206,11 +294,21 @@ function App() {
         onClick={() => setMenuOpen(false)}
         aria-hidden="true"
       />
+      {/* A slide-in navigation panel that covers the page is a dialog, not a
+          decorated <aside>. Without these it is reachable by Tab while
+          invisible, Escape does nothing, and focus stays behind it. */}
       <aside
+        ref={drawerRef}
+        id="mobile-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('nav.menu')}
         className={`fixed inset-y-0 left-0 z-50 flex w-72 max-w-[80%] transform flex-col overflow-y-auto bg-white shadow-xl transition-transform md:hidden ${
           menuOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
-        aria-hidden={!menuOpen}
+        // inert keeps the offscreen drawer out of the tab order entirely -
+        // aria-hidden alone does not stop focus reaching it.
+        inert={!menuOpen}
       >
         <div className="flex items-center justify-between px-4 py-4">
           <span className="flex items-center gap-2 font-semibold text-amber-700">
@@ -226,18 +324,25 @@ function App() {
           </button>
         </div>
         <div className="mb-3 border-y border-slate-200 py-3">{account}</div>
-        <div className="space-y-0.5 px-2">
-          {nav.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/'}
-              onClick={() => setMenuOpen(false)}
-              className={navLinkClass}
-            >
-              <item.Icon className="h-4 w-4" strokeWidth={1.8} />
-              {t(item.key)}
-            </NavLink>
+        <div className="space-y-3 px-2">
+          {groups.map((g) => (
+            <div key={g.key} className="space-y-0.5">
+              <div className="px-3 pb-0.5 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                {t(g.key)}
+              </div>
+              {g.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === '/'}
+                  onClick={() => setMenuOpen(false)}
+                  className={navLinkClass}
+                >
+                  <item.Icon className="h-4 w-4" strokeWidth={1.8} />
+                  {t(item.key)}
+                </NavLink>
+              ))}
+            </div>
           ))}
         </div>
         {/* Same quick actions in the drawer; closing it on tap matches the
@@ -266,8 +371,16 @@ function App() {
           </NavLink>
         ))}
         <button
+          ref={menuButtonRef}
           onClick={() => setMenuOpen(true)}
-          className="flex flex-1 flex-col items-center gap-0.5 rounded-lg py-1 text-[11px] text-slate-500 hover:text-amber-700"
+          aria-expanded={menuOpen}
+          aria-controls="mobile-drawer"
+          aria-haspopup="dialog"
+          // Active when the current page lives inside the drawer rather than on
+          // the bottom bar - otherwise nothing looks selected on those pages.
+          className={`flex flex-1 flex-col items-center gap-0.5 rounded-lg py-1 text-[11px] hover:text-amber-700 ${
+            PRIMARY_PATHS.includes(location.pathname) ? 'text-slate-500' : 'font-medium text-amber-700'
+          }`}
         >
           <MenuIcon className="h-5 w-5" strokeWidth={1.8} />
           {t('nav.menu')}

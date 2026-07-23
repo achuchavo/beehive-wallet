@@ -24,6 +24,7 @@ import CopyAddress from '../components/CopyAddress'
 import OptionPicker from '../components/OptionPicker'
 import Toggle from '../components/Toggle'
 import Checkbox from '../components/Checkbox'
+import ConfirmDelete from '../components/ConfirmDelete'
 
 const POLL_MS = 15000
 
@@ -56,6 +57,25 @@ function PushSettings() {
   const { t } = useT()
   const [state, setState] = useState<PushState>('busy')
   const [error, setError] = useState('')
+  // Default to private until the server says otherwise: if the fetch fails we
+  // must not render the toggle as "off" and imply amounts are being sent.
+  const [priv, setPriv] = useState(true)
+
+  useEffect(() => {
+    api
+      .me()
+      .then((r) => setPriv(r.push_private !== false))
+      .catch(() => {})
+  }, [])
+
+  async function togglePrivacy(next: boolean) {
+    setPriv(next)
+    try {
+      await api.pushPrivacy(next)
+    } catch {
+      setPriv(!next) // put the switch back rather than lie about the state
+    }
+  }
 
   const swUrl = `${import.meta.env.BASE_URL}sw.js`
 
@@ -147,7 +167,23 @@ function PushSettings() {
         )}
       </div>
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
-      <p className="mt-1 text-xs text-slate-500">{t('alarms.pushIphone')}</p>
+
+      {/* Shown BEFORE the permission prompt, not after: consent to
+          notifications should include knowing what will be on the lock screen. */}
+      {state === 'off' && (
+        <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          {t('alarms.pushLockScreenNote')}
+        </p>
+      )}
+
+      <label className="mt-3 flex items-start gap-2 text-xs text-slate-600">
+        <Checkbox checked={priv} onChange={togglePrivacy} label={t('alarms.pushPrivateLabel')} />
+      </label>
+      <p className="mt-1 pl-6 text-xs text-slate-500">
+        {priv ? t('alarms.pushPrivateOn') : t('alarms.pushPrivateOff')}
+      </p>
+
+      <p className="mt-2 text-xs text-slate-500">{t('alarms.pushIphone')}</p>
     </div>
   )
 }
@@ -585,6 +621,23 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
   const addressMatchesChain =
     newAddress.trim() === '' || newAddress.trim().startsWith(selectedChain.bech32Prefix + '1')
 
+  // Removing a watched address deletes its alert history with it, and there is
+  // no undo on the server - so it is confirmed, with the consequence named.
+  const [removingWatch, setRemovingWatch] = useState<{ id: number; label: string } | null>(null)
+  const [removingBusy, setRemovingBusy] = useState(false)
+
+  async function confirmRemoveWatch() {
+    if (!removingWatch) return
+    setRemovingBusy(true)
+    try {
+      await api.watchedRemove(removingWatch.id)
+      await refresh()
+      setRemovingWatch(null)
+    } finally {
+      setRemovingBusy(false)
+    }
+  }
+
   async function addAddress(e: React.FormEvent) {
     e.preventDefault()
     if (!addressMatchesChain) {
@@ -626,6 +679,16 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
 
   return (
     <div className="space-y-6">
+      {removingWatch && (
+        <ConfirmDelete
+          title={t('alarms.removeWatchTitle')}
+          name={removingWatch.label}
+          impact={t('alarms.removeWatchImpact')}
+          busy={removingBusy}
+          onConfirm={confirmRemoveWatch}
+          onCancel={() => setRemovingWatch(null)}
+        />
+      )}
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">{t('alarms.title')}</h1>
         <div className="flex items-center gap-3 text-sm text-slate-500">
@@ -769,7 +832,7 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
                     <CopyAddress address={w.address} className="max-w-full text-xs text-slate-500" />
                   </div>
                   <button
-                    onClick={() => api.watchedRemove(w.id).then(refresh)}
+                    onClick={() => setRemovingWatch({ id: w.id, label: w.label || w.address })}
                     aria-label={t('common.remove')}
                     className="shrink-0 rounded-lg p-1 text-slate-500 hover:bg-red-50 hover:text-red-600"
                   >

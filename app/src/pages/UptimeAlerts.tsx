@@ -13,6 +13,7 @@ import { api, type UptimeSubscription, type UptimeAlert } from '../api'
 import { DEFAULT_CHAIN, CHAINS, type ChainInfo } from '../chains'
 import { useAuth } from '../auth/AuthContext'
 import OptionPicker from '../components/OptionPicker'
+import ConfirmDelete from '../components/ConfirmDelete'
 import { useT } from '../i18n/I18nContext'
 
 const POLL_MS = 30000
@@ -295,6 +296,8 @@ function SubRow({
   onChange: () => void
 }) {
   const { t } = useT()
+  const [confirming, setConfirming] = useState(false)
+  const [removing, setRemoving] = useState(false)
   // The subscription's own chain. This was DEFAULT_CHAIN, so a Chihuahua
   // subscription rendered a Medibloc explorer link - a dead link to a
   // validator that does not exist on that network.
@@ -330,12 +333,31 @@ function SubRow({
           </a>
         </div>
         <button
-          onClick={() => api.uptimeCancel(sub.id).then(onChange)}
+          onClick={() => setConfirming(true)}
           className="shrink-0 text-slate-500 hover:text-red-600"
           aria-label={t('uptime.remove')}
         >
           <Trash2 className="h-4 w-4" />
         </button>
+        {confirming && (
+          <ConfirmDelete
+            title={t('uptime.removeTitle')}
+            name={name}
+            impact={t('uptime.removeImpact')}
+            busy={removing}
+            onConfirm={async () => {
+              setRemoving(true)
+              try {
+                await api.uptimeCancel(sub.id)
+                onChange()
+              } finally {
+                setRemoving(false)
+                setConfirming(false)
+              }
+            }}
+            onCancel={() => setConfirming(false)}
+          />
+        )}
       </div>
 
       {sub.status === 'approved' && (

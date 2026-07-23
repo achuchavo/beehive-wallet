@@ -29,6 +29,16 @@ interface LcdTxResponse {
   tx: { body: { messages: Record<string, unknown>[] } }
 }
 
+/** Local date+time for reading, with the precise UTC value in the tooltip. */
+export function formatWhen(iso: string): { label: string; exact: string } {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return { label: iso, exact: iso }
+  return {
+    label: d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }),
+    exact: `${iso.replace('T', ' ').replace('Z', '')} UTC`,
+  }
+}
+
 function shortAddr(a: string) {
   return a.length > 20 ? `${a.slice(0, 12)}...${a.slice(-6)}` : a
 }
@@ -75,7 +85,10 @@ function classify(
   return {
     hash: resp.txhash,
     height: Number(resp.height),
-    time: resp.timestamp?.replace('T', ' ').replace('Z', ' UTC') ?? '',
+    // Stored and compared as the chain's UTC ISO string; formatted for display
+    // in the viewer's own locale and zone. Showing raw UTC to everyone makes
+    // people mentally convert, and they get it wrong.
+    time: resp.timestamp ?? '',
     direction,
     summary,
   }
@@ -304,7 +317,9 @@ export default function History() {
                       >
                         {dirLabel[r.direction]}
                       </span>
-                      <span className="text-xs text-slate-500">{r.time}</span>
+                      <span className="text-xs text-slate-500" title={formatWhen(r.time).exact}>
+                        {formatWhen(r.time).label}
+                      </span>
                     </div>
                     <div className="mt-1 text-sm">{r.summary}</div>
                     <a

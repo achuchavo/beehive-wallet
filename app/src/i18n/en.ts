@@ -1,11 +1,16 @@
 export const en: Record<string, string> = {
   // Navigation
+  'navGroup.portfolio': 'Portfolio',
+  'navGroup.staking': 'Staking',
+  'navGroup.monitoring': 'Monitoring',
+  'navGroup.account': 'Account and help',
+  'navGroup.admin': 'Administration',
   'nav.dashboard': 'Dashboard',
   'nav.send': 'Send / receive',
   'nav.validators': 'Validators',
   'nav.rewards': 'Rewards',
   'nav.history': 'History',
-  'nav.alarms': 'Alarms',
+  'nav.alarms': 'Transaction alerts',
   'nav.settings': 'Settings',
   'nav.admin': 'Admin',
   'nav.docs': 'Docs',
@@ -21,9 +26,10 @@ export const en: Record<string, string> = {
   'dash.partialFailure': '{count} wallet(s) on this network could not be loaded. Totals below are incomplete.',
   'dash.balanceUnavailable': 'Balance unavailable',
   'dash.unknownChain': 'Network "{chain}" is not configured',
+  'dash.unsupportedNetwork': 'Network "{chain}" is not supported by this app version. The wallet is safe and still on your device.',
   'nav.uptime': 'Uptime alerts',
   'nav.menu': 'Menu',
-  'account.signIn': 'Sign in',
+  'account.signIn': 'Notification account',
   'account.signOut': 'Sign out',
 
   // Common
@@ -86,7 +92,7 @@ export const en: Record<string, string> = {
   'dash.validator': 'validator',
 
   // Alarms - auth
-  'alarms.title': 'Alarms',
+  'alarms.title': 'Transaction alerts',
   'alarms.signInDesc':
     'Sign in to watch addresses and get an alert whenever a transaction leaves them. Your account only stores public addresses - never keys.',
   'alarms.emailOrAddress': 'Email or wallet address',
@@ -138,6 +144,10 @@ export const en: Record<string, string> = {
   'alarms.errWrongNetwork': 'That address is not a {chain} address. Choose the matching network.',
   'alarms.labelOptional': 'Label (optional)',
   'alarms.watch': 'Watch',
+  'alarms.removeWatchTitle': 'Stop watching this address?',
+  'alarms.removeWatchImpact': 'Its alert history is deleted too, and cannot be restored. The address and its funds are unaffected.',
+  'uptime.removeTitle': 'Remove this validator subscription?',
+  'uptime.removeImpact': 'Its uptime alert history is deleted too, and cannot be restored. Your delegation is unaffected.',
   'alarms.noWatched': 'No watched addresses yet. Add one above.',
   'alarms.alarm': 'Alarm',
   'alarms.alerts': 'Alerts',
@@ -166,6 +176,10 @@ export const en: Record<string, string> = {
   'alarms.pushUnsupported': 'Not supported by this browser.',
   'alarms.pushDenied': 'Blocked by the browser. Allow notifications for this site in browser settings.',
   'alarms.pushChecking': 'Checking...',
+  'alarms.pushLockScreenNote': 'Notifications appear on your lock screen, where anyone holding your phone can read them.',
+  'alarms.pushPrivateLabel': 'Hide wallet names and amounts in notifications',
+  'alarms.pushPrivateOn': 'Notifications say only that something happened. Open the app for details.',
+  'alarms.pushPrivateOff': 'Notifications include the wallet name and the amount.',
   'alarms.pushIphone': 'On iPhone: add this site to your home screen first (Share, then Add to Home Screen).',
 
   // Send / receive
@@ -177,6 +191,9 @@ export const en: Record<string, string> = {
   'send.tabReceive': 'Receive',
   'send.copied': 'Copied',
   'send.copyAddress': 'Copy address',
+  'send.amountLabel': 'Amount ({denom})',
+  'send.receiveNetwork': 'Send only {chain} ({denom}) to this address',
+  'send.receiveWarning': 'Funds sent on any other network will be lost and cannot be recovered. Check the sender is using {chain}.',
   'send.from': 'From',
   'send.balance': 'Balance',
   'send.recipient': 'Recipient ({prefix}1...)',
@@ -319,6 +336,8 @@ export const en: Record<string, string> = {
   'staking.noMatch': 'No validators match.',
   'staking.errLoad': 'Could not load staking data',
   'staking.free': 'Free',
+  'staking.noBeehiveFee': 'No Beehive service fee',
+  'staking.noFeeExplain': 'Beehive waives its own service fee for this validator. This is not a security review or an endorsement - check the validator yourself.',
   'staking.comm': '{pct}% comm',
   'staking.you': 'you: {amount}',
   'staking.stake': 'Stake',
@@ -361,6 +380,7 @@ export const en: Record<string, string> = {
   'settings.createDesc':
     'A new 24-word seed phrase will be generated on your device. You must write it down on paper and keep it safe - it is the only way to recover the wallet.',
   'settings.generateSeed': 'Generate seed phrase',
+  'settings.stepOf': 'Step {step} of {total}',
   'settings.seedWarning':
     'Write these 24 words down on paper, in order. Never store them digitally or share them. Anyone with these words controls your funds.',
   'settings.tapToReveal': 'Tap to reveal',

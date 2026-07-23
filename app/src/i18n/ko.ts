@@ -1,11 +1,16 @@
 export const ko: Record<string, string> = {
   // Navigation
+  'navGroup.portfolio': '자산',
+  'navGroup.staking': '스테이킹',
+  'navGroup.monitoring': '모니터링',
+  'navGroup.account': '계정 및 도움말',
+  'navGroup.admin': '관리',
   'nav.dashboard': '대시보드',
   'nav.send': '송금',
   'nav.validators': '밸리데이터',
   'nav.rewards': '보상',
   'nav.history': '내역',
-  'nav.alarms': '알림',
+  'nav.alarms': '거래 알림',
   'nav.settings': '설정',
   'nav.admin': '관리자',
   'nav.docs': '도움말',
@@ -21,9 +26,10 @@ export const ko: Record<string, string> = {
   'dash.partialFailure': '이 네트워크의 지갑 {count}개를 불러오지 못했습니다. 아래 합계는 불완전합니다.',
   'dash.balanceUnavailable': '잔액을 불러올 수 없음',
   'dash.unknownChain': '네트워크 "{chain}"이(가) 설정되지 않았습니다',
+  'dash.unsupportedNetwork': '이 앱 버전은 "{chain}" 네트워크를 지원하지 않습니다. 지갑은 안전하게 기기에 남아 있습니다.',
   'nav.uptime': '가동률 알림',
   'nav.menu': '메뉴',
-  'account.signIn': '로그인',
+  'account.signIn': '알림 계정',
   'account.signOut': '로그아웃',
 
   // Common
@@ -84,7 +90,7 @@ export const ko: Record<string, string> = {
   'dash.validator': '밸리데이터',
 
   // Alarms - auth
-  'alarms.title': '알림',
+  'alarms.title': '거래 알림',
   'alarms.signInDesc':
     '로그인하면 주소를 감시하고 거래가 발생할 때 알림을 받을 수 있습니다. 계정에는 공개 주소만 저장되며 키는 저장되지 않습니다.',
   'alarms.emailOrAddress': '이메일 또는 지갑 주소',
@@ -135,6 +141,10 @@ export const ko: Record<string, string> = {
   'alarms.errWrongNetwork': '{chain} 주소가 아닙니다. 일치하는 네트워크를 선택하세요.',
   'alarms.labelOptional': '이름 (선택)',
   'alarms.watch': '감시',
+  'alarms.removeWatchTitle': '이 주소 감시를 중지할까요?',
+  'alarms.removeWatchImpact': '알림 내역도 함께 삭제되며 복구할 수 없습니다. 주소와 자금에는 영향이 없습니다.',
+  'uptime.removeTitle': '이 밸리데이터 구독을 삭제할까요?',
+  'uptime.removeImpact': '가동률 알림 내역도 함께 삭제되며 복구할 수 없습니다. 위임에는 영향이 없습니다.',
   'alarms.noWatched': '감시 중인 주소가 없습니다. 위에서 추가하세요.',
   'alarms.alarm': '알림',
   'alarms.alerts': '알림 내역',
@@ -163,6 +173,10 @@ export const ko: Record<string, string> = {
   'alarms.pushUnsupported': '이 브라우저에서 지원되지 않습니다.',
   'alarms.pushDenied': '브라우저에서 차단되었습니다. 브라우저 설정에서 이 사이트의 알림을 허용하세요.',
   'alarms.pushChecking': '확인 중...',
+  'alarms.pushLockScreenNote': '알림은 잠금 화면에 표시되며, 휴대폰을 손에 든 사람은 누구나 읽을 수 있습니다.',
+  'alarms.pushPrivateLabel': '알림에서 지갑 이름과 금액 숨기기',
+  'alarms.pushPrivateOn': '알림에는 변동이 있었다는 사실만 표시됩니다. 자세한 내용은 앱에서 확인하세요.',
+  'alarms.pushPrivateOff': '알림에 지갑 이름과 금액이 포함됩니다.',
   'alarms.pushIphone': 'iPhone에서: 먼저 이 사이트를 홈 화면에 추가하세요 (공유 → 홈 화면에 추가).',
 
   // Send / receive
@@ -173,6 +187,9 @@ export const ko: Record<string, string> = {
   'send.tabReceive': '받기',
   'send.copied': '복사됨',
   'send.copyAddress': '주소 복사',
+  'send.amountLabel': '금액 ({denom})',
+  'send.receiveNetwork': '이 주소로는 {chain} ({denom})만 보내세요',
+  'send.receiveWarning': '다른 네트워크로 보낸 자금은 사라지며 복구할 수 없습니다. 보내는 쪽이 {chain}을(를) 사용하는지 확인하세요.',
   'send.from': '보내는 지갑',
   'send.balance': '잔액',
   'send.recipient': '받는 주소 ({prefix}1...)',
@@ -312,6 +329,8 @@ export const ko: Record<string, string> = {
   'staking.noMatch': '일치하는 밸리데이터이 없습니다.',
   'staking.errLoad': '스테이킹 데이터를 불러올 수 없습니다',
   'staking.free': '무료',
+  'staking.noBeehiveFee': 'Beehive 수수료 없음',
+  'staking.noFeeExplain': 'Beehive가 이 밸리데이터에 대해 자체 서비스 수수료를 면제합니다. 보안 검토나 보증이 아니므로 직접 확인하세요.',
   'staking.comm': '커미션 {pct}%',
   'staking.you': '내 스테이킹: {amount}',
   'staking.stake': '스테이킹',
@@ -354,6 +373,7 @@ export const ko: Record<string, string> = {
   'settings.createDesc':
     '새 24단어 시드 문구가 기기에서 생성됩니다. 반드시 종이에 적어 안전하게 보관하세요. 이것이 지갑을 복구할 수 있는 유일한 방법입니다.',
   'settings.generateSeed': '시드 문구 생성',
+  'settings.stepOf': '{total}단계 중 {step}단계',
   'settings.seedWarning':
     '이 24개 단어를 순서대로 종이에 적으세요. 절대 디지털로 저장하거나 공유하지 마세요. 이 단어를 아는 사람은 누구나 자금을 제어할 수 있습니다.',
   'settings.tapToReveal': '탭하여 표시',
