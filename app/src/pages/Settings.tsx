@@ -82,10 +82,10 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
 
   const shown = wallets.filter((w) => !chainFilter || w.chainKey === chainFilter)
 
-  async function reveal(address: string) {
+  async function reveal(walletId: string) {
     setError('')
     try {
-      const r = await revealSecret(address, password)
+      const r = await revealSecret(walletId, password)
       setSecret(r.secret)
       setPassword('') // the password is no longer needed once decrypted
     } catch (e) {
@@ -118,11 +118,11 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
   }, [secret])
 
   // Accessible confirmation dialog instead of window.confirm (audit #27).
-  const [removing, setRemoving] = useState<{ address: string; name: string } | null>(null)
+  const [removing, setRemoving] = useState<{ id: string; address: string; name: string } | null>(null)
 
   function confirmRemove() {
     if (!removing) return
-    removeWallet(removing.address)
+    removeWallet(removing.id)
     // Drop any revealed secret still on screen for the wallet being removed.
     setSecret('')
     setRemoving(null)
@@ -155,13 +155,13 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
         ) : (
           <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
             {shown.map((w) => (
-              <li key={w.address} className="space-y-2 px-4 py-3">
+              <li key={w.id} className="space-y-2 px-4 py-3">
                 <div className="flex items-center gap-3">
                   <input
                     type="radio"
                     name="active"
-                    checked={active?.address === w.address}
-                    onChange={() => setActive(w.address)}
+                    checked={active?.id === w.id}
+                    onChange={() => setActive(w.id)}
                     title={t('settings.activeWallet')}
                   />
                   <div className="min-w-0 flex-1">
@@ -178,23 +178,23 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
                     <CopyAddress address={w.address} className="max-w-full text-xs text-slate-500" />
                   </div>
                   <button
-                    onClick={() => (revealFor === w.address ? closeReveal() : setRevealFor(w.address))}
+                    onClick={() => (revealFor === w.id ? closeReveal() : setRevealFor(w.id))}
                     className="text-xs text-amber-700 hover:underline"
                   >
-                    {revealFor === w.address
+                    {revealFor === w.id
                       ? t('common.close')
                       : w.kind === 'privkey'
                         ? t('settings.showKey')
                         : t('settings.showSeed')}
                   </button>
                   <button
-                    onClick={() => setRemoving({ address: w.address, name: w.name })}
+                    onClick={() => setRemoving({ id: w.id, address: w.address, name: w.name })}
                     className="text-xs text-red-600 hover:underline"
                   >
                     {t('common.remove')}
                   </button>
                 </div>
-                {revealFor === w.address && (
+                {revealFor === w.id && (
                   <div className="space-y-2 rounded-lg bg-slate-50 p-3">
                     {secret ? (
                       <>
@@ -226,7 +226,7 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
                           className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
                         />
                         <button
-                          onClick={() => reveal(w.address)}
+                          onClick={() => reveal(w.id)}
                           className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600"
                         >
                           {t('settings.reveal')}
@@ -262,7 +262,7 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
           address={removing.address}
           // Block removal while a secret is revealed for that wallet - a
           // wallet-sensitive operation is in progress.
-          busy={revealFor === removing.address && secret !== ''}
+          busy={revealFor === removing.id && secret !== ''}
           onConfirm={confirmRemove}
           onClose={() => setRemoving(null)}
         />

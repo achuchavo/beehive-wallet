@@ -14,14 +14,8 @@ $chainKey = trim($body['chain_key'] ?? '');
 $validator = trim($body['validator_address'] ?? '');
 $moniker = trim($body['moniker'] ?? '');
 
-$chains = json_decode(file_get_contents(__DIR__ . '/chains.json'), true);
-$chain = null;
-foreach ($chains as $c) {
-    if ($c['key'] === $chainKey) {
-        $chain = $c;
-        break;
-    }
-}
+// Same single registry as every other endpoint - see chain_config().
+$chain = chain_config($chainKey);
 if ($chain === null) {
     json_error('Unknown chain');
 }

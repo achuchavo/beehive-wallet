@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import type { OfflineDirectSigner, EncodeObject } from '@cosmjs/proto-signing'
 import type { ChainInfo } from '../chains'
-import { simulateTx, broadcastTx, type FeeEstimate } from './tx'
+import { simulateTx, broadcastTx, lookupTx, type FeeEstimate, type BroadcastOutcome } from './tx'
 import TxReview, { type ReviewRow } from '../components/TxReview'
+import TxUnresolved from '../components/TxUnresolved'
 
 export interface PlanInput {
   chain: ChainInfo
@@ -29,6 +30,8 @@ export type Prepare = (input: PlanInput) => Promise<void>
 export function useTxReview() {
   const [plan, setPlan] = useState<(PlanInput & { est: FeeEstimate }) | null>(null)
   const [confirming, setConfirming] = useState(false)
+  // Set when a broadcast could neither be confirmed nor ruled out.
+  const [unresolved, setUnresolved] = useState<{ chain: ChainInfo; hash: string } | null>(null)
 
   async function prepare(input: PlanInput): Promise<void> {
     const est = await simulateTx(input.chain, input.signer, input.sender, input.messages, input.memo)
@@ -39,7 +42,7 @@ export function useTxReview() {
     if (!plan) return
     setConfirming(true)
     try {
-      const hash = await broadcastTx(
+      const outcome: BroadcastOutcome = await broadcastTx(
         plan.chain,
         plan.signer,
         plan.sender,
@@ -47,10 +50,43 @@ export function useTxReview() {
         plan.est.fee,
         plan.memo,
       )
-      const done = plan.onDone
-      setPlan(null)
-      done(hash)
+
+      if (outcome.status === 'success') {
+        const done = plan.onDone
+        setPlan(null)
+        done(outcome.hash)
+        return
+      }
+
+      if (outcome.status === 'rejected') {
+        // The chain saw it and refused. Nothing was committed, so this is a
+        // plain error and retrying after a fix is safe.
+        plan.onError(outcome.rawLog || `Transaction failed (code ${outcome.code})`)
+        setPlan(null)
+        return
+      }
+
+      // Unknown: the node may have accepted it. Never report this as a simple
+      // failure - that is what put a one-click retry in front of a possible
+      // duplicate. Resolve it by asking the chain about the hash we already
+      // computed from the signed bytes.
+      const lookup = await lookupTx(plan.chain, outcome.hash)
+      if (lookup.status === 'success') {
+        const done = plan.onDone
+        setPlan(null)
+        done(outcome.hash)
+        return
+      }
+      if (lookup.status === 'rejected') {
+        plan.onError(lookup.rawLog || `Transaction failed (code ${lookup.code})`)
+        setPlan(null)
+        return
+      }
+      // Still unresolved. Hold the review open in an explicit unknown state so
+      // the user gets the hash and a re-check, and no retry button.
+      setUnresolved({ chain: plan.chain, hash: outcome.hash })
     } catch (e) {
+      // Pre-submission failure - nothing was sent.
       plan.onError(e instanceof Error ? e.message : 'Transaction failed')
       setPlan(null)
     } finally {
@@ -58,7 +94,42 @@ export function useTxReview() {
     }
   }
 
-  const modal = plan ? (
+  async function recheck(): Promise<void> {
+    if (!unresolved) return
+    setConfirming(true)
+    try {
+      const lookup = await lookupTx(unresolved.chain, unresolved.hash)
+      if (lookup.status === 'success') {
+        const done = plan?.onDone
+        setUnresolved(null)
+        setPlan(null)
+        done?.(unresolved.hash)
+      } else if (lookup.status === 'rejected') {
+        plan?.onError(lookup.rawLog || `Transaction failed (code ${lookup.code})`)
+        setUnresolved(null)
+        setPlan(null)
+      }
+      // 'missing'/'unavailable': stay put. Still not safe to retry.
+    } finally {
+      setConfirming(false)
+    }
+  }
+
+  const modal = unresolved ? (
+    <TxUnresolved
+      chain={unresolved.chain}
+      hash={unresolved.hash}
+      busy={confirming}
+      onRecheck={recheck}
+      onDismiss={() => {
+        // Dismiss reports it upward as unresolved, NOT as a failure, so the
+        // page does not render a retry affordance.
+        plan?.onError('')
+        setUnresolved(null)
+        setPlan(null)
+      }}
+    />
+  ) : plan ? (
     <TxReview
       rows={plan.buildRows(plan.est)}
       warning={plan.warning}

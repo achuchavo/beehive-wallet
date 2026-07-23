@@ -10,7 +10,12 @@ $subDest = "D:\WebServer\Apache24\beeweb\walletapp"
 function Deploy($dest) {
   robocopy "$PSScriptRoot\app\dist" $dest /MIR /XD api /NJH /NJS /NDL /NFL | Out-Null
   robocopy "$PSScriptRoot\api" "$dest\api" /MIR /XF db_config.php.example /NJH /NJS /NDL /NFL | Out-Null
-  Copy-Item "$PSScriptRoot\config\chains.json" "$dest\api\chains.json" -Force
+  # config/chains.json is NOT deployed any more. It was a second source of
+  # truth that had to be redeployed to match the `chains` table, and it drifted:
+  # it listed Medibloc only, so every Chihuahua address link, watched address
+  # and uptime subscription failed with "Unknown chain". chain_config() now
+  # reads the database, like the frontend and the watcher already did.
+  Remove-Item "$dest\api\chains.json" -Force -ErrorAction SilentlyContinue
 }
 
 Set-Location "$PSScriptRoot\app"

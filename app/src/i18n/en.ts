@@ -58,7 +58,7 @@ export const en: Record<string, string> = {
   'dash.overMonths': 'over {months} months',
   'dash.oneMonth': 'first month of claims',
   'dash.noClaimsYet': 'Shows once you claim rewards',
-  'dash.totalValue': 'Total value',
+  'dash.totalValue': 'Available + staked',
   'dash.wallets': '{count} wallets',
   'dash.wallet': '{count} wallet',
   'dash.available': 'Available',
@@ -195,6 +195,13 @@ export const en: Record<string, string> = {
   'send.simulating': 'Simulating...',
 
   // Transaction review
+  'tx.unresolvedTitle': 'Transaction status unknown',
+  'tx.unresolvedBody': 'Your transaction was signed and sent, but the network did not confirm the result in time. It may already have gone through.',
+  'tx.unresolvedDoNotRetry': 'Do not send it again until you have checked - resending could pay or delegate twice.',
+  'tx.hash': 'Transaction hash',
+  'tx.checkStatus': 'Check status',
+  'tx.checking': 'Checking...',
+  'tx.openExplorer': 'Open in explorer',
   'review.title': 'Review transaction',
   'review.broadcasting': 'Broadcasting...',
   'review.network': 'Network',

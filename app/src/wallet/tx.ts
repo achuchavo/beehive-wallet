@@ -1,4 +1,7 @@
 import { SigningStargateClient, GasPrice, calculateFee } from '@cosmjs/stargate'
+import { sha256 } from '@cosmjs/crypto'
+import { toHex } from '@cosmjs/encoding'
+import { TxRaw } from 'cosmjs-types/cosmos/tx/v1beta1/tx'
 import type { StdFee } from '@cosmjs/amino'
 import type { OfflineDirectSigner, EncodeObject } from '@cosmjs/proto-signing'
 import type { ChainInfo } from '../chains'
@@ -71,7 +74,36 @@ export async function simulateTx(
   }
 }
 
-/** Sign and broadcast with a fixed fee (the one shown in the review). */
+/**
+ * What actually happened to a broadcast.
+ *
+ * The third case is the point of this type. signAndBroadcast() throws on a
+ * timeout exactly as it throws on a malformed transaction, so the UI treated
+ * "the node may well have accepted this" as a plain failure and offered a
+ * retry button - one click from a duplicate send, delegation or claim.
+ *
+ * A transaction hash is deterministic over the SIGNED BYTES, so it is known
+ * before the request leaves the browser. That is what makes an unknown outcome
+ * actionable: we can always tell the user which transaction to go and look up.
+ */
+export type BroadcastOutcome =
+  | { status: 'success'; hash: string; height: number }
+  | { status: 'rejected'; hash: string; code: number; rawLog: string }
+  | { status: 'unknown'; hash: string; message: string }
+
+/** SHA-256 of the signed tx bytes, uppercase hex - the Tendermint tx hash. */
+async function txHash(txBytes: Uint8Array): Promise<string> {
+  return toHex(sha256(txBytes)).toUpperCase()
+}
+
+/**
+ * Sign, then broadcast, reporting the outcome instead of throwing on ambiguity.
+ *
+ * Signing and broadcasting are separated so the hash exists before anything is
+ * sent. Only genuinely pre-submission failures (wrong network, signing refused)
+ * throw; once bytes are on the wire the result is always one of the three
+ * outcomes above.
+ */
 export async function broadcastTx(
   chain: ChainInfo,
   signer: OfflineDirectSigner,
@@ -79,18 +111,72 @@ export async function broadcastTx(
   messages: EncodeObject[],
   fee: StdFee,
   memo = '',
-): Promise<string> {
+): Promise<BroadcastOutcome> {
   assertChainConfigReady()
   const client = await connect(chain, signer)
   try {
+    // Pre-submission. A failure here means nothing was sent, so throwing (and
+    // letting the caller retry freely) is correct.
     await verifyNetwork(client, chain)
-    const res = await client.signAndBroadcast(sender, messages, fee, memo)
-    if (res.code !== 0) {
-      throw new Error(res.rawLog || `Transaction failed (code ${res.code})`)
+    const txRaw = await client.sign(sender, messages, fee, memo)
+    const txBytes = TxRaw.encode(txRaw).finish()
+    const hash = await txHash(txBytes)
+
+    // Past this line the transaction may exist on chain no matter what we see.
+    try {
+      const res = await client.broadcastTx(txBytes)
+      if (res.code === 0) {
+        return { status: 'success', hash: res.transactionHash || hash, height: res.height ?? 0 }
+      }
+      // The chain answered and refused it. Nothing was committed, so a retry
+      // after fixing the cause is safe.
+      return {
+        status: 'rejected',
+        hash: res.transactionHash || hash,
+        code: res.code,
+        rawLog: res.rawLog ?? '',
+      }
+    } catch (e) {
+      // Timeout, dropped connection, proxy 5xx. The node may have accepted it.
+      return {
+        status: 'unknown',
+        hash,
+        message: e instanceof Error ? e.message : 'Broadcast result unknown',
+      }
     }
-    return res.transactionHash
   } finally {
     client.disconnect()
+  }
+}
+
+/**
+ * Look up a transaction by hash. Used to resolve an unknown outcome before any
+ * retry is offered.
+ *
+ * 'missing' means the chain has no such transaction *yet* - it is deliberately
+ * distinct from 'rejected', because an unindexed or still-pending transaction
+ * looks identical to one that never arrived, and treating those the same is
+ * how a duplicate gets sent.
+ */
+export type TxLookup =
+  | { status: 'success'; height: number }
+  | { status: 'rejected'; code: number; rawLog: string }
+  | { status: 'missing' }
+  | { status: 'unavailable' }
+
+export async function lookupTx(chain: ChainInfo, hash: string): Promise<TxLookup> {
+  try {
+    const res = await fetch(`${chain.lcd}/cosmos/tx/v1beta1/txs/${hash}`)
+    if (res.status === 404) return { status: 'missing' }
+    if (!res.ok) return { status: 'unavailable' }
+    const data = await res.json()
+    const r = data?.tx_response
+    if (!r) return { status: 'missing' }
+    const code = Number(r.code ?? 0)
+    if (code === 0) return { status: 'success', height: Number(r.height ?? 0) }
+    return { status: 'rejected', code, rawLog: String(r.raw_log ?? '') }
+  } catch {
+    return { status: 'unavailable' }
   }
 }
 

@@ -214,7 +214,7 @@ export default function Staking() {
     if (!active || !chain || rewardValidators.length === 0) return
     setNotice('')
     setError('')
-    const signer = await getSigner(active.address, password)
+    const signer = await getSigner(active.id, password)
     const { messages, memo } = buildClaim(active.address, rewardValidators, null)
     const claimChain = chain
     await prepare({
@@ -437,7 +437,7 @@ function ValidatorRow({
   async function submitDelegate(password: string, amount: string) {
     if (!active) return
     const base = toBaseUnits(amount, chain)
-    const signer = await getSigner(active.address, password)
+    const signer = await getSigner(active.id, password)
     const { messages, memo } = buildDelegate(chain, active.address, validator.operator, base)
     const hasFee = delegationHasServiceFee(chain, validator.operator)
     await prepare({
@@ -471,7 +471,7 @@ function ValidatorRow({
   async function submitUndelegate(password: string, amount: string) {
     if (!active) return
     const base = toBaseUnits(amount, chain)
-    const signer = await getSigner(active.address, password)
+    const signer = await getSigner(active.id, password)
     const { messages, memo } = buildUndelegate(chain, active.address, validator.operator, base)
     await prepare({
       chain,

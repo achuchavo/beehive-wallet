@@ -24,6 +24,8 @@ import { useChains } from '../chainStore'
 import { useT } from '../i18n/I18nContext'
 
 interface Row {
+  /** Wallet id - signing must target a record, not an address (see storage.ts). */
+  id: string
   name: string
   chain: ChainInfo // resolved from the wallet's chainKey
   earnings: WalletEarnings
@@ -77,7 +79,7 @@ export default function Rewards() {
       const earnings = await Promise.all(
         wallets.map(async (w) => {
           const wc = resolveChain(w.chainKey)
-          return { name: w.name, chain: wc, earnings: await fetchWalletEarnings(wc, w.address) }
+          return { id: w.id, name: w.name, chain: wc, earnings: await fetchWalletEarnings(wc, w.address) }
         }),
       )
       setRows(earnings)
@@ -158,7 +160,7 @@ export default function Rewards() {
     setError('')
     const plans: BatchPlan[] = []
     for (const row of forChain) {
-      const signer = await getSigner(row.earnings.address, password)
+      const signer = await getSigner(row.id, password)
       const commissionValoper =
         row.earnings.isValidator && isPositiveBase(row.earnings.commission)
           ? row.earnings.valoper
@@ -424,7 +426,7 @@ function WalletCard({
   const { getSigner } = useWallet()
   const { prepare, modal } = useTxReview()
   const [action, setAction] = useState<'none' | 'claim' | 'restake'>('none')
-  const { earnings, name, chain } = row
+  const { id: walletId, earnings, name, chain } = row
   const hasCommission = earnings.isValidator && isPositiveBase(earnings.commission)
   const hasRewards = isPositiveBase(earnings.rewards)
   const hasSomething = hasRewards || hasCommission
@@ -437,7 +439,7 @@ function WalletCard({
   ]
 
   async function submitClaim(password: string) {
-    const signer = await getSigner(earnings.address, password)
+    const signer = await getSigner(walletId, password)
     const { messages, memo } = buildClaim(
       earnings.address,
       earnings.rewardValidators,
@@ -470,7 +472,7 @@ function WalletCard({
   }
 
   async function submitRestake(password: string) {
-    const signer = await getSigner(earnings.address, password)
+    const signer = await getSigner(walletId, password)
     const { messages, memo } = buildRestake(chain, earnings.address, earnings.rewardsByValidator)
     await prepare({
       chain,

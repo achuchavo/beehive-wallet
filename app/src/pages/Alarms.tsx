@@ -389,7 +389,7 @@ function MainAddressCard() {
       // 1. Server issues a single-use challenge bound to this account+address.
       const c = await api.addressChallenge(wallet.address, wallet.chainKey)
       // 2. Sign it locally; the key never leaves the browser.
-      const proof = await signOwnership(wallet.address, password, c.message)
+      const proof = await signOwnership(wallet.id, password, c.message)
       setPassword('')
       // 3. Redeem. The server re-derives the address from the public key.
       const r = await api.accountSetAddress(wallet.address, { nonce: c.nonce, ...proof })

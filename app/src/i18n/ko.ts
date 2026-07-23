@@ -56,7 +56,7 @@ export const ko: Record<string, string> = {
   'dash.overMonths': '{months}개월 기준',
   'dash.oneMonth': '첫 달 기준',
   'dash.noClaimsYet': '보상을 수령하면 표시됩니다',
-  'dash.totalValue': '총 자산',
+  'dash.totalValue': '사용 가능 + 스테이킹',
   'dash.wallets': '지갑 {count}개',
   'dash.wallet': '지갑 {count}개',
   'dash.available': '사용 가능',
@@ -191,6 +191,13 @@ export const ko: Record<string, string> = {
   'send.simulating': '시뮬레이션 중...',
 
   // Transaction review
+  'tx.unresolvedTitle': '거래 상태를 알 수 없음',
+  'tx.unresolvedBody': '거래가 서명되어 전송되었지만 네트워크가 제때 결과를 확인해 주지 않았습니다. 이미 처리되었을 수 있습니다.',
+  'tx.unresolvedDoNotRetry': '확인하기 전에는 다시 보내지 마세요. 중복 송금이나 중복 위임이 발생할 수 있습니다.',
+  'tx.hash': '거래 해시',
+  'tx.checkStatus': '상태 확인',
+  'tx.checking': '확인 중...',
+  'tx.openExplorer': '탐색기에서 열기',
   'review.title': '거래 검토',
   'review.broadcasting': '전송 중...',
   'review.network': '네트워크',

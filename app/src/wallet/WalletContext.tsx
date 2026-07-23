@@ -19,8 +19,9 @@ import { encryptText, decryptText } from './crypto'
 import {
   loadWallets,
   saveWallets,
-  loadActiveAddress,
-  saveActiveAddress,
+  loadActiveWalletId,
+  saveActiveWalletId,
+  newWalletId,
   type StoredWallet,
 } from './storage'
 
@@ -100,7 +101,7 @@ async function secretToSigner(
 interface WalletContextValue {
   wallets: StoredWallet[]
   active: StoredWallet | null
-  setActive: (address: string) => void
+  setActive: (walletId: string) => void
   addWallet: (
     name: string,
     secret: string,
@@ -108,17 +109,17 @@ interface WalletContextValue {
     chain: ChainInfo,
     kind?: WalletKind,
   ) => Promise<StoredWallet>
-  removeWallet: (address: string) => void
+  removeWallet: (walletId: string) => void
   /** Decrypts the seed phrase or private key. Throws 'Wrong password'. Caller must not store it. */
-  revealSecret: (address: string, password: string) => Promise<{ secret: string; kind: WalletKind }>
+  revealSecret: (walletId: string, password: string) => Promise<{ secret: string; kind: WalletKind }>
   /** Builds a signer for one signing operation. Throws 'Wrong password'. */
-  getSigner: (address: string, password: string) => Promise<OfflineDirectSigner>
+  getSigner: (walletId: string, password: string) => Promise<OfflineDirectSigner>
   /**
-   * Proves control of `address` by signing a server-issued challenge (ADR-036).
-   * The secret never leaves the call. Throws 'Wrong password'.
+   * Proves control of the wallet's address by signing a server-issued challenge
+   * (ADR-036). The secret never leaves the call. Throws 'Wrong password'.
    */
   signOwnership: (
-    address: string,
+    walletId: string,
     password: string,
     message: string,
   ) => Promise<{ pubkey: string; signature: string }>
@@ -128,16 +129,18 @@ const WalletContext = createContext<WalletContextValue | null>(null)
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [wallets, setWallets] = useState<StoredWallet[]>(loadWallets)
-  const [activeAddress, setActiveAddress] = useState<string | null>(loadActiveAddress)
+  // Identity is the wallet id, never the address: the same address can be a
+  // different account on another chain. See storage.ts.
+  const [activeId, setActiveId] = useState<string | null>(() => loadActiveWalletId(loadWallets()))
 
   const persist = useCallback((next: StoredWallet[]) => {
     setWallets(next)
     saveWallets(next)
   }, [])
 
-  const setActive = useCallback((address: string) => {
-    setActiveAddress(address)
-    saveActiveAddress(address)
+  const setActive = useCallback((walletId: string) => {
+    setActiveId(walletId)
+    saveActiveWalletId(walletId)
   }, [])
 
   const addWallet = useCallback(
@@ -152,10 +155,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const signer = await secretToSigner(cleanSecret, kind, chain)
       const [account] = await signer.getAccounts()
       const current = loadWallets()
-      if (current.some((w) => w.address === account.address)) {
+      // A duplicate only when the SAME address is already stored for the SAME
+      // chain. The same address on another network is a different account and
+      // must be allowed.
+      if (current.some((w) => w.address === account.address && w.chainKey === chain.key)) {
         throw new Error('This wallet is already added')
       }
       const stored: StoredWallet = {
+        id: newWalletId(),
         name: name.trim() || 'My wallet',
         chainKey: chain.key,
         address: account.address,
@@ -165,28 +172,28 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       }
       const next = [...current, stored]
       persist(next)
-      setActive(stored.address)
+      setActive(stored.id)
       return stored
     },
     [persist, setActive],
   )
 
   const removeWallet = useCallback(
-    (address: string) => {
-      const next = loadWallets().filter((w) => w.address !== address)
+    (walletId: string) => {
+      const next = loadWallets().filter((w) => w.id !== walletId)
       persist(next)
-      if (activeAddress === address) {
-        const fallback = next[0]?.address ?? null
-        setActiveAddress(fallback)
-        saveActiveAddress(fallback)
+      if (activeId === walletId) {
+        const fallback = next[0]?.id ?? null
+        setActiveId(fallback)
+        saveActiveWalletId(fallback, next)
       }
     },
-    [activeAddress, persist],
+    [activeId, persist],
   )
 
   const revealSecret = useCallback(
-    async (address: string, password: string) => {
-      const stored = loadWallets().find((w) => w.address === address)
+    async (walletId: string, password: string) => {
+      const stored = loadWallets().find((w) => w.id === walletId)
       if (!stored) throw new Error('Wallet not found')
       const secret = await decryptText(stored.encrypted, password)
       return { secret, kind: (stored.kind ?? 'mnemonic') as WalletKind }
@@ -195,8 +202,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   )
 
   const getSigner = useCallback(
-    async (address: string, password: string) => {
-      const stored = loadWallets().find((w) => w.address === address)
+    async (walletId: string, password: string) => {
+      const stored = loadWallets().find((w) => w.id === walletId)
       if (!stored) throw new Error('Wallet not found')
       const chain = CHAINS.find((c) => c.key === stored.chainKey)
       if (!chain) throw new Error('Unknown chain')
@@ -212,8 +219,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
    * here - it is never returned to the caller and never leaves this function.
    */
   const signOwnership = useCallback(
-    async (address: string, password: string, message: string) => {
-      const stored = loadWallets().find((w) => w.address === address)
+    async (walletId: string, password: string, message: string) => {
+      const stored = loadWallets().find((w) => w.id === walletId)
       if (!stored) throw new Error('Wallet not found')
       const chain = CHAINS.find((c) => c.key === stored.chainKey)
       if (!chain) throw new Error('Unknown chain')
@@ -223,7 +230,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       try {
         privkey = await secretToPrivkey(secret, stored.kind ?? 'mnemonic', chain)
         const { pubkey } = await Secp256k1.makeKeypair(privkey)
-        const doc = adr36SignDoc(message, address)
+        const doc = adr36SignDoc(message, stored.address)
         const sig = await Secp256k1.createSignature(sha256(toUtf8(doc)), privkey)
         return {
           // Uncompressed (65 bytes): lets the server derive the address by
@@ -239,7 +246,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   )
 
   const value = useMemo<WalletContextValue>(() => {
-    const active = wallets.find((w) => w.address === activeAddress) ?? wallets[0] ?? null
+    const active = wallets.find((w) => w.id === activeId) ?? wallets[0] ?? null
     return {
       wallets,
       active,
@@ -252,7 +259,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, [
     wallets,
-    activeAddress,
+    activeId,
     setActive,
     addWallet,
     removeWallet,

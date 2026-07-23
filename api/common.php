@@ -457,23 +457,90 @@ function looks_like_address(string $address, string $prefix): bool
 const ADDRESS_CHALLENGE_TTL = 300;                  // 5 minutes
 const ADDRESS_CHALLENGE_ACTION = 'link-address';
 
-/** One chain's public config from chains.json, or null if unknown. */
+
+/**
+ * Metadata for ONE active chain, or null.
+ *
+ * Sourced from the `chains` table - the same authority the frontend
+ * (chains_public.php) and the watcher (SELECT * FROM chains WHERE is_active)
+ * already use. It previously read a static api/chains.json that deploy.ps1
+ * copied from config/, which listed Medibloc only: every Chihuahua address
+ * link, watched address and uptime subscription was rejected as "Unknown
+ * chain" even though the UI happily created Chihuahua wallets. A file that has
+ * to be redeployed to match the database is a second source of truth, so it is
+ * gone rather than regenerated.
+ *
+ * Fails CLOSED. If the registry cannot be read, callers get null and answer
+ * "Unknown chain" - the alternative, falling back to a stale list, risks
+ * authorising an address against the wrong network.
+ */
 function chain_config(string $chainKey): ?array
 {
-    static $chains = null;
-    if ($chains === null) {
-        $raw = @file_get_contents(__DIR__ . '/chains.json');
-        $chains = $raw === false ? [] : (json_decode($raw, true) ?: []);
-    }
+    // An empty key is not a request for "the default chain". It used to return
+    // $chains[0], so a client that omitted chain_key silently got Medibloc -
+    // exactly the silent-default the audit flags.
     if ($chainKey === '') {
-        return $chains[0] ?? null;
+        return null;
     }
-    foreach ($chains as $c) {
-        if (($c['key'] ?? '') === $chainKey) {
+    foreach (active_chains() as $c) {
+        if ($c['key'] === $chainKey) {
             return $c;
         }
     }
     return null;
+}
+
+/**
+ * Every active chain, in display order, keyed camelCase to match the shape the
+ * frontend and the old static file used.
+ */
+function active_chains(): array
+{
+    static $cache = null;
+    if ($cache !== null) {
+        return $cache;
+    }
+    try {
+        $db = get_db();
+        $rows = $db->query(
+            'SELECT * FROM chains WHERE is_active = 1 ORDER BY sort_order, chain_name'
+        )->fetchAll();
+        $epStmt = $db->prepare(
+            "SELECT kind, url FROM chain_endpoints
+             WHERE chain_key = ? AND is_active = 1 ORDER BY priority, id"
+        );
+        $out = [];
+        foreach ($rows as $r) {
+            // Highest-priority endpoint of each kind; the proxies do their own
+            // failover, so one representative URL is all this shape carries.
+            $lcd = '';
+            $rpc = '';
+            $epStmt->execute([$r['chain_key']]);
+            foreach ($epStmt->fetchAll() as $ep) {
+                if ($ep['kind'] === 'lcd' && $lcd === '') $lcd = $ep['url'];
+                if ($ep['kind'] === 'rpc' && $rpc === '') $rpc = $ep['url'];
+            }
+            $out[] = [
+                'key' => $r['chain_key'],
+                'chainId' => $r['chain_id'],
+                'chainName' => $r['chain_name'],
+                'bech32Prefix' => $r['bech32_prefix'],
+                'denom' => $r['denom'],
+                'displayDenom' => $r['display_denom'],
+                'decimals' => (int) $r['decimals'],
+                'lcd' => $lcd,
+                'rpc' => $rpc,
+                'beehiveValidator' => $r['beehive_validator'],
+                'beehiveMoniker' => $r['beehive_moniker'],
+            ];
+        }
+        $cache = $out;
+    } catch (Throwable $e) {
+        // Fail closed - see chain_config().
+        error_log('active_chains: registry unavailable: ' . $e->getMessage());
+        $cache = [];
+    }
+    return $cache;
 }
 
 /**

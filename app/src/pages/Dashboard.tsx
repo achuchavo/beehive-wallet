@@ -382,6 +382,10 @@ export default function Dashboard() {
         staked,
         rewards,
         commission,
+        // Named exactly what it is. This was labelled "Total value" while
+        // omitting unbonding balances and unclaimed rewards, so it understated
+        // holdings and did so silently. Unbonding is not queried yet (see the
+        // audit report); until it is, the label must not promise a total.
         total: addBase(available, staked),
         claimable: addBase(rewards, commission),
         anyValidator: inChain.some((r) => r.portfolio.isValidator),

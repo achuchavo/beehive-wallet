@@ -32,10 +32,19 @@ if (strlen($mainAddress) > 120) {
 // Main address is optional, but if given it must be a valid, unused address.
 $storeAddress = null;
 if ($mainAddress !== '') {
-    $chains = json_decode(file_get_contents(__DIR__ . '/chains.json'), true);
-    $prefix = $chains[0]['bech32Prefix'];
-    if (!looks_like_address($mainAddress, $prefix)) {
-        json_error("Enter a valid {$chains[0]['chainName']} address, or leave it blank");
+    // Any ACTIVE chain, not just the first one. This read chains[0] from the
+    // static file, so a Chihuahua address was rejected as "not a valid Medibloc
+    // address" - the audit named three endpoints with this bug; this was a
+    // fourth.
+    $matched = false;
+    foreach (active_chains() as $c) {
+        if (looks_like_address($mainAddress, $c['bech32Prefix'])) {
+            $matched = true;
+            break;
+        }
+    }
+    if (!$matched) {
+        json_error('Enter a valid wallet address for a supported network, or leave it blank');
     }
     $storeAddress = $mainAddress;
 }

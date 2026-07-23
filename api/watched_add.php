@@ -15,15 +15,10 @@ if (!in_array($alarmType, $allowedTypes, true)) {
     $alarmType = 'both';
 }
 
-// Chain registry lives in config/chains.json (shared with the watcher).
-$chains = json_decode(file_get_contents(__DIR__ . '/chains.json'), true);
-$chain = null;
-foreach ($chains as $c) {
-    if ($c['key'] === $chainKey) {
-        $chain = $c;
-        break;
-    }
-}
+// One registry for the whole app: the `chains` table, via chain_config().
+// This used to read a static chains.json that only ever listed Medibloc, so
+// watching a Chihuahua address failed with "Unknown chain".
+$chain = chain_config($chainKey);
 if ($chain === null) {
     json_error('Unknown chain');
 }

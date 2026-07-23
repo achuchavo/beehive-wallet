@@ -14,12 +14,13 @@ import {
 } from '../chains'
 import { assertAccountAddress } from '../wallet/address'
 import { addBase } from '../wallet/amount'
-import { simulateTx, broadcastTx, sendMsg, type FeeEstimate } from '../wallet/tx'
+import { simulateTx, broadcastTx, lookupTx, sendMsg, type FeeEstimate } from '../wallet/tx'
 import { useWallet } from '../wallet/WalletContext'
 import { useT } from '../i18n/I18nContext'
 import PercentButtons from '../components/PercentButtons'
 import CopyAddress from '../components/CopyAddress'
 import TxReview, { type ReviewRow } from '../components/TxReview'
+import TxUnresolved from '../components/TxUnresolved'
 
 // Transaction speed = gas-price multiplier over the chain minimum. A higher gas
 // price gets the tx included faster; "low" is the network minimum (current cost).
@@ -124,6 +125,8 @@ function SendForm() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [txHash, setTxHash] = useState('')
+  // Hash of a transaction whose fate is unknown - see TxUnresolved.
+  const [unresolved, setUnresolved] = useState('')
   const [balance, setBalance] = useState<string | null>(null)
   // Pending review: the simulated plan awaiting the user's explicit confirmation.
   const [review, setReview] = useState<{
@@ -194,7 +197,7 @@ function SendForm() {
     // the review. Nothing is broadcast here.
     setBusy(true)
     try {
-      const signer = await getSigner(active.address, password)
+      const signer = await getSigner(active.id, password)
       // The key material is derived - the plaintext password is not needed for
       // any later step, so drop it now rather than holding it through review
       // and broadcast. A retry after this point requires re-entering it.
@@ -217,6 +220,15 @@ function SendForm() {
     }
   }
 
+  function clearAfterSend(hash: string) {
+    setTxHash(hash)
+    setReview(null)
+    setTo('')
+    setAmount('')
+    setMemo('')
+    setPassword('')
+  }
+
   // Step 2: the user has reviewed and confirmed - sign and broadcast with the
   // exact fee that was shown.
   async function confirmSend() {
@@ -224,7 +236,7 @@ function SendForm() {
     setConfirming(true)
     setError('')
     try {
-      const hash = await broadcastTx(
+      const outcome = await broadcastTx(
         chain,
         review.signer,
         active.address,
@@ -232,19 +244,64 @@ function SendForm() {
         review.est.fee,
         review.memo,
       )
-      setTxHash(hash)
-      setReview(null)
-      setTo('')
-      setAmount('')
-      setMemo('')
-      setPassword('')
+
+      if (outcome.status === 'unknown') {
+        // The node may already hold this transaction. Resolve it by hash before
+        // offering anything that looks like a retry - the form is deliberately
+        // NOT cleared, but no error is shown either, because "failed" would be
+        // a false statement.
+        const lookup = await lookupTx(chain, outcome.hash)
+        if (lookup.status === 'success') {
+          clearAfterSend(outcome.hash)
+        } else if (lookup.status === 'rejected') {
+          setError(lookup.rawLog || t('send.errSendFailed'))
+          setReview(null)
+        } else {
+          setUnresolved(outcome.hash)
+          setReview(null)
+        }
+        return
+      }
+
+      if (outcome.status === 'rejected') {
+        setError(outcome.rawLog || t('send.errSendFailed'))
+        setReview(null)
+        return
+      }
+
+      clearAfterSend(outcome.hash)
     } catch (err) {
+      // Pre-submission failure: nothing was sent, so this is a true error.
       setError(err instanceof Error ? err.message : t('send.errSendFailed'))
       setReview(null)
     } finally {
       setConfirming(false)
     }
   }
+
+  const unresolvedModal = unresolved && chain ? (
+    <TxUnresolved
+      chain={chain}
+      hash={unresolved}
+      busy={confirming}
+      onRecheck={async () => {
+        setConfirming(true)
+        try {
+          const l = await lookupTx(chain, unresolved)
+          if (l.status === 'success') {
+            setUnresolved('')
+            clearAfterSend(unresolved)
+          } else if (l.status === 'rejected') {
+            setUnresolved('')
+            setError(l.rawLog || t('send.errSendFailed'))
+          }
+        } finally {
+          setConfirming(false)
+        }
+      }}
+      onDismiss={() => setUnresolved('')}
+    />
+  ) : null
 
   if (!active) return null
   if (!chain) {
@@ -393,6 +450,7 @@ function SendForm() {
         {busy ? t('send.simulating') : t('send.review')}
       </button>
 
+      {unresolvedModal}
       {review && (
         <TxReview
           rows={reviewRows(review)}
