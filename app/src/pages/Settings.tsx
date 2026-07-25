@@ -7,7 +7,9 @@ import { findChain, type ChainInfo } from '../chains'
 import PasswordInput from '../components/PasswordInput'
 import CopyAddress from '../components/CopyAddress'
 import ChainPicker from '../components/ChainPicker'
+import HelpTip from '../components/HelpTip'
 import OptionPicker from '../components/OptionPicker'
+import PageHeader from '../components/PageHeader'
 import RemoveWalletDialog from '../components/RemoveWalletDialog'
 import Checkbox from '../components/Checkbox'
 import SecretShield from '../components/SecretShield'
@@ -110,7 +112,13 @@ export default function Settings() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold">{t('settings.title')}</h1>
+      {/* The non-custodial reassurance used to be a paragraph under a second
+          heading ("Your wallets") that repeated what the list already showed.
+          It is the page's subtitle now, and the heading is gone. */}
+      <PageHeader
+        title={t('settings.title')}
+        subtitle={mode === 'list' ? t('settings.walletsDesc') : undefined}
+      />
       {mode === 'list' && <WalletList onCreate={() => setMode('create')} onImport={() => setMode('import')} />}
       {mode === 'create' && <CreateWallet onDone={goList} />}
       {mode === 'import' && <ImportWallet onDone={goList} />}
@@ -185,11 +193,10 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
   return (
     <div className="space-y-4">
       <section className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="font-medium">{t('settings.yourWallets')}</h2>
-          {/* Only worth offering once wallets actually span more than one
-              network; with a single chain it filters nothing. */}
-          {walletChains.length > 1 && (
+        {/* Only worth offering once wallets actually span more than one
+            network; with a single chain it filters nothing. */}
+        {walletChains.length > 1 && (
+          <div className="flex justify-end">
             <OptionPicker
               label={t('dash.chainFilter')}
               value={chainFilter}
@@ -199,15 +206,14 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
                 ...walletChains.map((c) => ({ value: c.key, label: c.chainName })),
               ]}
             />
-          )}
-        </div>
-        <p className="text-sm text-slate-500">{t('settings.walletsDesc')}</p>
+          </div>
+        )}
         {wallets.length === 0 ? (
           <p className="text-sm text-slate-500">{t('settings.noWallets')}</p>
         ) : shown.length === 0 ? (
           <p className="text-sm text-slate-500">{t('settings.noWalletsOnChain')}</p>
         ) : (
-          <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
+          <ul className="divide-y divide-slate-100 rounded-2xl bg-white ring-1 ring-slate-200/70">
             {shown.map((w) => (
               <li key={w.id} className="space-y-2 px-4 py-3">
                 <div className="flex items-center gap-3">
@@ -231,16 +237,20 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
                     </div>
                     <CopyAddress address={w.address} className="max-w-full text-xs text-slate-500" />
                   </div>
-                  <button
-                    onClick={() => (revealFor === w.id ? closeReveal() : setRevealFor(w.id))}
-                    className="text-xs text-amber-700 hover:underline"
-                  >
-                    {revealFor === w.id
-                      ? t('common.close')
-                      : w.kind === 'privkey'
-                        ? t('settings.showKey')
-                        : t('settings.showSeed')}
-                  </button>
+                  <span className="flex shrink-0 items-center gap-1">
+                    <button
+                      onClick={() => (revealFor === w.id ? closeReveal() : setRevealFor(w.id))}
+                      className="text-xs text-amber-700 hover:underline"
+                    >
+                      {revealFor === w.id
+                        ? t('common.close')
+                        : w.kind === 'privkey'
+                          ? t('settings.showKey')
+                          : t('settings.showSeed')}
+                    </button>
+                    {/* What this actually reveals, before it is on screen. */}
+                    <HelpTip text={t('help.seedPhrase')} className="text-slate-400" />
+                  </span>
                   <button
                     onClick={() => setRemoving({ id: w.id, address: w.address, name: w.name })}
                     className="text-xs text-red-600 hover:underline"
@@ -300,15 +310,15 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
       <div className="flex gap-2">
         <button
           onClick={onCreate}
-          className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600"
+          className="flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-medium text-slate-900 hover:bg-amber-600"
         >
-          <Plus className="h-4 w-4" /> {t('settings.createNew')}
+          <Plus className="h-4 w-4" strokeWidth={1.8} /> {t('settings.createNew')}
         </button>
         <button
           onClick={onImport}
-          className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm hover:border-amber-500"
+          className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm text-slate-600 ring-1 ring-slate-200 hover:text-amber-700"
         >
-          <Import className="h-4 w-4" /> {t('settings.import')}
+          <Import className="h-4 w-4" strokeWidth={1.8} /> {t('settings.import')}
         </button>
       </div>
 

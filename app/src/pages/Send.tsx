@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { SendHorizontal, QrCode, Copy, Check, CircleCheck, Plus, Import } from 'lucide-react'
+import { SendHorizontal, Copy, Check, CircleCheck, Plus, Import } from 'lucide-react'
 import type { OfflineDirectSigner, EncodeObject } from '@cosmjs/proto-signing'
 import QRCode from 'qrcode'
 import PasswordInput from '../components/PasswordInput'
@@ -19,8 +19,13 @@ import { useWallet } from '../wallet/WalletContext'
 import { useT } from '../i18n/I18nContext'
 import PercentButtons from '../components/PercentButtons'
 import CopyAddress from '../components/CopyAddress'
+import Card from '../components/Card'
+import HelpTip from '../components/HelpTip'
+import PageHeader from '../components/PageHeader'
+import Tabs, { TabPanel } from '../components/Tabs'
 import TxReview, { type ReviewRow } from '../components/TxReview'
 import TxUnresolved from '../components/TxUnresolved'
+import { maskAmount, usePrivacyMode } from '../privacyMode'
 
 // Transaction speed = gas-price multiplier over the chain minimum. A higher gas
 // price gets the tx included faster; "low" is the network minimum (current cost).
@@ -31,6 +36,11 @@ const SPEED_OPTIONS = [
 ] as const
 type Speed = (typeof SPEED_OPTIONS)[number]['key']
 
+// One field style for the whole form. A ring instead of a border keeps the
+// inputs flush with the soft cards around them.
+const FIELD_CLASS =
+  'w-full rounded-xl bg-white px-3.5 py-2.5 text-sm ring-1 ring-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500'
+
 export default function Send() {
   const { active } = useWallet()
   const { t } = useT()
@@ -38,8 +48,8 @@ export default function Send() {
 
   if (!active) {
     return (
-      <div>
-        <h1 className="text-xl font-semibold">{t('send.title')}</h1>
+      <div className="space-y-6">
+        <PageHeader title={t('send.title')} />
         <EmptyState
           icon={SendHorizontal}
           title={t('send.noWallet')}
@@ -54,23 +64,27 @@ export default function Send() {
   }
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-xl font-semibold">{t('send.title')}</h1>
-      <div className="flex gap-1">
-        {(['send', 'receive'] as const).map((tb) => (
-          <button
-            key={tb}
-            onClick={() => setTab(tb)}
-            className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm ${
-              tab === tb ? 'bg-amber-500 font-medium text-slate-900' : 'bg-slate-100 text-slate-600'
-            }`}
-          >
-            {tb === 'send' ? <SendHorizontal className="h-3.5 w-3.5" /> : <QrCode className="h-3.5 w-3.5" />}
-            {tb === 'send' ? t('send.tabSend') : t('send.tabReceive')}
-          </button>
-        ))}
-      </div>
-      {tab === 'send' ? <SendForm /> : <Receive />}
+    <div className="space-y-6">
+      <PageHeader title={t('send.title')} />
+      {/* Real tab semantics rather than two styled buttons: this is the app's
+          own Tabs component, so arrow keys, aria-selected and the panel wiring
+          come with it. */}
+      <Tabs
+        idPrefix="send"
+        label={t('send.title')}
+        activeId={tab}
+        onChange={(id) => setTab(id as 'send' | 'receive')}
+        items={[
+          { id: 'send', label: t('send.tabSend') },
+          { id: 'receive', label: t('send.tabReceive') },
+        ]}
+      />
+      <TabPanel id="send" activeId={tab} idPrefix="send">
+        <SendForm />
+      </TabPanel>
+      <TabPanel id="receive" activeId={tab} idPrefix="send">
+        <Receive />
+      </TabPanel>
     </div>
   )
 }
@@ -98,14 +112,14 @@ function Receive() {
   }
 
   return (
-    <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+    <Card className="space-y-3">
       <div className="text-sm font-medium">{active.name}</div>
       {/* Network first and unmissable. Sending an asset on the wrong chain to a
           correct-looking address is one of the few ways to lose funds outright
           with no recovery, so the chain, its id and the asset are stated before
           the address rather than implied by it. */}
       {chain && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        <div className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200/80">
           <div className="font-medium">
             {t('send.receiveNetwork', { chain: chain.chainName, denom: chain.displayDenom })}
           </div>
@@ -113,22 +127,23 @@ function Receive() {
           <p className="mt-1">{t('send.receiveWarning', { chain: chain.chainName })}</p>
         </div>
       )}
-      <canvas ref={canvasRef} className="rounded-lg border border-slate-100" />
+      <canvas ref={canvasRef} className="rounded-xl" />
       <div className="break-all font-mono text-sm text-slate-600">{active.address}</div>
       <button
         onClick={copy}
-        className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:border-amber-500"
+        className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm text-slate-600 ring-1 ring-slate-200 hover:text-amber-700"
       >
         {copied ? <Check className="h-3.5 w-3.5 text-green-700" /> : <Copy className="h-3.5 w-3.5" />}
         {copied ? t('send.copied') : t('send.copyAddress')}
       </button>
-    </div>
+    </Card>
   )
 }
 
 function SendForm() {
   const { active, getSigner } = useWallet()
   const { t } = useT()
+  const hidden = usePrivacyMode()
   // The chain comes from the active wallet's own chainKey - never a global
   // default - so denom, gas and RPC always match the wallet being signed with.
   const chain = active ? findChain(active.chainKey) : undefined
@@ -328,20 +343,31 @@ function SendForm() {
   }
 
   return (
-    <form onSubmit={submit} className="max-w-lg space-y-3">
-      <div className="rounded-lg bg-slate-50 px-4 py-2 text-sm text-slate-600">
-        {t('send.from')} <span className="font-medium">{active.name}</span>
-        <CopyAddress
-          address={active.address}
-          display={`${active.address.slice(0, 14)}...${active.address.slice(-6)}`}
-          className="ml-2 align-middle text-xs text-slate-500"
-        />
+    <form onSubmit={submit} className="max-w-lg space-y-4">
+      {/* Who is paying, and what they have. The balance is the one figure on
+          this screen the user reads before deciding an amount, so it is set
+          large and quiet rather than tucked into a sentence. */}
+      <Card className="flex items-center justify-between gap-3">
+        <span className="min-w-0">
+          <span className="block text-xs text-slate-500">{t('send.from')}</span>
+          <span className="block truncate text-sm font-medium">{active.name}</span>
+          <CopyAddress
+            address={active.address}
+            display={`${active.address.slice(0, 14)}...${active.address.slice(-6)}`}
+            className="max-w-full text-xs text-slate-500"
+          />
+        </span>
         {balance !== null && (
-          <span className="ml-2 text-xs">
-            {t('send.balance')}: {formatAmount(balance, chain)} {chain.displayDenom}
+          <span className="shrink-0 text-right">
+            <span className="block text-xs text-slate-500">{t('send.balance')}</span>
+            <span className="block text-lg font-semibold tabular-nums">
+              {maskAmount(formatAmount(balance, chain), hidden)}{' '}
+              <span className="text-xs font-medium text-slate-500">{chain.displayDenom}</span>
+            </span>
           </span>
         )}
-      </div>
+      </Card>
+
       {/* Persistent labels, not placeholders: a placeholder vanishes the moment
           you type, so the field loses its name exactly while it holds a value
           you are meant to check. On money fields that matters more than usual. */}
@@ -356,61 +382,77 @@ function SendForm() {
           placeholder={t('send.recipient', { prefix: chain.bech32Prefix })}
           required
           autoComplete="off"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
+          className={`font-mono ${FIELD_CLASS}`}
         />
       </label>
-      <span className="mb-1 block text-xs font-medium text-slate-600">
-        {t('send.amountLabel', { denom: chain.displayDenom })}
-      </span>
-      <div className="flex items-center gap-2">
-        <input
-          name="beehive-amount"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value.trim())}
-          placeholder={t('send.amount')}
-          aria-label={t('send.amountLabel', { denom: chain.displayDenom })}
-          required
-          inputMode="decimal"
-          autoComplete="off"
-          className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-        />
-        <span className="text-sm text-slate-500">{chain.displayDenom}</span>
-      </div>
-      {balance !== null && (
-        <PercentButtons
-          maxBase={balance}
-          reserveBase={feeReserve(chain, Math.ceil(120000 * speedMult))}
-          chain={chain}
-          onPick={setAmount}
-        />
-      )}
-      <input
-        name="beehive-memo"
-        value={memo}
-        onChange={(e) => setMemo(e.target.value)}
-        placeholder={t('send.memoOptional')}
-        aria-label={t('send.memoOptional')}
-        maxLength={256}
-        autoComplete="off"
-        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-      />
 
-      {/* Transaction speed: a gas-price multiplier. Higher = faster inclusion. */}
+      <div>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-slate-600">
+            {t('send.amountLabel', { denom: chain.displayDenom })}
+          </span>
+          <span className="flex items-center gap-2">
+            <input
+              name="beehive-amount"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value.trim())}
+              placeholder={t('send.amount')}
+              required
+              inputMode="decimal"
+              autoComplete="off"
+              className={`flex-1 text-lg tabular-nums ${FIELD_CLASS}`}
+            />
+            <span className="text-sm text-slate-500">{chain.displayDenom}</span>
+          </span>
+        </label>
+        {balance !== null && (
+          <div className="mt-2">
+            <PercentButtons
+              maxBase={balance}
+              reserveBase={feeReserve(chain, Math.ceil(120000 * speedMult))}
+              chain={chain}
+              onPick={setAmount}
+            />
+          </div>
+        )}
+      </div>
+
+      <label className="block">
+        <span className="mb-1 flex items-center gap-1 text-xs font-medium text-slate-600">
+          {t('send.memoOptional')}
+          <HelpTip text={t('help.memo')} align="start" />
+        </span>
+        <input
+          name="beehive-memo"
+          value={memo}
+          onChange={(e) => setMemo(e.target.value)}
+          maxLength={256}
+          autoComplete="off"
+          className={FIELD_CLASS}
+        />
+      </label>
+
+      {/* Transaction speed: a gas-price multiplier. Higher = faster inclusion.
+          The prose hint that used to sit under this is now the "?" - it says
+          the same thing, on demand, without a paragraph on every visit. */}
       <div>
         <div className="mb-1.5 flex items-baseline justify-between">
-          <span className="text-xs font-medium text-slate-500">{t('send.speed')}</span>
+          <span className="flex items-center gap-1 text-xs font-medium text-slate-600">
+            {t('send.speed')}
+            <HelpTip text={t('help.speed')} align="start" />
+          </span>
           <span className="text-xs text-slate-500">
             {scaledGasPrice(chain, speedMult)} · {gasPriceInDisplay(chain, speedMult)} {chain.displayDenom}
           </span>
         </div>
-        <div className="grid grid-cols-3 gap-1 rounded-lg bg-slate-100 p-1">
+        <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
           {SPEED_OPTIONS.map((s) => (
             <button
               key={s.key}
               type="button"
               onClick={() => setSpeed(s.key)}
               aria-pressed={speed === s.key}
-              className={`rounded-md py-1.5 text-xs font-medium transition-colors ${
+              className={`rounded-lg py-1.5 text-xs font-medium transition-colors ${
                 speed === s.key
                   ? 'bg-white text-amber-700 shadow-sm'
                   : 'text-slate-500 hover:text-slate-700'
@@ -420,27 +462,31 @@ function SendForm() {
             </button>
           ))}
         </div>
-        <p className="mt-1 text-xs text-slate-500">{t('send.speedHint')}</p>
       </div>
-      <PasswordInput
-        name="beehive-sign-password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        placeholder={t('send.signPassword')}
-        aria-label={t('send.signPassword')}
-        required
-        autoComplete="new-password"
-        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-      />
-      <p className="text-xs text-slate-500">
-        {t('send.feeNote', {
-          denom: chain.displayDenom,
-          gas: scaledGasPrice(chain, speedMult),
-          gasMed: gasPriceInDisplay(chain, speedMult),
-        })}
-      </p>
+
+      {/* htmlFor rather than a wrapping <label>: PasswordInput contains its own
+          show/hide button, and a label containing a button forwards clicks in
+          ways that have already bitten this codebase once (see Modal). */}
+      <div>
+        <label
+          htmlFor="beehive-sign-password"
+          className="mb-1 flex items-center gap-1 text-xs font-medium text-slate-600"
+        >
+          {t('send.signPassword')}
+          <HelpTip text={t('help.walletPassword')} align="start" />
+        </label>
+        <PasswordInput
+          id="beehive-sign-password"
+          name="beehive-sign-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          autoComplete="new-password"
+          className={FIELD_CLASS}
+        />
+      </div>
       {error && (
-        <div role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
         </div>
       )}
@@ -453,7 +499,7 @@ function SendForm() {
         <div
           role="status"
           aria-live="polite"
-          className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800"
+          className="flex items-center gap-2 rounded-xl bg-green-50 px-3 py-2 text-sm text-green-800"
         >
           <CircleCheck className="h-4 w-4 shrink-0" />
           {t('send.sent')}{' '}
@@ -467,11 +513,12 @@ function SendForm() {
           </a>
         </div>
       )}
+      {/* The one primary action on this screen. */}
       <button
         disabled={busy}
-        className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-3 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
       >
-        <SendHorizontal className="h-4 w-4" />
+        <SendHorizontal className="h-4 w-4" strokeWidth={1.8} />
         {busy ? t('send.simulating') : t('send.review')}
       </button>
 

@@ -190,7 +190,7 @@ function App() {
   const BannerIcon = banner ? BANNER_ICON[banner.severity] : Info
 
   const navLinkClass = ({ isActive }: { isActive: boolean }) =>
-    `flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm ${
+    `flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors ${
       isActive ? 'bg-amber-50 font-medium text-amber-700' : 'text-slate-600 hover:bg-slate-100'
     }`
 
@@ -261,7 +261,7 @@ function App() {
   return (
     <div className="min-h-screen md:flex">
       {/* Desktop sidebar */}
-      <nav className="hidden md:flex md:w-56 md:shrink-0 md:flex-col md:border-r md:border-slate-200 md:px-3 md:py-6">
+      <nav className="hidden md:flex md:w-56 md:shrink-0 md:flex-col md:border-r md:border-slate-200/70 md:px-3 md:py-6">
         <div className="flex items-center gap-2 px-3 pb-4 font-semibold text-amber-700">
           <img src={`${import.meta.env.BASE_URL}beehive.ico`} alt="" className="h-6 w-6" />
           Beehive Wallet
@@ -387,12 +387,14 @@ function App() {
         </button>
       </nav>
 
+      {/* More room than before, and more of it on desktop: the pages below are
+          card stacks now, and they need air around them to read as calm. */}
       <main
-        className={`mx-auto w-full flex-1 px-4 pb-24 pt-6 md:pb-6 ${wide ? 'max-w-5xl' : 'max-w-3xl'}`}
+        className={`mx-auto w-full flex-1 px-4 pb-24 pt-8 md:px-8 md:pb-10 ${wide ? 'max-w-5xl' : 'max-w-3xl'}`}
       >
         {banner && (
           <div
-            className={`mb-4 flex items-center gap-2.5 rounded-lg border px-4 py-3 text-sm ${BANNER_STYLE[banner.severity]}`}
+            className={`mb-5 flex items-center gap-2.5 rounded-xl border px-4 py-3 text-sm ${BANNER_STYLE[banner.severity]}`}
           >
             <BannerIcon className="h-4 w-4 shrink-0" />
             {banner.message}
@@ -403,7 +405,7 @@ function App() {
         {chainStatus !== 'ready' && (
           <div
             role="status"
-            className={`mb-4 flex items-center gap-2.5 rounded-lg border px-4 py-3 text-sm ${
+            className={`mb-5 flex items-center gap-2.5 rounded-xl border px-4 py-3 text-sm ${
               chainStatus === 'error'
                 ? 'border-red-200 bg-red-50 text-red-800'
                 : 'border-slate-200 bg-slate-50 text-slate-600'

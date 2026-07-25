@@ -1,10 +1,24 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight, ExternalLink, Wallet } from 'lucide-react'
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  Repeat,
+  Wallet,
+} from 'lucide-react'
 import { DEFAULT_CHAIN, chainForAddress, formatAmount, type ChainInfo } from '../chains'
 import { api, type WatchedAddress } from '../api'
 import { useWallet } from '../wallet/WalletContext'
 import { fetchTxSearch } from '../wallet/txsearch'
+import { isValidAccountAddress } from '../wallet/address'
+import { maskAmount, usePrivacyMode } from '../privacyMode'
+import Card from '../components/Card'
+import CopyAddress from '../components/CopyAddress'
 import LoadingOverlay from '../components/LoadingOverlay'
+import Modal from '../components/Modal'
+import PageHeader from '../components/PageHeader'
 import { useT } from '../i18n/I18nContext'
 
 type Translate = (key: string, vars?: Record<string, string | number>) => string
@@ -14,7 +28,15 @@ interface TxRow {
   height: number
   time: string
   direction: 'sent' | 'received' | 'other'
-  summary: string
+  /** Base-unit amount moved, or '' when this message type does not carry one. */
+  amount: string
+  /** The other party in a transfer. Empty for non-transfer messages. */
+  counterparty: string
+  /** Base-unit network fee, or '' when the response did not include one. */
+  fee: string
+  memo: string
+  /** Message type name, e.g. "Delegate" - shown when there is no amount. */
+  type: string
 }
 
 type Filter = 'all' | 'sent' | 'received' | 'other'
@@ -26,7 +48,10 @@ interface LcdTxResponse {
   txhash: string
   height: string
   timestamp: string
-  tx: { body: { messages: Record<string, unknown>[] } }
+  tx: {
+    body: { messages: Record<string, unknown>[]; memo?: string }
+    auth_info?: { fee?: { amount?: { denom: string; amount: string }[] } }
+  }
 }
 
 /** Local date+time for reading, with the precise UTC value in the tooltip. */
@@ -48,6 +73,12 @@ function msgTypeName(type: string) {
   return last.replace(/^Msg/, '')
 }
 
+/** The fee actually paid, in the chain's own denom. Base units, never a float. */
+function feeOf(resp: LcdTxResponse, chain: ChainInfo): string {
+  const coins = resp.tx?.auth_info?.fee?.amount ?? []
+  return coins.find((c) => c.denom === chain.denom)?.amount ?? ''
+}
+
 function classify(
   resp: LcdTxResponse,
   address: string,
@@ -57,7 +88,8 @@ function classify(
 ): TxRow {
   const messages = resp.tx?.body?.messages ?? []
   let direction: TxRow['direction'] = fromQuery === 'sent' ? 'other' : 'received'
-  let summary = ''
+  let amount = ''
+  let counterparty = ''
 
   for (const msg of messages) {
     const type = String(msg['@type'] ?? '')
@@ -65,21 +97,20 @@ function classify(
       const from = String(msg['from_address'] ?? '')
       const to = String(msg['to_address'] ?? '')
       const coins = (msg['amount'] ?? []) as { amount: string; denom: string }[]
-      const amt = coins[0] ? `${formatAmount(coins[0].amount, chain)} ${chain.displayDenom}` : ''
+      // Base units all the way through - the value is only ever formatted for
+      // display, never parsed into a number.
+      const coin = coins.find((c) => c.denom === chain.denom) ?? coins[0]
       if (from === address) {
         direction = 'sent'
-        summary = t('history.sentTo', { amt, to: shortAddr(to) })
+        counterparty = to
+        amount = coin?.amount ?? ''
       } else if (to === address) {
         direction = 'received'
-        summary = t('history.receivedFrom', { amt, from: shortAddr(from) })
+        counterparty = from
+        amount = coin?.amount ?? ''
       }
       break
     }
-  }
-
-  if (!summary) {
-    const type = messages[0] ? msgTypeName(String(messages[0]['@type'] ?? '')) : t('history.txDefault')
-    summary = direction === 'received' ? t('history.receivedType', { type }) : type
   }
 
   return {
@@ -90,7 +121,11 @@ function classify(
     // people mentally convert, and they get it wrong.
     time: resp.timestamp ?? '',
     direction,
-    summary,
+    amount,
+    counterparty,
+    fee: feeOf(resp, chain),
+    memo: resp.tx?.body?.memo ?? '',
+    type: messages[0] ? msgTypeName(String(messages[0]['@type'] ?? '')) : t('history.txDefault'),
   }
 }
 
@@ -132,9 +167,24 @@ interface Chip {
   mine: boolean
 }
 
+const DIR_ICON: Record<TxRow['direction'], typeof ArrowDownLeft> = {
+  received: ArrowDownLeft,
+  sent: ArrowUpRight,
+  other: Repeat,
+}
+
+// Muted on purpose. A statement earns its calm by letting the amounts carry the
+// meaning, not by colour-coding every row.
+const DIR_TONE: Record<TxRow['direction'], string> = {
+  received: 'bg-green-50 text-green-700',
+  sent: 'bg-slate-100 text-slate-600',
+  other: 'bg-slate-100 text-slate-500',
+}
+
 export default function History() {
   const { t } = useT()
   const { wallets, active } = useWallet()
+  const hidden = usePrivacyMode()
   const [address, setAddress] = useState('')
   const [loadedAddress, setLoadedAddress] = useState('')
   const [rows, setRows] = useState<TxRow[] | null>(null)
@@ -143,6 +193,9 @@ export default function History() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [watched, setWatched] = useState<WatchedAddress[]>([])
+  // The row whose detail dialog is open. Held as the row itself so the dialog
+  // keeps rendering the transaction the user opened even if the list reloads.
+  const [detail, setDetail] = useState<TxRow | null>(null)
 
   useEffect(() => {
     api
@@ -155,7 +208,11 @@ export default function History() {
     async (addr: string) => {
       // Chain resolved from the address's own Bech32 prefix.
       const chain = chainForAddress(addr)
-      if (!addr.startsWith(chain.bech32Prefix + '1')) {
+      // Full Bech32 validation, not a prefix check. A mistyped address passes a
+      // startsWith test, finds nothing, and is then reported as "No
+      // transactions found" - an empty statement presented as fact about an
+      // address the user never asked about.
+      if (!isValidAccountAddress(addr, chain.bech32Prefix)) {
         setError(
           t('history.errAddress', {
             chain: DEFAULT_CHAIN.chainName,
@@ -204,11 +261,6 @@ export default function History() {
   const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE))
   const pageRows = visible.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
 
-  const dirStyle: Record<TxRow['direction'], string> = {
-    sent: 'bg-red-100 text-red-700',
-    received: 'bg-green-100 text-green-700',
-    other: 'bg-slate-100 text-slate-600',
-  }
   const dirLabel: Record<TxRow['direction'], string> = {
     sent: t('history.filterSent'),
     received: t('history.filterReceived'),
@@ -221,9 +273,49 @@ export default function History() {
     other: t('history.filterOther'),
   }
 
+  /**
+   * Signed, grouped, and masked when privacy mode is on. Empty for message
+   * types that move nothing - formatAmount('') would render a confident "0".
+   */
+  function amountText(r: TxRow): string {
+    if (!r.amount) return ''
+    const formatted = maskAmount(formatAmount(r.amount, displayChain), hidden)
+    return `${r.direction === 'sent' ? '−' : '+'}${formatted}`
+  }
+
   return (
-    <div className="space-y-4">
-      <h1 className="text-xl font-semibold">{t('history.title')}</h1>
+    <div className="space-y-6">
+      <PageHeader
+        title={t('history.title')}
+        subtitle={loadedAddress ? shortAddr(loadedAddress) : undefined}
+        help={t('help.history')}
+      />
+
+      {chips.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {chips.map((c) => {
+            const activeChip = c.address === loadedAddress
+            return (
+              <button
+                key={c.address}
+                onClick={() => load(c.address)}
+                aria-pressed={activeChip}
+                className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition-colors ${
+                  activeChip
+                    ? 'bg-amber-100 font-medium text-amber-900'
+                    : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:text-amber-700'
+                }`}
+              >
+                {c.mine && <Wallet className="h-3 w-3" strokeWidth={1.8} />}
+                {c.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Looking up someone else's address is the secondary use of this page, so
+          it sits below the user's own wallets and stays visually quiet. */}
       <form
         onSubmit={(e) => {
           e.preventDefault()
@@ -239,55 +331,24 @@ export default function History() {
           aria-label={t('history.addressLabel')}
           required
           autoComplete="off"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
+          className="w-full rounded-xl bg-white px-3.5 py-2.5 font-mono text-sm text-slate-700 ring-1 ring-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
         />
         <button
           disabled={loading}
-          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
+          className="shrink-0 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-600 ring-1 ring-slate-200 hover:text-amber-700 disabled:opacity-50"
         >
           {loading ? t('common.loading') : t('history.load')}
         </button>
       </form>
 
-      {chips.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {chips.map((c) => {
-            const activeChip = c.address === loadedAddress
-            return (
-              <button
-                key={c.address}
-                onClick={() => load(c.address)}
-                className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${
-                  activeChip
-                    ? 'border-amber-500 bg-amber-50 font-medium text-amber-700'
-                    : 'border-slate-300 bg-white text-slate-600 hover:border-amber-500 hover:text-amber-700'
-                }`}
-              >
-                {c.mine && <Wallet className="h-3 w-3" />}
-                {c.label}
-                {c.mine && (
-                  <span className="rounded bg-amber-100 px-1 text-[10px] text-amber-700">{t('history.mine')}</span>
-                )}
-              </button>
-            )
-          })}
-        </div>
-      )}
-
-      {loadedAddress && (
-        <p className="font-mono text-xs text-slate-500">{t('history.showing', { addr: shortAddr(loadedAddress) })}</p>
-      )}
-
       {/* history.querying is a full sentence written for an inline line of
           text; as a modal heading it reads as a wall. Short title, explanation
           underneath. */}
-      {loading && (
-        <LoadingOverlay title={t('history.queryingTitle')} subtitle={t('history.querying')} />
-      )}
-      {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      {loading && <LoadingOverlay title={t('history.queryingTitle')} subtitle={t('history.querying')} />}
+      {error && <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
       {rows !== null && (
-        <>
+        <div className="space-y-3">
           <div className="flex gap-1">
             {(['all', 'sent', 'received', 'other'] as Filter[]).map((f) => (
               <button
@@ -299,50 +360,81 @@ export default function History() {
                 // A selected filter is conveyed by colour alone otherwise;
                 // aria-pressed carries the same state non-visually.
                 aria-pressed={filter === f}
-                className={`rounded-full px-3 py-1 text-xs ${
-                  filter === f ? 'bg-amber-500 font-medium text-slate-900' : 'bg-slate-100 text-slate-600'
+                className={`rounded-full px-3 py-1 text-xs transition-colors ${
+                  filter === f
+                    ? 'bg-amber-100 font-medium text-amber-900'
+                    : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
                 {filterLabel[f]}
               </button>
             ))}
           </div>
+
           {visible.length === 0 ? (
-            <p className="text-sm text-slate-500">{t('history.noTx')}</p>
+            <p className="py-8 text-center text-sm text-slate-500">{t('history.noTx')}</p>
           ) : (
             <>
-              <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
-                {pageRows.map((r) => (
-                  <li key={r.hash} className="px-4 py-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span
-                        className={`rounded px-1.5 py-0.5 text-xs font-medium ${dirStyle[r.direction]}`}
-                      >
-                        {dirLabel[r.direction]}
-                      </span>
-                      <span className="text-xs text-slate-500" title={formatWhen(r.time).exact}>
-                        {formatWhen(r.time).label}
-                      </span>
-                    </div>
-                    <div className="mt-1 text-sm">{r.summary}</div>
-                    <a
-                      href={`${displayChain.explorerTxUrl}${r.hash}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 font-mono text-xs text-amber-700 hover:underline"
-                    >
-                      {r.hash.slice(0, 16)}...
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
-                  </li>
-                ))}
-              </ul>
+              {/* A statement: direction, amount, date. Everything else - the
+                  counterparty, the hash, the fee, the memo - lives in the
+                  detail dialog, one tap away. */}
+              <Card padded={false}>
+                <ul className="divide-y divide-slate-100">
+                  {pageRows.map((r) => {
+                    const Icon = DIR_ICON[r.direction]
+                    const when = formatWhen(r.time)
+                    return (
+                      <li key={r.hash}>
+                        <button
+                          type="button"
+                          onClick={() => setDetail(r)}
+                          aria-label={t('history.openDetail', {
+                            label: r.amount ? dirLabel[r.direction] : r.type,
+                            when: when.label,
+                          })}
+                          className="flex w-full items-center gap-3.5 px-4 py-3.5 text-left transition-colors hover:bg-slate-50/80"
+                        >
+                          <span
+                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${DIR_TONE[r.direction]}`}
+                          >
+                            <Icon className="h-4 w-4" strokeWidth={2} />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium text-slate-900">
+                              {r.amount ? dirLabel[r.direction] : r.type}
+                            </span>
+                            <span className="block text-xs text-slate-500" title={when.exact}>
+                              {when.label}
+                            </span>
+                          </span>
+                          {r.amount && (
+                            <span className="shrink-0 text-right">
+                              <span
+                                className={`block text-[15px] font-semibold tabular-nums ${
+                                  r.direction === 'received' ? 'text-green-700' : 'text-slate-900'
+                                }`}
+                              >
+                                {amountText(r)}
+                              </span>
+                              <span className="block text-xs text-slate-400">
+                                {displayChain.displayDenom}
+                              </span>
+                            </span>
+                          )}
+                          <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </Card>
+
               {pageCount > 1 && (
                 <div className="flex items-center justify-between text-sm">
                   <button
                     onClick={() => setPage((p) => Math.max(0, p - 1))}
                     disabled={page === 0}
-                    className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 hover:border-amber-500 disabled:opacity-40"
+                    className="flex items-center gap-1 rounded-xl px-3 py-1.5 text-slate-600 ring-1 ring-slate-200 hover:text-amber-700 disabled:opacity-40"
                   >
                     <ChevronLeft className="h-4 w-4" /> {t('common.prev')}
                   </button>
@@ -352,7 +444,7 @@ export default function History() {
                   <button
                     onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
                     disabled={page >= pageCount - 1}
-                    className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 hover:border-amber-500 disabled:opacity-40"
+                    className="flex items-center gap-1 rounded-xl px-3 py-1.5 text-slate-600 ring-1 ring-slate-200 hover:text-amber-700 disabled:opacity-40"
                   >
                     {t('common.next')} <ChevronRight className="h-4 w-4" />
                   </button>
@@ -360,8 +452,116 @@ export default function History() {
               )}
             </>
           )}
-        </>
+        </div>
       )}
+
+      {detail && (
+        <TxDetail
+          row={detail}
+          chain={displayChain}
+          hidden={hidden}
+          amountText={amountText(detail)}
+          dirLabel={dirLabel[detail.direction]}
+          onClose={() => setDetail(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+function TxDetail({
+  row,
+  chain,
+  hidden,
+  amountText,
+  dirLabel,
+  onClose,
+}: {
+  row: TxRow
+  chain: ChainInfo
+  hidden: boolean
+  amountText: string
+  dirLabel: string
+  onClose: () => void
+}) {
+  const { t } = useT()
+  const when = formatWhen(row.time)
+
+  return (
+    <Modal title={t('history.detailTitle')} onClose={onClose}>
+      <div className="space-y-5">
+        {/* The amount is the headline here too, so the dialog answers the
+            question the row was already asking. */}
+        <div className="text-center">
+          <div className="text-xs uppercase tracking-wide text-slate-500">
+            {row.amount ? dirLabel : row.type}
+          </div>
+          {row.amount && (
+            <div className="mt-1 text-3xl font-semibold tabular-nums text-slate-900">
+              {amountText}{' '}
+              <span className="text-base font-medium text-slate-500">{chain.displayDenom}</span>
+            </div>
+          )}
+        </div>
+
+        <dl className="divide-y divide-slate-100 text-sm">
+          <Detail label={t('history.detailWhen')}>
+            <span title={when.exact}>{when.label}</span>
+          </Detail>
+          {row.counterparty && (
+            <Detail
+              label={row.direction === 'sent' ? t('history.detailTo') : t('history.detailFrom')}
+            >
+              <CopyAddress
+                address={row.counterparty}
+                display={shortAddr(row.counterparty)}
+                className="max-w-full text-xs text-slate-700"
+              />
+            </Detail>
+          )}
+          {row.fee && (
+            <Detail label={t('history.detailFee')}>
+              {/* The fee is money too, so it honours privacy mode. */}
+              {maskAmount(formatAmount(row.fee, chain), hidden)} {chain.displayDenom}
+            </Detail>
+          )}
+          <Detail label={t('history.detailMemo')}>
+            {row.memo ? (
+              <span className="break-words">{row.memo}</span>
+            ) : (
+              <span className="text-slate-400">{t('history.detailNoMemo')}</span>
+            )}
+          </Detail>
+          <Detail label={t('history.detailHash')}>
+            <CopyAddress
+              address={row.hash}
+              display={`${row.hash.slice(0, 12)}...${row.hash.slice(-8)}`}
+              className="max-w-full text-xs text-slate-700"
+            />
+          </Detail>
+          <Detail label={t('history.detailBlock')}>
+            <span className="tabular-nums">{row.height.toLocaleString()}</span>
+          </Detail>
+        </dl>
+
+        <a
+          href={`${chain.explorerTxUrl}${row.hash}`}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
+        >
+          {t('history.viewOnExplorer')} <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      </div>
+    </Modal>
+  )
+}
+
+function Detail({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 py-2.5">
+      <dt className="shrink-0 text-slate-500">{label}</dt>
+      <dd className="min-w-0 text-right text-slate-900">{children}</dd>
     </div>
   )
 }

@@ -183,8 +183,6 @@ export const en: Record<string, string> = {
   'alarms.pushChecking': 'Checking...',
   'alarms.pushLockScreenNote': 'Notifications appear on your lock screen, where anyone holding your phone can read them.',
   'alarms.pushPrivateLabel': 'Hide wallet names and amounts in notifications',
-  'alarms.pushPrivateOn': 'Notifications say only that something happened. Open the app for details.',
-  'alarms.pushPrivateOff': 'Notifications include the wallet name and the amount.',
   'alarms.pushIphone': 'On iPhone: add this site to your home screen first (Share, then Add to Home Screen).',
 
   // Send / receive
@@ -207,12 +205,10 @@ export const en: Record<string, string> = {
   'send.amount': 'Amount',
   'send.memoOptional': 'Memo (optional)',
   'send.signPassword': 'Wallet password to sign',
-  'send.feeNote': 'The transaction is signed on your device. Network fee is paid in {denom} (gas price {gas} ≈ {gasMed} {denom} per gas unit).',
   'send.speed': 'Transaction speed',
   'send.speedLow': 'Low',
   'send.speedMedium': 'Medium',
   'send.speedHigh': 'High',
-  'send.speedHint': 'A higher speed pays a higher gas price for faster confirmation.',
   'send.sent': 'Sent.',
   'send.signing': 'Signing and broadcasting...',
   'send.signAndSend': 'Sign and send',
@@ -289,8 +285,6 @@ export const en: Record<string, string> = {
   'rewards.signAndClaim': 'Sign and claim',
   'rewards.restakeLabel': 'Restake {amount} {denom} rewards back into your delegations for {name}',
   'rewards.signAndRestake': 'Sign and restake',
-  'rewards.restakeHint':
-    'Withdraws your rewards and delegates them straight back to the same validators. The network fee comes from your available balance.',
   'rewards.averaging': 'Averaging {amount} {denom} per month.',
   'rewards.averagingOver': 'Averaging {amount} {denom} per month over the last {months} months.',
   'rewards.claimHistory': 'Claim history',
@@ -309,8 +303,6 @@ export const en: Record<string, string> = {
   'history.errAddress': 'Enter a {chain} address (starts with "{prefix}")',
   'history.errLookup': 'Lookup failed',
   'history.errLcd': 'Could not load transactions from the chain API',
-  'history.mine': 'mine',
-  'history.showing': 'Showing {addr}',
   'history.querying':
     'Querying the chain... the public LCD can take up to a minute. Our own node will make this fast.',
   'history.queryingTitle': 'Querying the chain...',
@@ -320,10 +312,18 @@ export const en: Record<string, string> = {
   'history.filterOther': 'Other',
   'history.noTx': 'No transactions found.',
   'history.page': 'Page {page} of {total} · {count} txs',
-  'history.sentTo': 'Sent {amt} to {to}',
-  'history.receivedFrom': 'Received {amt} from {from}',
-  'history.receivedType': 'Received ({type})',
   'history.txDefault': 'Transaction',
+  'history.openDetail': 'Show details: {label}, {when}',
+  'history.detailTitle': 'Transaction',
+  'history.detailWhen': 'Date',
+  'history.detailFrom': 'From',
+  'history.detailTo': 'To',
+  'history.detailFee': 'Network fee',
+  'history.detailMemo': 'Memo',
+  'history.detailNoMemo': 'None',
+  'history.detailHash': 'Transaction hash',
+  'history.detailBlock': 'Block',
+  'history.viewOnExplorer': 'View on explorer',
 
   // Staking / Validators
   'staking.title': 'Staking / Validators',
@@ -363,7 +363,6 @@ export const en: Record<string, string> = {
 
   // Settings
   'settings.title': 'Settings',
-  'settings.yourWallets': 'Your wallets',
   'settings.walletsDesc':
     'Wallets live only on this device, encrypted with your password. The Beehive server never sees your seed phrase or keys.',
   'settings.noWallets': 'No wallets yet.',
@@ -479,4 +478,32 @@ export const en: Record<string, string> = {
   'uptime.noAlerts': 'No uptime alerts yet.',
   'uptime.alertDown': '{moniker} is missing blocks ({n})',
   'uptime.alertRecovered': '{moniker} is signing again',
+
+  // Inline help (the "?" popovers). Plain language, one idea each - these are
+  // read in a 240px popover, not a manual.
+  'help.label': 'Help',
+  'help.history': 'Every transaction for this address, newest first. Tap a row for the full detail.',
+  'help.totalValue': 'Available + staked + unbonding, for this network only. Unclaimed rewards are shown separately - they are not part of the balance yet.',
+  'help.available': 'Tokens you can spend or send right now. Staked and unbonding tokens are not included.',
+  'help.staked': 'Tokens you have delegated to validators. They keep earning rewards but cannot be spent until you undelegate.',
+  'help.unbonding': 'Tokens you have undelegated. They are locked for about 21 days, earn no rewards, and then return to your available balance.',
+  'help.rewards': 'Staking rewards that have accrued but not yet been paid out. Claim them to move them into your available balance.',
+  'help.commission': 'The cut a validator keeps from its delegators’ rewards. This figure is what your own validator has earned and can claim.',
+  'help.validatorCommission': 'The share of rewards this validator keeps. A lower rate leaves more for you, but a validator also has to cover its costs.',
+  'help.votingPower': 'How many tokens are staked with this validator in total. More power means more blocks, and more concentration in one operator.',
+  'help.jailed': 'A validator removed from the active set for missing too many blocks or for double-signing. It earns nothing while jailed.',
+  'help.serviceFee': 'A separate Beehive fee, sent in the same transaction, when you delegate to a validator outside our free list. It is not a network fee.',
+  'help.restake': 'Claims your rewards and immediately delegates them back to the same validators, so they start earning too. The network fee comes from your available balance.',
+  'help.speed': 'How much you pay per unit of gas. Higher pays more for faster inclusion in a block; low is the network minimum and is usually fine.',
+  'help.memo': 'A short public note stored on the blockchain with this transaction. Anyone can read it. Some exchanges require one.',
+  'help.walletPassword': 'The password that encrypts this wallet on this device. It signs the transaction locally - it is never sent anywhere.',
+  'help.seedPhrase': 'The 24 words that ARE your wallet. Anyone who has them controls your funds, and they are the only way to restore it. Write them on paper.',
+  'help.privacyMode': 'Hides amounts on screen for shoulder-surfing and screen sharing. Display only - it encrypts nothing, and anyone using this device can switch it back.',
+  'help.currency': 'The currency used for the approximate fiat values. Prices are indicative and come from a public price feed.',
+  'help.snapshot': 'The figures you last saw, stored on this device so the page is not empty while it reloads from the blockchain.',
+  'help.account': 'A Beehive account is only for notifications. It cannot see, recover or control your wallets - those live on this device, encrypted with your wallet password.',
+  'help.watchAddress': 'Any public address you want to be told about. Watching does not give Beehive - or you - any control over it.',
+  'help.alarmType': 'Which movements you get told about: tokens leaving the address, arriving at it, both, or undelegations starting.',
+  'help.pushPrivate': 'Notifications appear on your lock screen. With this on they say only that something happened, with no wallet name or amount.',
+  'help.uptimeFrequency': 'How often you can be alerted about the same validator, so one bad day does not flood your inbox.',
 }

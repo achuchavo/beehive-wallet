@@ -16,10 +16,14 @@ import {
   type WalletEarnings,
   type ClaimRecord,
 } from '../wallet/rewards'
+import Card from '../components/Card'
 import EmptyState from '../components/EmptyState'
+import HelpTip from '../components/HelpTip'
 import LoadingOverlay from '../components/LoadingOverlay'
 import OptionPicker from '../components/OptionPicker'
+import PageHeader from '../components/PageHeader'
 import Collapsible from '../components/Collapsible'
+import { maskAmount, usePrivacyMode } from '../privacyMode'
 import { useChains } from '../chainStore'
 import { useT } from '../i18n/I18nContext'
 
@@ -42,6 +46,7 @@ interface BatchPlan {
 export default function Rewards() {
   const { wallets, getSigner } = useWallet()
   const { t } = useT()
+  const hidden = usePrivacyMode()
   const { status: chainsStatus } = useChains()
   const chainsSettled = chainsStatus !== 'loading'
   const [params, setParams] = useSearchParams()
@@ -100,8 +105,8 @@ export default function Rewards() {
 
   if (wallets.length === 0) {
     return (
-      <div>
-        <h1 className="text-xl font-semibold">{t('rewards.title')}</h1>
+      <div className="space-y-6">
+        <PageHeader title={t('rewards.title')} />
         <EmptyState
           icon={Gift}
           title={t('rewards.noWallets')}
@@ -232,9 +237,8 @@ export default function Rewards() {
   )
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold">{t('rewards.title')}</h1>
+    <div className="space-y-6">
+      <PageHeader title={t('rewards.title')}>
         {walletChains.length > 1 && (
           <OptionPicker
             label={t('dash.chainFilter')}
@@ -246,12 +250,12 @@ export default function Rewards() {
             ]}
           />
         )}
-      </div>
+      </PageHeader>
 
       {notice && (
-        <div className="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">{notice}</div>
+        <div className="rounded-xl bg-green-50 px-4 py-3 text-sm text-green-800">{notice}</div>
       )}
-      {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      {error && <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
       {/* One pair of totals per network. Never a single combined figure: two
           chains are two assets, and a sum of their base units means nothing. */}
@@ -261,24 +265,30 @@ export default function Rewards() {
             <div className="text-xs font-medium text-slate-500">{g.chain.chainName}</div>
           )}
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <Card>
               <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                <Gift className="h-3.5 w-3.5" /> {t('rewards.claimableRewards')}
+                <Gift className="h-3.5 w-3.5" strokeWidth={1.8} /> {t('rewards.claimableRewards')}
+                <HelpTip text={t('help.rewards')} />
               </div>
-              <div className="text-2xl font-semibold">{formatAmount(g.rewards, g.chain)}</div>
+              <div className="mt-0.5 text-3xl font-semibold tabular-nums">
+                {maskAmount(formatAmount(g.rewards, g.chain), hidden)}
+              </div>
               <div className="text-xs text-slate-500">
                 {g.chain.displayDenom} · {t('rewards.acrossWallets', { count: g.rows.length })}
               </div>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4">
+            </Card>
+            <Card>
               <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                <Landmark className="h-3.5 w-3.5" /> {t('rewards.claimableCommission')}
+                <Landmark className="h-3.5 w-3.5" strokeWidth={1.8} /> {t('rewards.claimableCommission')}
+                <HelpTip text={t('help.commission')} />
               </div>
-              <div className="text-2xl font-semibold">{formatAmount(g.commission, g.chain)}</div>
+              <div className="mt-0.5 text-3xl font-semibold tabular-nums">
+                {maskAmount(formatAmount(g.commission, g.chain), hidden)}
+              </div>
               <div className="text-xs text-slate-500">
                 {g.chain.displayDenom} · {t('rewards.validatorWallets')}
               </div>
-            </div>
+            </Card>
           </div>
 
           {g.claimable.length > 1 && (
@@ -301,7 +311,9 @@ export default function Rewards() {
       )}
 
       <section className="space-y-2">
-        <h2 className="font-medium">{t('rewards.yourWallets')}</h2>
+        <h2 className="px-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+          {t('rewards.yourWallets')}
+        </h2>
         <div className="space-y-2">
           {shownRows?.map((row) => (
             <WalletCard
@@ -324,18 +336,18 @@ export default function Rewards() {
         return (
           <div
             key={g.chain.key}
-            className="flex items-center gap-2 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600"
+            className="flex items-center gap-2 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600"
           >
-            <TrendingUp className="h-4 w-4 shrink-0 text-green-700" />
+            <TrendingUp className="h-4 w-4 shrink-0 text-green-700" strokeWidth={1.8} />
             <span>
               {avg.months > 1
                 ? t('rewards.averagingOver', {
-                    amount: formatAmount(avg.amount, g.chain),
+                    amount: maskAmount(formatAmount(avg.amount, g.chain), hidden),
                     denom: g.chain.displayDenom,
                     months: avg.months,
                   })
                 : t('rewards.averaging', {
-                    amount: formatAmount(avg.amount, g.chain),
+                    amount: maskAmount(formatAmount(avg.amount, g.chain), hidden),
                     denom: g.chain.displayDenom,
                   })}
             </span>
@@ -345,20 +357,22 @@ export default function Rewards() {
 
       {history.length > 0 && (
         <Collapsible title={t('rewards.claimHistory')} subtitle={t('rewards.claimsCount', { count: history.length })}>
-          <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
+          <ul className="divide-y divide-slate-100 rounded-2xl bg-white ring-1 ring-slate-200/70">
             {historyRows.map((h) => (
-              <li key={h.hash} className="flex items-center justify-between px-4 py-2 text-sm">
-                <span>
+              <li key={h.hash} className="flex items-center justify-between px-4 py-2.5 text-sm">
+                <span className="tabular-nums">
                   {/* Format with the chain the record actually came from, never
                       another chain's decimals/ticker. */}
                   {isPositiveBase(h.rewards) && (
                     <span className="text-green-700">
-                      +{formatAmount(h.rewards, chainOf(h))} {t('rewards.rewardsWord')}
+                      +{maskAmount(formatAmount(h.rewards, chainOf(h)), hidden)}{' '}
+                      {t('rewards.rewardsWord')}
                     </span>
                   )}
                   {isPositiveBase(h.commission) && (
                     <span className="ml-2 text-amber-700">
-                      +{formatAmount(h.commission, chainOf(h))} {t('rewards.commissionWord')}
+                      +{maskAmount(formatAmount(h.commission, chainOf(h)), hidden)}{' '}
+                      {t('rewards.commissionWord')}
                     </span>
                   )}
                 </span>
@@ -378,7 +392,7 @@ export default function Rewards() {
               <button
                 onClick={() => setHistoryPage((p) => Math.max(0, p - 1))}
                 disabled={historyPage === 0}
-                className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 hover:border-amber-500 disabled:opacity-40"
+                className="flex items-center gap-1 rounded-xl px-3 py-1.5 text-slate-600 ring-1 ring-slate-200 hover:text-amber-700 disabled:opacity-40"
               >
                 <ChevronLeft className="h-4 w-4" /> {t('common.prev')}
               </button>
@@ -388,7 +402,7 @@ export default function Rewards() {
               <button
                 onClick={() => setHistoryPage((p) => Math.min(historyPageCount - 1, p + 1))}
                 disabled={historyPage >= historyPageCount - 1}
-                className="flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 hover:border-amber-500 disabled:opacity-40"
+                className="flex items-center gap-1 rounded-xl px-3 py-1.5 text-slate-600 ring-1 ring-slate-200 hover:text-amber-700 disabled:opacity-40"
               >
                 {t('common.next')} <ChevronRight className="h-4 w-4" />
               </button>
@@ -424,6 +438,7 @@ function WalletCard({
 }) {
   const { t } = useT()
   const { getSigner } = useWallet()
+  const hidden = usePrivacyMode()
   const { prepare, modal } = useTxReview()
   const [action, setAction] = useState<'none' | 'claim' | 'restake'>('none')
   const { id: walletId, earnings, name, chain } = row
@@ -500,42 +515,47 @@ function WalletCard({
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
+    <Card>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 text-sm font-medium">
             {name}
             {earnings.isValidator && (
-              <span className="flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700">
-                <ShieldCheck className="h-3 w-3" /> validator
+              <span className="flex items-center gap-1 rounded-md bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700">
+                <ShieldCheck className="h-3 w-3" /> {t('dash.validator')}
               </span>
             )}
           </div>
           <div className="truncate font-mono text-xs text-slate-500">{earnings.address}</div>
-          <div className="mt-1 text-xs">
+          <div className="mt-1 text-xs tabular-nums">
             <span className="text-green-700">
-              {formatAmount(earnings.rewards, chain)} {chain.displayDenom} {t('rewards.rewardsWord')}
+              {maskAmount(formatAmount(earnings.rewards, chain), hidden)} {chain.displayDenom}{' '}
+              {t('rewards.rewardsWord')}
             </span>
             {earnings.isValidator && (
               <span className="ml-2 text-amber-700">
-                {formatAmount(earnings.commission, chain)} {chain.displayDenom} {t('rewards.commissionWord')}
+                {maskAmount(formatAmount(earnings.commission, chain), hidden)} {chain.displayDenom}{' '}
+                {t('rewards.commissionWord')}
               </span>
             )}
           </div>
         </div>
-        <div className="flex shrink-0 gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5">
           {hasRewards && (
-            <button
-              onClick={() => setAction(action === 'restake' ? 'none' : 'restake')}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:border-amber-500"
-            >
-              {t('rewards.restake')}
-            </button>
+            <>
+              <HelpTip text={t('help.restake')} align="end" className="text-slate-500" />
+              <button
+                onClick={() => setAction(action === 'restake' ? 'none' : 'restake')}
+                className="rounded-xl px-3 py-1.5 text-sm text-slate-600 ring-1 ring-slate-200 hover:text-amber-700"
+              >
+                {t('rewards.restake')}
+              </button>
+            </>
           )}
           {hasSomething && (
             <button
               onClick={() => setAction(action === 'claim' ? 'none' : 'claim')}
-              className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-amber-600"
+              className="rounded-xl bg-amber-500 px-3.5 py-1.5 text-sm font-medium text-slate-900 hover:bg-amber-600"
             >
               {t('rewards.claim')}
             </button>
@@ -558,17 +578,22 @@ function WalletCard({
       )}
       {action === 'restake' && (
         <div className="mt-3">
+          {/* The prose hint is gone: the "?" beside the Restake button says the
+              same thing, and this form is already three lines of instruction. */}
           <ClaimForm
-            label={t('rewards.restakeLabel', { amount: formatAmount(earnings.rewards, chain), denom: chain.displayDenom, name })}
+            label={t('rewards.restakeLabel', {
+              amount: maskAmount(formatAmount(earnings.rewards, chain), hidden),
+              denom: chain.displayDenom,
+              name,
+            })}
             submitLabel={t('rewards.signAndRestake')}
-            hint={t('rewards.restakeHint')}
             onSubmit={submitRestake}
             onError={onError}
           />
         </div>
       )}
       {modal}
-    </div>
+    </Card>
   )
 }
 
@@ -619,30 +644,31 @@ function ClaimForm({
   }, [])
 
   return (
-    <form onSubmit={submit} className="space-y-2 rounded-lg bg-slate-50 p-3">
+    <form onSubmit={submit} className="space-y-2 rounded-xl bg-slate-50 p-3">
       <div className="text-xs text-slate-500">{label}</div>
+      {/* The label used to sit in the same flex row as the field and the button,
+          so it was squeezed into a column of its own. It belongs above them. */}
+      <label
+        htmlFor="beehive-claim-password"
+        className="flex items-center gap-1 text-xs font-medium text-slate-600"
+      >
+        {t('send.signPassword')}
+        <HelpTip text={t('help.walletPassword')} align="start" />
+      </label>
       <div className="flex gap-2">
-        <label
-          htmlFor="beehive-claim-password"
-          className="w-full text-xs font-medium text-slate-600"
-        >
-          {t('send.signPassword')}
-        </label>
         <input
           id="beehive-claim-password"
           type="password"
           name="beehive-claim-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder={t('send.signPassword')}
-          aria-label={t('send.signPassword')}
           required
           autoComplete="new-password"
-          className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+          className="flex-1 rounded-xl bg-white px-3.5 py-2.5 text-sm ring-1 ring-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
         />
         <button
           disabled={busy}
-          className="shrink-0 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
+          className="shrink-0 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
         >
           {busy ? t('rewards.signing') : submitLabel}
         </button>

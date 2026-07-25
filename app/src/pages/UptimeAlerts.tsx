@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  Activity,
   ShieldCheck,
   Clock,
   TriangleAlert,
@@ -12,7 +11,10 @@ import {
 import { api, type UptimeSubscription, type UptimeAlert } from '../api'
 import { DEFAULT_CHAIN, CHAINS, type ChainInfo } from '../chains'
 import { useAuth } from '../auth/AuthContext'
+import Collapsible from '../components/Collapsible'
+import HelpTip from '../components/HelpTip'
 import OptionPicker from '../components/OptionPicker'
+import PageHeader from '../components/PageHeader'
 import ConfirmDelete from '../components/ConfirmDelete'
 import { useT } from '../i18n/I18nContext'
 
@@ -47,8 +49,8 @@ export default function UptimeAlerts() {
   }
   if (auth.status === 'out') {
     return (
-      <div className="space-y-3">
-        <h1 className="text-xl font-semibold">{t('uptime.title')}</h1>
+      <div className="space-y-4">
+        <PageHeader title={t('uptime.title')} />
         <p className="text-sm text-slate-500">{t('uptime.notLoggedIn')}</p>
         <a href={`${import.meta.env.BASE_URL}alarms`} className="text-sm text-amber-700 hover:underline">
           {t('account.signIn')}
@@ -132,9 +134,9 @@ function UptimePanel() {
 
   if (!enabled) {
     return (
-      <div className="space-y-3">
-        <h1 className="text-xl font-semibold">{t('uptime.title')}</h1>
-        <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-6 text-sm text-slate-500">
+      <div className="space-y-4">
+        <PageHeader title={t('uptime.title')} />
+        <div className="flex items-center gap-2 rounded-2xl bg-white px-4 py-6 text-sm text-slate-500 ring-1 ring-slate-200/70">
           <BellOff className="h-4 w-4 shrink-0" /> {t('uptime.disabled')}
         </div>
       </div>
@@ -143,18 +145,13 @@ function UptimePanel() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="flex items-center gap-2 text-xl font-semibold">
-          <Activity className="h-5 w-5 text-amber-700" /> {t('uptime.title')}
-        </h1>
-        <p className="mt-1 text-sm text-slate-500">{t('uptime.intro')}</p>
-      </div>
+      <PageHeader title={t('uptime.title')} subtitle={t('uptime.intro')} />
 
-      {notice && <div className="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">{notice}</div>}
-      {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      {notice && <div className="rounded-xl bg-green-50 px-4 py-3 text-sm text-green-800">{notice}</div>}
+      {error && <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
       {/* Apply */}
-      <form onSubmit={apply} className="space-y-2 rounded-xl border border-slate-200 bg-white p-4">
+      <form onSubmit={apply} className="space-y-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200/70">
         <div className="text-sm font-medium">{t('uptime.applyTitle')}</div>
 
         {/* Network first: the validator list, the stored subscription and the
@@ -201,19 +198,18 @@ function UptimePanel() {
           />
         </label>
 
-        <label className="block">
-          <span className="mb-1 block text-xs font-medium text-slate-600">
-            {t('uptime.orEnterManually')}
-          </span>
+        {/* Folded away: nearly everyone picks from the list above, so the raw
+            operator-address field does not need to occupy the form by default. */}
+        <Collapsible title={t('uptime.orEnterManually')}>
           <input
             value={validator}
             onChange={(e) => setValidator(e.target.value.trim())}
             placeholder={`${chain.bech32Prefix}valoper1...`}
             aria-label={t('uptime.orEnterManually')}
             aria-invalid={validatorMatchesChain ? undefined : true}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
+            className="w-full rounded-xl bg-white px-3.5 py-2.5 font-mono text-sm ring-1 ring-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
           />
-        </label>
+        </Collapsible>
         {!validatorMatchesChain && (
           <p className="text-xs text-red-600">
             {t('uptime.errWrongNetwork', { chain: chain.chainName })}
@@ -221,7 +217,7 @@ function UptimePanel() {
         )}
         <button
           disabled={busy || !validator || !validatorMatchesChain}
-          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
+          className="rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
         >
           {t('uptime.apply')}
         </button>
@@ -229,7 +225,9 @@ function UptimePanel() {
 
       {/* Subscriptions */}
       <section className="space-y-2">
-        <h2 className="font-medium">{t('uptime.yourValidators')}</h2>
+        <h2 className="px-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+          {t('uptime.yourValidators')}
+        </h2>
         {subs.length === 0 ? (
           <p className="text-sm text-slate-500">{t('uptime.none')}</p>
         ) : (
@@ -244,7 +242,9 @@ function UptimePanel() {
       {/* Alerts */}
       <section className="space-y-2">
         <div className="flex items-center justify-between">
-          <h2 className="font-medium">{t('uptime.alertsTitle')}</h2>
+          <h2 className="px-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            {t('uptime.alertsTitle')}
+          </h2>
           {unread > 0 && (
             <button
               onClick={() => api.uptimeMarkRead().then(refresh)}
@@ -257,7 +257,7 @@ function UptimePanel() {
         {alerts.length === 0 ? (
           <p className="text-sm text-slate-500">{t('uptime.noAlerts')}</p>
         ) : (
-          <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
+          <ul className="divide-y divide-slate-100 rounded-2xl bg-white ring-1 ring-slate-200/70">
             {alerts.map((a) => {
               const name = a.moniker || `${a.validator_address.slice(0, 16)}...`
               const down = a.kind === 'down'
@@ -313,7 +313,7 @@ function SubRow({
   const down = sub.last_down_state === 1
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
+    <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/70">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 text-sm font-medium">
@@ -381,6 +381,7 @@ function SubRow({
           <div className="flex flex-wrap items-center gap-2">
             <label className="flex items-center gap-1.5 text-xs text-slate-500">
               <Clock className="h-3.5 w-3.5" /> {t('uptime.frequency')}
+              <HelpTip text={t('help.uptimeFrequency')} />
               <OptionPicker
                 label={t('uptime.frequency')}
                 value={String(sub.frequency_minutes)}
@@ -395,14 +396,14 @@ function SubRow({
             {snoozed ? (
               <button
                 onClick={() => api.uptimeUpdate(sub.id, { snooze_minutes: 0 }).then(onChange)}
-                className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs hover:border-amber-500"
+                className="rounded-lg px-2.5 py-1 text-xs text-slate-600 ring-1 ring-slate-200 hover:text-amber-700"
               >
                 {t('uptime.resume')}
               </button>
             ) : (
               <button
                 onClick={() => api.uptimeUpdate(sub.id, { snooze_minutes: 1440 }).then(onChange)}
-                className="flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1 text-xs hover:border-amber-500"
+                className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs text-slate-600 ring-1 ring-slate-200 hover:text-amber-700"
               >
                 <BellOff className="h-3 w-3" /> {t('uptime.snooze')}
               </button>

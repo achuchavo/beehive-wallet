@@ -61,18 +61,18 @@ export default function TxReview({
           <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {warning}
         </div>
       )}
-      <div className="mt-4 flex gap-2">
+      <div className="mt-5 flex gap-2">
         <button
           onClick={onConfirm}
           disabled={busy}
-          className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-amber-500 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
+          className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-amber-500 py-3 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
         >
           <LockKeyhole className="h-4 w-4" /> {busy ? t('review.broadcasting') : confirmLabel}
         </button>
         <button
           onClick={onClose}
           disabled={busy}
-          className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:border-amber-500 disabled:opacity-50"
+          className="rounded-xl px-4 py-3 text-sm text-slate-600 ring-1 ring-slate-200 hover:text-amber-700 disabled:opacity-50"
         >
           {t('common.cancel')}
         </button>

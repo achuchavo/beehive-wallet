@@ -16,6 +16,7 @@ import {
 import { useT } from '../i18n/I18nContext'
 import type { Lang } from '../i18n/i18n'
 import Collapsible from '../components/Collapsible'
+import PageHeader from '../components/PageHeader'
 import Tabs, { TabPanel } from '../components/Tabs'
 
 interface Point {
@@ -329,11 +330,8 @@ export default function Docs() {
   ]
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold">{t('nav.docs')}</h1>
-        <p className="mt-1 text-sm text-slate-500">{d.intro}</p>
-      </div>
+    <div className="space-y-5">
+      <PageHeader title={t('nav.docs')} subtitle={d.intro} />
 
       {/* Section tabs - keeps each topic on its own screen instead of one scroll */}
       <Tabs
@@ -369,7 +367,7 @@ export default function Docs() {
           {d.services.map((s, i) => {
             const Icon = SERVICE_ICONS[i] ?? Wallet
             return (
-              <div key={s.title} className="rounded-xl border border-slate-200 bg-white p-4">
+              <div key={s.title} className="rounded-2xl bg-white ring-1 ring-slate-200/70 p-4">
                 <div className="flex items-center gap-2 text-sm font-medium">
                   <Icon className="h-4 w-4 text-amber-700" strokeWidth={1.8} /> {s.title}
                 </div>
@@ -388,7 +386,7 @@ export default function Docs() {
           </div>
           <ul className="space-y-2">
             {d.securityPoints.map((p) => (
-              <li key={p.title} className="rounded-xl border border-slate-200 bg-white p-4">
+              <li key={p.title} className="rounded-2xl bg-white ring-1 ring-slate-200/70 p-4">
                 <div className="flex items-center gap-2 text-sm font-medium">
                   <ShieldCheck className="h-4 w-4 shrink-0 text-amber-700" /> {p.title}
                 </div>
@@ -402,7 +400,7 @@ export default function Docs() {
       <TabPanel id="data" activeId={tab} idPrefix="docs">
         <div className="space-y-3">
           <p className="text-sm text-slate-500">{d.dataIntro}</p>
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="rounded-2xl bg-white ring-1 ring-slate-200/70 p-4">
             <div className="flex items-center gap-2 text-sm font-medium text-green-700">
               <EyeOff className="h-4 w-4" /> {d.dataNeverTitle}
             </div>
@@ -414,7 +412,7 @@ export default function Docs() {
               ))}
             </ul>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="rounded-2xl bg-white ring-1 ring-slate-200/70 p-4">
             <div className="flex items-center gap-2 text-sm font-medium">
               <Database className="h-4 w-4 text-amber-700" /> {d.dataCollectTitle}
             </div>

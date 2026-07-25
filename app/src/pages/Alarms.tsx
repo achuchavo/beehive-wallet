@@ -21,10 +21,13 @@ import { useT } from '../i18n/I18nContext'
 import PasswordInput from '../components/PasswordInput'
 import Modal from '../components/Modal'
 import CopyAddress from '../components/CopyAddress'
+import HelpTip from '../components/HelpTip'
 import OptionPicker from '../components/OptionPicker'
+import PageHeader from '../components/PageHeader'
 import Toggle from '../components/Toggle'
 import Checkbox from '../components/Checkbox'
 import ConfirmDelete from '../components/ConfirmDelete'
+import { maskAmount, usePrivacyMode } from '../privacyMode'
 
 const POLL_MS = 15000
 
@@ -132,7 +135,7 @@ function PushSettings() {
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+    <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200/70">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-start gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
@@ -171,19 +174,20 @@ function PushSettings() {
       {/* Shown BEFORE the permission prompt, not after: consent to
           notifications should include knowing what will be on the lock screen. */}
       {state === 'off' && (
-        <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        <p className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
           {t('alarms.pushLockScreenNote')}
         </p>
       )}
 
-      <label className="mt-3 flex items-start gap-2 text-xs text-slate-600">
+      {/* The two paragraphs that used to explain this checkbox (one per state)
+          are now one "?" - the current state is already visible in the box. */}
+      <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-600">
         <Checkbox checked={priv} onChange={togglePrivacy} label={t('alarms.pushPrivateLabel')} />
-      </label>
-      <p className="mt-1 pl-6 text-xs text-slate-500">
-        {priv ? t('alarms.pushPrivateOn') : t('alarms.pushPrivateOff')}
-      </p>
+        <HelpTip text={t('help.pushPrivate')} />
+      </div>
 
-      <p className="mt-2 text-xs text-slate-500">{t('alarms.pushIphone')}</p>
+      {/* Only while push is off: it is a setup instruction, not a standing note. */}
+      {state === 'off' && <p className="mt-2 text-xs text-slate-500">{t('alarms.pushIphone')}</p>}
     </div>
   )
 }
@@ -583,6 +587,7 @@ function MainAddressCard() {
 function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => void }) {
   const { wallets } = useWallet()
   const { t } = useT()
+  const hidden = usePrivacyMode()
   const [addresses, setAddresses] = useState<WatchedAddress[]>([])
   const [alerts, setAlerts] = useState<WalletAlert[]>([])
   const [unread, setUnread] = useState(0)
@@ -689,18 +694,15 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
           onCancel={() => setRemovingWatch(null)}
         />
       )}
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">{t('alarms.title')}</h1>
-        <div className="flex items-center gap-3 text-sm text-slate-500">
-          <span>{email}</span>
-          <button onClick={logout} className="text-amber-700 hover:underline">
-            {t('account.signOut')}
-          </button>
-        </div>
-      </div>
+      <PageHeader title={t('alarms.title')} help={t('help.account')}>
+        <span className="hidden text-sm text-slate-500 sm:inline">{email}</span>
+        <button onClick={logout} className="text-sm text-slate-500 hover:text-amber-700">
+          {t('account.signOut')}
+        </button>
+      </PageHeader>
 
       {error && (
-        <div role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </div>
       )}
@@ -711,14 +713,15 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="flex items-center gap-2 font-medium">
-            <Eye className="h-4 w-4 text-slate-500" /> {t('alarms.watched')}
+          <h2 className="flex items-center gap-1.5 px-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <Eye className="h-3.5 w-3.5" strokeWidth={1.8} /> {t('alarms.watched')}
+            <HelpTip text={t('help.watchAddress')} />
           </h2>
           <button
             type="button"
             onClick={() => setShowAddForm((o) => !o)}
             aria-expanded={showAddForm}
-            className="flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-sm hover:border-amber-500 hover:text-amber-700"
+            className="flex items-center gap-1 rounded-xl bg-white px-2.5 py-1.5 text-sm text-slate-600 ring-1 ring-slate-200 hover:text-amber-700"
           >
             {showAddForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
             {showAddForm ? t('common.close') : t('alarms.watch')}
@@ -726,7 +729,7 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
         </div>
 
         {showAddForm && (
-          <form onSubmit={addAddress} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+          <form onSubmit={addAddress} className="space-y-3 rounded-2xl bg-white p-4 ring-1 ring-slate-200/70">
             {/* Network first, and always visible: which chain an alert is filed
                 under decides which node the watcher polls, so it must be a
                 deliberate choice rather than an invisible default. */}
@@ -757,7 +760,7 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
                 required
                 autoComplete="off"
                 aria-invalid={!addressMatchesChain}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm focus:border-amber-500 focus:outline-none"
+                className="w-full rounded-xl bg-white px-3.5 py-2.5 font-mono text-sm ring-1 ring-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
               />
             </label>
             {!addressMatchesChain && (
@@ -765,15 +768,19 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
                 {t('alarms.errWrongNetwork', { chain: selectedChain.chainName })}
               </p>
             )}
-            <input
-              value={newLabel}
-              onChange={(e) => setNewLabel(e.target.value)}
-              placeholder={t('alarms.labelOptional')}
-              aria-label={t('alarms.labelOptional')}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-            />
-            <label className="flex items-center gap-2 text-xs text-slate-500">
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-600">
+                {t('alarms.labelOptional')}
+              </span>
+              <input
+                value={newLabel}
+                onChange={(e) => setNewLabel(e.target.value)}
+                className="w-full rounded-xl bg-white px-3.5 py-2.5 text-sm ring-1 ring-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-slate-500">
               {t('alarms.alarmType')}
+              <HelpTip text={t('help.alarmType')} />
               <OptionPicker
                 label={t('alarms.alarmType')}
                 value={newType}
@@ -796,7 +803,7 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
                       setNewChain(w.chainKey)
                       if (!newLabel) setNewLabel(w.name)
                     }}
-                    className="flex items-center gap-1.5 rounded-full border border-slate-300 bg-white px-2.5 py-0.5 text-xs text-slate-600 hover:border-amber-500 hover:text-amber-700"
+                    className="flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-xs text-slate-600 ring-1 ring-slate-200 hover:text-amber-700"
                   >
                     {w.name}
                     <span className="rounded bg-slate-100 px-1 text-[10px] text-slate-600">
@@ -808,7 +815,7 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
             )}
             <button
               disabled={busy}
-              className="w-full rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50 sm:w-auto"
+              className="w-full rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50 sm:w-auto"
             >
               {t('alarms.watch')}
             </button>
@@ -820,7 +827,7 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
         ) : (
           <ul className="space-y-2">
             {addresses.map((w) => (
-              <li key={w.id} className="rounded-xl border border-slate-200 bg-white p-4">
+              <li key={w.id} className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/70">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
@@ -867,10 +874,10 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="font-medium">
+          <h2 className="px-1 text-xs font-medium uppercase tracking-wide text-slate-500">
             {t('alarms.alerts')}
             {unread > 0 && (
-              <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
+              <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold normal-case text-red-700">
                 {t('alarms.new', { count: unread })}
               </span>
             )}
@@ -887,7 +894,7 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
         {alerts.length === 0 ? (
           <p className="text-sm text-slate-500">{t('alarms.noAlerts')}</p>
         ) : (
-          <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
+          <ul className="divide-y divide-slate-100 rounded-2xl bg-white ring-1 ring-slate-200/70">
             {alerts.map((a) => {
               const chain = CHAINS.find((c) => c.key === a.chain_key) ?? DEFAULT_CHAIN
               const meta = KIND_META[a.kind] ?? KIND_META.sent
@@ -901,9 +908,10 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
                     </span>
                     <span className="text-xs text-slate-500">{a.detected_at}</span>
                   </div>
-                  <div className="mt-1 text-sm text-slate-600">
+                  {/* An alert states an amount, so it masks like every other. */}
+                  <div className="mt-1 text-sm tabular-nums text-slate-600">
                     {a.amount
-                      ? `${formatAmount(a.amount, chain)} ${chain.displayDenom}${
+                      ? `${maskAmount(formatAmount(a.amount, chain), hidden)} ${chain.displayDenom}${
                           meta.arrow && a.recipient ? ` ${meta.arrow} ${shortAddr(a.recipient)}` : ''
                         }`
                       : t('alarms.nonTransfer')}

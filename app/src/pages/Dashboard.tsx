@@ -24,10 +24,13 @@ import { useColdStart } from '../coldStart'
 import { usePrivacyMode, setPrivacyMode } from '../privacyMode'
 import { addBase, sumBase, isPositiveBase } from '../wallet/amount'
 import { useWallet } from '../wallet/WalletContext'
+import Card from '../components/Card'
 import EmptyState from '../components/EmptyState'
 import CopyAddress from '../components/CopyAddress'
+import HelpTip from '../components/HelpTip'
 import LoadingOverlay from '../components/LoadingOverlay'
 import OptionPicker from '../components/OptionPicker'
+import PageHeader from '../components/PageHeader'
 import CountUp from '../components/CountUp'
 import DeltaFloat from '../components/DeltaFloat'
 import { maskAmount } from '../privacyMode'
@@ -322,8 +325,8 @@ export default function Dashboard() {
 
   if (wallets.length === 0) {
     return (
-      <div>
-        <h1 className="text-xl font-semibold">{t('dash.title')}</h1>
+      <div className="space-y-6">
+        <PageHeader title={t('dash.title')} />
         <EmptyState
           icon={Wallet}
           title={t('dash.welcome')}
@@ -422,70 +425,68 @@ export default function Dashboard() {
     .filter((g) => g.rows.length > 0)
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <h1 className="text-xl font-semibold">{t('dash.title')}</h1>
-          {/* Never let cached figures pass as live. This says, in words, that
-              what is on screen is the last known state and is being refreshed. */}
-          {/* Only when cached figures are actually exposed - i.e. the modal has
-              gone but live data never arrived (a failed or errored load).
-              While the modal is up nothing stale is readable, so the badge
-              would just be noise. */}
-          {showingSnapshot && !modalUp && (
-            <p
-              role="status"
-              aria-live="polite"
-              className="flex items-center gap-1.5 text-xs text-slate-500"
-            >
-              <span
-                data-spinner
-                className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-amber-200 border-t-amber-600"
-              />
-              {t('dash.snapshotRefreshing', { when: relativeTime(snapshot!.savedAt, t) })}
-            </p>
-          )}
-        </div>
-        <div className="flex gap-2">
-          {/* Display-only, and labelled as such in the tooltip: the figures
-              are still in the page and anyone with the device can switch this
-              back. It is for shoulder-surfing and screen sharing, not secrecy. */}
-          <button
-            type="button"
-            onClick={() => setPrivacyMode(!hidden)}
-            aria-pressed={hidden}
-            title={t('dash.privacyHint')}
-            className="rounded-lg border border-slate-300 bg-white px-2.5 text-slate-600 hover:border-amber-500 hover:text-amber-700"
-          >
-            {hidden ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            <span className="sr-only">{t('dash.privacyToggle')}</span>
-          </button>
+    <div className="space-y-6">
+      <PageHeader title={t('dash.title')}>
+        {/* Display-only, and labelled as such in the help: the figures are
+            still in the page and anyone with the device can switch this back.
+            It is for shoulder-surfing and screen sharing, not secrecy. */}
+        <button
+          type="button"
+          onClick={() => setPrivacyMode(!hidden)}
+          aria-pressed={hidden}
+          title={t('dash.privacyHint')}
+          className="rounded-xl bg-white px-2.5 py-1.5 text-slate-600 ring-1 ring-slate-200 hover:text-amber-700"
+        >
+          {hidden ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          <span className="sr-only">{t('dash.privacyToggle')}</span>
+        </button>
+        <HelpTip text={t('help.privacyMode')} className="text-slate-500" />
+        <OptionPicker
+          label={t('dash.currency')}
+          value={currency}
+          onChange={changeCurrency}
+          options={CURRENCIES.map((c) => ({
+            value: c.code,
+            label: c.label,
+            hint: c.symbol,
+          }))}
+        />
+        {walletChains.length > 1 && (
           <OptionPicker
-            label={t('dash.currency')}
-            value={currency}
-            onChange={changeCurrency}
-            options={CURRENCIES.map((c) => ({
-              value: c.code,
-              label: c.label,
-              hint: c.symbol,
-            }))}
+            label={t('dash.chainFilter')}
+            value={chainFilter}
+            onChange={setChainFilter}
+            options={[
+              { value: '', label: t('dash.allChains') },
+              ...walletChains.map((c) => ({ value: c.key, label: c.chainName })),
+            ]}
           />
-          {walletChains.length > 1 && (
-            <OptionPicker
-              label={t('dash.chainFilter')}
-              value={chainFilter}
-              onChange={setChainFilter}
-              options={[
-                { value: '', label: t('dash.allChains') },
-                ...walletChains.map((c) => ({ value: c.key, label: c.chainName })),
-              ]}
-            />
-          )}
-        </div>
-      </div>
+        )}
+      </PageHeader>
+
+      {/* Never let cached figures pass as live. This says, in words, that what
+          is on screen is the last known state and is being refreshed.
+          Only when cached figures are actually exposed - i.e. the modal has
+          gone but live data never arrived (a failed or errored load). While the
+          modal is up nothing stale is readable, so the badge would just be
+          noise. */}
+      {showingSnapshot && !modalUp && (
+        <p
+          role="status"
+          aria-live="polite"
+          className="-mt-4 flex items-center gap-1.5 text-xs text-slate-500"
+        >
+          <span
+            data-spinner
+            className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-amber-200 border-t-amber-600"
+          />
+          {t('dash.snapshotRefreshing', { when: relativeTime(snapshot!.savedAt, t) })}
+          <HelpTip text={t('help.snapshot')} />
+        </p>
+      )}
 
       {error && (
-        <div className="flex items-center justify-between rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="flex items-center justify-between rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
           <button onClick={load} className="underline">
             {t('common.retry')}
@@ -518,13 +519,14 @@ export default function Dashboard() {
               reads as the primary surface rather than one more white card;
               the income card below uses green, so the two are distinguishable
               at a glance without relying on position alone. */}
-          <div className="relative rounded-xl border-2 border-amber-200 bg-amber-50 p-4">
+          <div className="relative rounded-2xl bg-amber-50 p-5 ring-1 ring-amber-200/80">
             <div className="flex items-center justify-between text-xs text-amber-800">
-              <span className="font-medium">
+              <span className="flex items-center gap-1 font-medium">
                 {t('dash.totalValue')} ·{' '}
                 {t(g.rows.length > 1 ? 'dash.wallets' : 'dash.wallet', { count: g.rows.length })}
+                <HelpTip text={t('help.totalValue')} align="start" />
               </span>
-              <span className="rounded bg-white/70 px-1.5 py-0.5 font-medium text-amber-900">
+              <span className="rounded-md bg-white/70 px-1.5 py-0.5 font-medium text-amber-900">
                 {g.chain.chainName}
               </span>
             </div>
@@ -536,9 +538,11 @@ export default function Dashboard() {
               <span className="absolute right-4 top-9 block h-5 w-0">
                 <DeltaFloat
                   positive={!deltas[g.chain.key].startsWith('-')}
-                  text={`${deltas[g.chain.key].startsWith('-') ? '−' : '+'}${formatAmount(
-                    deltas[g.chain.key].replace('-', ''),
-                    g.chain,
+                  // A change in the balance is still information about the
+                  // balance, so it is masked with everything else.
+                  text={`${deltas[g.chain.key].startsWith('-') ? '−' : '+'}${maskAmount(
+                    formatAmount(deltas[g.chain.key].replace('-', ''), g.chain),
+                    hidden,
                   )} ${g.chain.displayDenom}`}
                   onDone={() =>
                     setDeltas((d) => {
@@ -551,17 +555,20 @@ export default function Dashboard() {
               </span>
             )}
 
-            <div className="text-3xl font-bold text-amber-950">
+            <div className="mt-1 text-4xl font-semibold tracking-tight tabular-nums text-amber-950">
               {hidden ? (
                 <span>{maskAmount(formatAmount(g.total, g.chain), true)}</span>
               ) : (
                 <CountUp value={g.total} from={countFrom[g.chain.key]} format={(b) => formatAmount(b, g.chain)} />
               )}{' '}
-              <span className="text-base font-semibold text-amber-800">{g.chain.displayDenom}</span>
+              <span className="text-lg font-medium text-amber-800/80">{g.chain.displayDenom}</span>
             </div>
             {fiatFor(g.chain, g.total) && (
-              <div className="text-sm font-medium text-amber-800">
+              <div className="mt-0.5 flex items-center gap-1 text-sm font-medium text-amber-800/80">
                 ≈ {hidden ? maskAmount(fiatFor(g.chain, g.total) ?? '', true) : fiatFor(g.chain, g.total)}
+                {/* The "prices are indicative" caveat belongs on the converted
+                    figure, not on the currency picker in the header. */}
+                <HelpTip text={t('help.currency')} align="start" />
               </div>
             )}
 
@@ -573,20 +580,21 @@ export default function Dashboard() {
             )}
 
             {open && (
-              <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
-                <Stat icon={Wallet} label={t('dash.available')} base={g.available} from={countFromStat.available?.[g.chain.key]} chain={g.chain} />
-                <Stat icon={Coins} label={t('dash.staked')} base={g.staked} from={countFromStat.staked?.[g.chain.key]} chain={g.chain} />
+              <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-amber-200/70 pt-4 text-sm sm:grid-cols-4">
+                <Stat icon={Wallet} label={t('dash.available')} help={t('help.available')} base={g.available} from={countFromStat.available?.[g.chain.key]} chain={g.chain} />
+                <Stat icon={Coins} label={t('dash.staked')} help={t('help.staked')} base={g.staked} from={countFromStat.staked?.[g.chain.key]} chain={g.chain} />
                 {isPositiveBase(g.unbonding) && (
                   <Stat
                     icon={Undo2}
                     label={t('dash.unbonding')}
+                    help={t('help.unbonding')}
                     base={g.unbonding}
                     chain={g.chain}
                   />
                 )}
-                <Stat icon={Gift} label={t('dash.rewards')} base={g.rewards} from={countFromStat.rewards?.[g.chain.key]} chain={g.chain} />
+                <Stat icon={Gift} label={t('dash.rewards')} help={t('help.rewards')} base={g.rewards} from={countFromStat.rewards?.[g.chain.key]} chain={g.chain} />
                 {g.anyValidator && (
-                  <Stat icon={Landmark} label={t('dash.commission')} base={g.commission} from={countFromStat.commission?.[g.chain.key]} chain={g.chain} />
+                  <Stat icon={Landmark} label={t('dash.commission')} help={t('help.commission')} base={g.commission} from={countFromStat.commission?.[g.chain.key]} chain={g.chain} />
                 )}
               </div>
             )}
@@ -599,7 +607,7 @@ export default function Dashboard() {
                 onClick={() => setOpenChains((s) => ({ ...s, [g.chain.key]: !open }))}
                 aria-expanded={open}
                 aria-controls={panelId}
-                className="mt-3 flex w-full items-center justify-center gap-1 rounded-lg border border-amber-200 bg-white/60 py-1.5 text-xs font-medium text-amber-900 hover:bg-white"
+                className="mt-3 flex w-full items-center justify-center gap-1 rounded-xl bg-white/60 py-1.5 text-xs font-medium text-amber-900 hover:bg-white"
               >
                 {t(open ? 'dash.foldChain' : 'dash.unfoldChain', { chain: g.chain.chainName })}
                 <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -617,7 +625,7 @@ export default function Dashboard() {
             isPositiveBase(g.rewards)) && (
             <Link
               to={`/rewards?chain=${g.chain.key}`}
-              className="group block rounded-xl border-2 border-green-200 bg-green-50 p-4 transition-colors hover:border-green-300 hover:bg-green-100"
+              className="group block rounded-2xl bg-green-50 p-4 ring-1 ring-green-200/80 transition-colors hover:bg-green-100/70"
             >
               {/* Sized to fit 375px without wrapping. "per month" is NOT
                   repeated on the amount line - the label above already says
@@ -627,22 +635,23 @@ export default function Dashboard() {
                   <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6" strokeWidth={2.2} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-green-800 sm:text-xs">
+                  <div className="text-[11px] font-medium uppercase tracking-wide text-green-800/90 sm:text-xs">
                     {t('dash.monthlyIncome')}
                   </div>
 
                   {isPositiveBase(monthly[g.chain.key]?.amount ?? '0') ? (
                     <>
-                      <div className="truncate text-2xl font-bold leading-tight text-green-900 sm:text-3xl">
-                        {formatAmount(monthly[g.chain.key]!.amount, g.chain)}{' '}
-                        <span className="text-base font-semibold sm:text-lg">
+                      <div className="truncate text-2xl font-semibold leading-tight tabular-nums text-green-900 sm:text-3xl">
+                        {maskAmount(formatAmount(monthly[g.chain.key]!.amount, g.chain), hidden)}{' '}
+                        <span className="text-base font-medium text-green-800/80 sm:text-lg">
                           {g.chain.displayDenom}
                         </span>
                       </div>
-                      <div className="truncate text-xs text-green-800 sm:text-sm">
+                      <div className="truncate text-xs text-green-800/90 sm:text-sm">
                         {fiatFor(g.chain, monthly[g.chain.key]!.amount) && (
                           <span className="font-medium">
-                            ≈ {fiatFor(g.chain, monthly[g.chain.key]!.amount)}
+                            ≈{' '}
+                            {maskAmount(fiatFor(g.chain, monthly[g.chain.key]!.amount) ?? '', hidden)}
                             {' · '}
                           </span>
                         )}
@@ -653,10 +662,10 @@ export default function Dashboard() {
                     </>
                   ) : (
                     <>
-                      <div className="text-2xl font-bold leading-tight text-green-900 sm:text-3xl">
+                      <div className="text-2xl font-semibold leading-tight text-green-900 sm:text-3xl">
                         —
                       </div>
-                      <div className="text-xs text-green-800 sm:text-sm">{t('dash.noClaimsYet')}</div>
+                      <div className="text-xs text-green-800/90 sm:text-sm">{t('dash.noClaimsYet')}</div>
                     </>
                   )}
                 </div>
@@ -668,12 +677,12 @@ export default function Dashboard() {
           {isPositiveBase(g.claimable) && (
             <Link
               to={`/rewards?chain=${g.chain.key}`}
-              className="flex items-center justify-between rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800 hover:bg-green-100"
+              className="flex items-center justify-between rounded-xl bg-green-50/80 px-4 py-3 text-sm text-green-800 hover:bg-green-100"
             >
               <span className="flex items-center gap-2">
-                <Gift className="h-4 w-4" />{' '}
+                <Gift className="h-4 w-4" strokeWidth={1.8} />{' '}
                 {t('dash.claimable', {
-                  amount: formatAmount(g.claimable, g.chain),
+                  amount: maskAmount(formatAmount(g.claimable, g.chain), hidden),
                   denom: g.chain.displayDenom,
                 })}
               </span>
@@ -681,12 +690,12 @@ export default function Dashboard() {
             </Link>
           )}
 
+          {/* A quiet section label, not a second headline. The cards below are
+              what the eye should land on. */}
           <section className="space-y-2">
-            <h2 className="font-medium">
+            <h2 className="px-1 text-xs font-medium uppercase tracking-wide text-slate-500">
               {t('dash.yourWallets')}
-              {groups.length > 1 && (
-                <span className="ml-2 text-sm font-normal text-slate-500">{g.chain.chainName}</span>
-              )}
+              {groups.length > 1 && <span className="ml-2 normal-case">{g.chain.chainName}</span>}
             </h2>
             <div className="space-y-2">
               {g.rows.map((r) => (
@@ -708,55 +717,30 @@ export default function Dashboard() {
         )
       })}
 
-      {/* wrap + nowrap: labels like "Send / receive" must not break mid-phrase.
-          The row reflows to a second line instead. */}
-      <div className="flex flex-wrap gap-2">
+      {/* One primary action, two quiet companions. The six buttons that used to
+          live here (three transactional, three wallet-management) competed with
+          each other and with the figures above; the management shortcuts are in
+          the sidebar and the drawer on every page, so they are not repeated.
+          wrap + nowrap: "Send / receive" must not break mid-phrase. */}
+      <div className="flex flex-wrap items-center gap-2 pt-1">
         <Link
           to="/send"
-          className="flex items-center gap-2 whitespace-nowrap rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600"
+          className="flex items-center gap-2 whitespace-nowrap rounded-xl bg-amber-500 px-5 py-2.5 text-sm font-medium text-slate-900 hover:bg-amber-600"
         >
-          <SendHorizontal className="h-4 w-4 shrink-0" /> {t('dash.send')}
+          <SendHorizontal className="h-4 w-4 shrink-0" strokeWidth={1.8} /> {t('dash.send')}
         </Link>
         <Link
           to="/staking"
-          className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm hover:border-amber-500"
+          className="flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm text-slate-600 hover:text-amber-700"
         >
-          <Coins className="h-4 w-4 shrink-0" /> {t('dash.stake')}
+          <Coins className="h-4 w-4 shrink-0" strokeWidth={1.8} /> {t('dash.stake')}
         </Link>
         <Link
           to="/history"
-          className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm hover:border-amber-500"
+          className="flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm text-slate-600 hover:text-amber-700"
         >
-          <HistoryIcon className="h-4 w-4 shrink-0" /> {t('dash.history')}
+          <HistoryIcon className="h-4 w-4 shrink-0" strokeWidth={1.8} /> {t('dash.history')}
         </Link>
-      </div>
-
-      {/* Wallet management shortcuts. Previously these only existed in the
-          empty state, so once you had one wallet the only route to adding
-          another was Settings. Kept in a separate row from the transactional
-          actions above so the two are not confused. */}
-      <div className="border-t border-slate-200 pt-3">
-        <h2 className="mb-2 text-xs font-medium text-slate-500">{t('dash.manage')}</h2>
-        <div className="flex flex-wrap gap-2">
-          <Link
-            to="/settings?action=create"
-            className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:border-amber-500"
-          >
-            <Plus className="h-4 w-4" /> {t('dash.createWallet')}
-          </Link>
-          <Link
-            to="/settings?action=import"
-            className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:border-amber-500"
-          >
-            <Import className="h-4 w-4" /> {t('dash.importWallet')}
-          </Link>
-          <Link
-            to="/alarms"
-            className="flex items-center gap-2 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:border-amber-500"
-          >
-            <Bell className="h-4 w-4" /> {t('dash.watchAddress')}
-          </Link>
-        </div>
       </div>
     </div>
   )
@@ -767,25 +751,39 @@ export default function Dashboard() {
 function Stat({
   icon: Icon,
   label,
+  help,
   base,
   from,
   chain,
 }: {
   icon: typeof Wallet
   label: string
+  /** Explanation of what this figure includes - staking vocabulary is not obvious. */
+  help: string
   /** Base-unit amount. */
   base: string
   /** Base-unit amount to count up from, when a snapshot supplied one. */
   from?: string
   chain: ChainInfo
 }) {
+  // Read here rather than threaded from the page: every amount on screen has to
+  // honour the setting, and a leaf that reads it itself cannot be wired up wrong.
+  const hidden = usePrivacyMode()
   return (
     <div>
-      <div className="flex items-center gap-1 text-xs text-amber-800">
-        <Icon className="h-3.5 w-3.5 shrink-0" /> {label}
+      <div className="flex items-center gap-1 text-xs text-amber-800/90">
+        <Icon className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} /> {label}
+        <HelpTip text={help} />
       </div>
-      <div className="truncate font-semibold text-amber-950">
-        <CountUp value={base} from={from} format={(b) => formatAmount(b, chain)} />
+      <div className="truncate font-semibold tabular-nums text-amber-950">
+        {/* Masked figures are rendered directly rather than through CountUp:
+            the mask length follows the digit count, so animating one would
+            make the dots twitch. Same reasoning as the headline total. */}
+        {hidden ? (
+          maskAmount(formatAmount(base, chain), true)
+        ) : (
+          <CountUp value={base} from={from} format={(b) => formatAmount(b, chain)} />
+        )}
       </div>
     </div>
   )
@@ -841,12 +839,15 @@ function WalletRow({
 }) {
   const { t } = useT()
   const [open, setOpen] = useState(false)
+  const hidden = usePrivacyMode()
   // Disclosure semantics: the row expands a detail panel, so it must say so.
   const panelId = useId()
   const total = addBase(addBase(p.available, p.staked), p.unbonding)
+  /** Every figure in this row goes through here, so none can miss the mask. */
+  const show = (base: string) => maskAmount(formatAmount(base, chain), hidden)
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white">
+    <Card padded={false}>
       {/* ONE disclosure control, not three.
           The icon, the name and the balance were each their own <button> firing
           the same toggle, so assistive tech announced three separate unlabelled
@@ -859,7 +860,7 @@ function WalletRow({
           aria-expanded={open}
           aria-controls={panelId}
           aria-label={t('dash.walletRowToggle', { name })}
-          className="absolute inset-0 z-0 rounded-xl"
+          className="absolute inset-0 z-0 rounded-2xl"
         />
         <span className="pointer-events-none z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
           <Wallet className="h-4.5 w-4.5" strokeWidth={1.8} />
@@ -897,10 +898,10 @@ function WalletRow({
         </div>
         <span className="pointer-events-none z-10 flex shrink-0 items-center gap-2">
           <span className="text-right">
-            <span className="block text-sm font-semibold">{formatAmount(total, chain)}</span>
+            <span className="block text-sm font-semibold tabular-nums">{show(total)}</span>
             <span className="block text-xs text-slate-500">
               {price !== null
-                ? formatFiat(fiatValue(total, chain.decimals, price), currency)
+                ? maskAmount(formatFiat(fiatValue(total, chain.decimals, price), currency), hidden)
                 : chain.displayDenom}
             </span>
           </span>
@@ -915,17 +916,17 @@ function WalletRow({
       <div id={panelId} hidden={!open} className="space-y-3 border-t border-slate-100 px-4 py-3 text-sm">
           <div className="flex flex-wrap gap-x-6 gap-y-1">
             <span className="text-slate-500">
-              {t('dash.available')} <span className="font-medium text-slate-800">{formatAmount(p.available, chain)}</span>
+              {t('dash.available')} <span className="font-medium tabular-nums text-slate-800">{show(p.available)}</span>
             </span>
             <span className="text-slate-500">
-              {t('dash.staked')} <span className="font-medium text-slate-800">{formatAmount(p.staked, chain)}</span>
+              {t('dash.staked')} <span className="font-medium tabular-nums text-slate-800">{show(p.staked)}</span>
             </span>
             <span className="text-slate-500">
-              {t('dash.rewards')} <span className="font-medium text-green-700">{formatAmount(p.rewards, chain)}</span>
+              {t('dash.rewards')} <span className="font-medium tabular-nums text-green-700">{show(p.rewards)}</span>
             </span>
             {p.isValidator && (
               <span className="text-slate-500">
-                {t('dash.commission')} <span className="font-medium text-amber-700">{formatAmount(p.commission, chain)}</span>
+                {t('dash.commission')} <span className="font-medium tabular-nums text-amber-700">{show(p.commission)}</span>
               </span>
             )}
           </div>
@@ -933,14 +934,14 @@ function WalletRow({
           {p.delegations.length > 0 ? (
             <div>
               <div className="mb-1 text-xs font-medium text-slate-500">{t('dash.stakedWith')}</div>
-              <ul className="divide-y divide-slate-100 rounded-lg border border-slate-100">
+              <ul className="divide-y divide-slate-100 rounded-xl bg-slate-50/70">
                 {p.delegations.map((d) => (
                   <li key={d.validator} className="flex items-center justify-between px-3 py-1.5 text-xs">
                     <span className="truncate">{d.moniker}</span>
-                    <span className="shrink-0 text-slate-600">
-                      {formatAmount(d.amount, chain)} {chain.displayDenom}
+                    <span className="shrink-0 tabular-nums text-slate-600">
+                      {show(d.amount)} {chain.displayDenom}
                       {isPositiveBase(d.reward) && (
-                        <span className="ml-1 text-green-700">+{formatAmount(d.reward, chain)}</span>
+                        <span className="ml-1 text-green-700">+{show(d.reward)}</span>
                       )}
                     </span>
                   </li>
@@ -960,6 +961,6 @@ function WalletRow({
             </p>
           )}
         </div>
-    </div>
+    </Card>
   )
 }

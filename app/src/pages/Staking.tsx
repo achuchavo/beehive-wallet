@@ -13,11 +13,15 @@ import {
 } from '../wallet/staking'
 import { useTxReview, type Prepare } from '../wallet/useTxReview'
 import type { ReviewRow } from '../components/TxReview'
+import Card from '../components/Card'
 import EmptyState from '../components/EmptyState'
+import HelpTip from '../components/HelpTip'
 import LoadingOverlay from '../components/LoadingOverlay'
+import PageHeader from '../components/PageHeader'
 import PercentButtons from '../components/PercentButtons'
 import CopyAddress from '../components/CopyAddress'
 import OptionPicker from '../components/OptionPicker'
+import { maskAmount, usePrivacyMode } from '../privacyMode'
 import { useT } from '../i18n/I18nContext'
 
 interface Validator {
@@ -155,6 +159,7 @@ async function fetchStakeData(chain: ChainInfo, address: string): Promise<StakeD
 export default function Staking() {
   const { t } = useT()
   const { active, wallets, setActive, getSigner } = useWallet()
+  const hidden = usePrivacyMode()
   // Chain resolved from the active wallet, never a global default.
   const chain = active ? findChain(active.chainKey) : undefined
   const [data, setData] = useState<StakeData | null>(null)
@@ -185,8 +190,8 @@ export default function Staking() {
 
   if (!active) {
     return (
-      <div>
-        <h1 className="text-xl font-semibold">{t('staking.title')}</h1>
+      <div className="space-y-6">
+        <PageHeader title={t('staking.title')} />
         <EmptyState
           icon={Coins}
           title={t('send.noWallet')}
@@ -201,7 +206,7 @@ export default function Staking() {
   }
   if (!chain) {
     return (
-      <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+      <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
         {t('send.errUnknownChain', { chain: active.chainKey })}
       </div>
     )
@@ -265,10 +270,10 @@ export default function Staking() {
     : []
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-xl font-semibold">{t('staking.title')}</h1>
+    <div className="space-y-5">
+      <PageHeader title={t('staking.title')} />
 
-      <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+      <div className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200/70">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
           <Wallet className="h-4.5 w-4.5" strokeWidth={1.8} />
         </div>
@@ -299,29 +304,33 @@ export default function Staking() {
       </div>
 
       {notice && (
-        <div className="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">{notice}</div>
+        <div className="rounded-xl bg-green-50 px-4 py-3 text-sm text-green-800">{notice}</div>
       )}
-      {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      {error && <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
+      {/* The two figures that decide what you do on this page, so they get the
+          space. Both honour privacy mode. */}
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-3">
+        <Card>
           <div className="flex items-center gap-1.5 text-xs text-slate-500">
-            <Coins className="h-3.5 w-3.5" /> {t('staking.totalStaked')}
+            <Coins className="h-3.5 w-3.5" strokeWidth={1.8} /> {t('staking.totalStaked')}
+            <HelpTip text={t('help.staked')} />
           </div>
-          <div className="text-xl font-semibold">
-            {data ? formatAmount(staked, chain) : '...'}{' '}
-            <span className="text-xs font-normal text-slate-500">{chain.displayDenom}</span>
+          <div className="mt-0.5 text-2xl font-semibold tabular-nums">
+            {data ? maskAmount(formatAmount(staked, chain), hidden) : '...'}{' '}
+            <span className="text-xs font-medium text-slate-500">{chain.displayDenom}</span>
           </div>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-3">
+        </Card>
+        <Card>
           <div className="flex items-center gap-1.5 text-xs text-slate-500">
-            <Gift className="h-3.5 w-3.5" /> {t('rewards.claimableRewards')}
+            <Gift className="h-3.5 w-3.5" strokeWidth={1.8} /> {t('rewards.claimableRewards')}
+            <HelpTip text={t('help.rewards')} />
           </div>
-          <div className="text-xl font-semibold">
-            {data ? formatAmount(data.totalReward, chain) : '...'}{' '}
-            <span className="text-xs font-normal text-slate-500">{chain.displayDenom}</span>
+          <div className="mt-0.5 text-2xl font-semibold tabular-nums">
+            {data ? maskAmount(formatAmount(data.totalReward, chain), hidden) : '...'}{' '}
+            <span className="text-xs font-medium text-slate-500">{chain.displayDenom}</span>
           </div>
-        </div>
+        </Card>
       </div>
 
       {data && isPositiveBase(data.totalReward) && (
@@ -344,32 +353,37 @@ export default function Staking() {
             placeholder={t('staking.search')}
             aria-label={t('staking.search')}
             autoComplete="off"
-            className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm focus:border-amber-500 focus:outline-none"
+            className="w-full rounded-xl bg-white py-2.5 pl-9 pr-3 text-sm ring-1 ring-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
           />
         </div>
-        <div className="inline-flex shrink-0 rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-sm">
-          <button
-            type="button"
-            aria-pressed={view === 'active'}
-            onClick={() => setView('active')}
-            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 transition-colors ${
-              view === 'active' ? 'bg-white font-medium text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            <span className="h-2 w-2 rounded-full bg-green-500" /> {t('staking.active')}
-            <span className="text-xs text-slate-500">{activeCount}</span>
-          </button>
-          <button
-            type="button"
-            aria-pressed={view === 'jailed'}
-            onClick={() => setView('jailed')}
-            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 transition-colors ${
-              view === 'jailed' ? 'bg-white font-medium text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            <span className="h-2 w-2 rounded-full bg-red-500" /> {t('staking.jailedInactive')}
-            <span className="text-xs text-slate-500">{jailedCount}</span>
-          </button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <div className="inline-flex rounded-xl bg-slate-100 p-0.5 text-sm">
+            <button
+              type="button"
+              aria-pressed={view === 'active'}
+              onClick={() => setView('active')}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition-colors ${
+                view === 'active' ? 'bg-white font-medium text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <span className="h-2 w-2 rounded-full bg-green-500" /> {t('staking.active')}
+              <span className="text-xs text-slate-500">{activeCount}</span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={view === 'jailed'}
+              onClick={() => setView('jailed')}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition-colors ${
+                view === 'jailed' ? 'bg-white font-medium text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <span className="h-2 w-2 rounded-full bg-red-500" /> {t('staking.jailedInactive')}
+              <span className="text-xs text-slate-500">{jailedCount}</span>
+            </button>
+          </div>
+          {/* One tip for the whole toggle rather than a badge on every jailed
+              row - the word is the thing that needs explaining, not each row. */}
+          <HelpTip text={t('help.jailed')} align="end" className="text-slate-500" />
         </div>
       </div>
 
@@ -377,7 +391,7 @@ export default function Staking() {
         <LoadingOverlay title={t('staking.loading')} subtitle={t('staking.loadingHint')} />
       )}
 
-      <div className="max-h-[60vh] overflow-y-auto rounded-xl border border-slate-200 bg-white">
+      <div className="max-h-[60vh] overflow-y-auto rounded-2xl bg-white ring-1 ring-slate-200/70">
         {ordered.map((v, i) => (
           <ValidatorRow
             key={v.operator}
@@ -520,11 +534,13 @@ function ValidatorRow({
                 marks is our own fee waiver, so it says exactly that in words
                 and carries no trust iconography. */}
             {free && (
-              <span
-                title={t('staking.noFeeExplain')}
-                className="shrink-0 rounded bg-amber-100 px-1.5 text-[11px] font-medium text-amber-800"
-              >
+              <span className="flex shrink-0 items-center gap-1 rounded-md bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
                 {t('staking.noBeehiveFee')}
+                {/* Was a title attribute, which never appears on touch. The
+                    caveat - that this is our fee waiver and not a security
+                    review - is the whole point of the badge, so it has to be
+                    reachable on a phone too. */}
+                <HelpTip text={t('staking.noFeeExplain')} />
               </span>
             )}
             {validator.jailed && (
@@ -534,9 +550,11 @@ function ValidatorRow({
             )}
           </div>
           <div className="flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
-            <span>{t('staking.comm', { pct: (validator.commission * 100).toFixed(0) })}</span>
+            <span title={t('help.validatorCommission')}>
+              {t('staking.comm', { pct: (validator.commission * 100).toFixed(0) })}
+            </span>
             <span>·</span>
-            <span>{abbrev(power)} {chain.displayDenom}</span>
+            <span title={t('help.votingPower')}>{abbrev(power)} {chain.displayDenom}</span>
             {chain.explorerValidatorUrl && (
               <>
                 <span>·</span>
@@ -567,10 +585,10 @@ function ValidatorRow({
         <div className="flex shrink-0 gap-1">
           <button
             onClick={() => setAction(action === 'delegate' ? 'none' : 'delegate')}
-            className={`rounded-lg px-2.5 py-1 text-xs font-medium ${
+            className={`rounded-lg px-2.5 py-1.5 text-xs font-medium ${
               free
                 ? 'bg-amber-500 text-slate-900 hover:bg-amber-600'
-                : 'border border-slate-300 hover:border-amber-500'
+                : 'text-slate-600 ring-1 ring-slate-200 hover:text-amber-700'
             }`}
           >
             {free ? t('staking.stake') : t('staking.delegate')}
@@ -578,7 +596,7 @@ function ValidatorRow({
           {staked && (
             <button
               onClick={() => setAction(action === 'undelegate' ? 'none' : 'undelegate')}
-              className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs hover:border-amber-500"
+              className="rounded-lg px-2.5 py-1.5 text-xs text-slate-600 ring-1 ring-slate-200 hover:text-amber-700"
             >
               {t('staking.undelegate')}
             </button>
@@ -589,8 +607,9 @@ function ValidatorRow({
       {action === 'delegate' && (
         <div className="px-3 pb-3">
           {!free && serviceFeeActive(chain) && (
-            <p className="mb-1 text-xs text-slate-500">
+            <p className="mb-1 flex items-center gap-1 text-xs text-slate-500">
               {t('staking.serviceFee', { fee: formatAmount(chain.serviceFee, chain), denom: chain.displayDenom })}
+              <HelpTip text={t('help.serviceFee')} align="start" />
             </p>
           )}
           <ActionForm
@@ -610,7 +629,10 @@ function ValidatorRow({
       )}
       {action === 'undelegate' && (
         <div className="px-3 pb-3">
-          <p className="mb-1 text-xs text-slate-500">{t('staking.unbondNote')}</p>
+          <p className="mb-1 flex items-center gap-1 text-xs text-slate-500">
+            {t('staking.unbondNote')}
+            <HelpTip text={t('help.unbonding')} align="start" />
+          </p>
           <ActionForm
             chain={chain}
             label={t('staking.undelegateFrom', { name: validator.moniker })}
@@ -681,7 +703,7 @@ function ActionForm({
   }, [])
 
   return (
-    <form onSubmit={submit} className="space-y-2 rounded-lg bg-slate-50 p-3">
+    <form onSubmit={submit} className="space-y-2 rounded-xl bg-slate-50 p-3">
       <div className="text-xs text-slate-500">{label}</div>
       {withAmount && (
         <>
@@ -695,7 +717,7 @@ function ActionForm({
               required
               inputMode="decimal"
               autoComplete="off"
-              className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+              className="flex-1 rounded-xl bg-white px-3.5 py-2.5 text-sm tabular-nums ring-1 ring-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
             />
             <span className="text-sm text-slate-500">{chain.displayDenom}</span>
           </div>
@@ -709,8 +731,12 @@ function ActionForm({
           )}
         </>
       )}
-      <label className="block text-xs font-medium text-slate-600" htmlFor="beehive-stake-password">
+      <label
+        className="flex items-center gap-1 text-xs font-medium text-slate-600"
+        htmlFor="beehive-stake-password"
+      >
         {t('send.signPassword')}
+        <HelpTip text={t('help.walletPassword')} align="start" />
       </label>
       <input
         id="beehive-stake-password"
@@ -718,14 +744,13 @@ function ActionForm({
         name="beehive-stake-password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
-        placeholder={t('send.signPassword')}
         required
         autoComplete="new-password"
-        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+        className="w-full rounded-xl bg-white px-3.5 py-2.5 text-sm ring-1 ring-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500"
       />
       <button
         disabled={busy}
-        className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
+        className="rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
       >
         {busy ? t('rewards.signing') : submitLabel}
       </button>
