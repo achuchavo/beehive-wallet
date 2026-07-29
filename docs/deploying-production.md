@@ -30,36 +30,43 @@ and building there would mean the running site was never the attested build.
 
 ## One-time setup
 
-Everything here is done once. `deploy-prod.sh` checks for each and refuses to
-run if any is missing.
+**Steps 1 and 2 are already DONE on the live box** (2026-07-30). They are kept
+here as the record of what exists and for rebuilding from scratch. Steps 3 and 4
+are still outstanding — see [Outstanding](#outstanding).
 
-### 1. Directory layout
+`deploy-prod.sh` checks for each and refuses to run if any is missing.
+
+### 1. Directory layout — done
 
 ```bash
 sudo mkdir -p /var/www/beehive/{releases,shared} /etc/beehive /opt/beehive-deploy
 
-# Move the live secret out of the docroot and into shared/.
+# The secret moves OUT of any release directory.
 sudo cp /var/www/wallet.beehive.kr/api/db_config.php /var/www/beehive/shared/db_config.php
 sudo chown www-data:www-data /var/www/beehive/shared/db_config.php
 sudo chmod 640 /var/www/beehive/shared/db_config.php
 ```
 
-The docroot becomes a symlink, so the nginx `root` directive does not change:
+nginx's `root` points **straight at the `current` symlink**:
 
 ```
-/var/www/wallet.beehive.kr -> /var/www/beehive/current -> /var/www/beehive/releases/<tag>
+root /var/www/beehive/current;   ->  /var/www/beehive/releases/<tag>
 ```
 
-Do this swap **after** the first successful `--dry-run`, so there is a verified
-release to point at. Keep the launch build as a fallback:
+This is better than making the old docroot a symlink: replacing a *directory*
+with a symlink means deleting it first, and for those milliseconds there is no
+document root at all. Pointing `root` at `current` makes the swap a single
+rename plus a reload, with no such window.
 
-```bash
-sudo mv /var/www/wallet.beehive.kr /var/www/beehive/releases/launch-backup
-sudo ln -sfn /var/www/beehive/releases/launch-backup /var/www/beehive/current
-sudo ln -sfn /var/www/beehive/current /var/www/wallet.beehive.kr
-```
+The launch build is preserved as `releases/launch-backup`, so a rollback can
+reach it. `/var/www/wallet.beehive.kr` is no longer served.
 
-### 2. The nginx `/assets/` exception — do this first
+> **Gotcha:** `/etc/nginx/sites-enabled/wallet.beehive.kr` is a **real file, not
+> a symlink** into `sites-available`. Editing `sites-available` changes nothing.
+> Always edit the `sites-enabled` copy, and verify with a request rather than
+> trusting that the reload succeeded.
+
+### 2. The nginx `/assets/` exception — done
 
 The site block uses `try_files $uri $uri/ /index.html`, so a request for a
 **missing** asset returns **HTTP 200 with `index.html`**. Cloudflare then caches
@@ -82,7 +89,7 @@ sudo nginx -t && sudo systemctl reload nginx
 Hashed filenames make `immutable` safe: a changed file gets a new name.
 `deploy-prod.sh` refuses to run until this block exists.
 
-### 3. GitHub token
+### 3. GitHub token — OUTSTANDING
 
 The repo is private, so downloading a release asset needs auth. Create a
 **fine-grained PAT** scoped to this repository with **Contents: read** — nothing
@@ -93,12 +100,28 @@ sudo install -m 600 /dev/null /etc/beehive/github-token
 sudo tee /etc/beehive/github-token >/dev/null <<< 'github_pat_...'
 ```
 
-### 4. The script itself
+### 4. The script itself — OUTSTANDING
 
 ```bash
 sudo install -m 750 deploy-prod.sh /opt/beehive-deploy/deploy-prod.sh
 sudo apt-get install -y jq rsync   # curl is already present
 ```
+
+---
+
+## Outstanding
+
+The first production deploy (2026-07-30) was done **by hand**, following exactly
+the sequence below but building locally and copying over SSH, because the
+artifact path needs a GitHub token that only the owner can create. The box is
+now in the target layout, so finishing this is two steps:
+
+1. Create the fine-grained PAT (step 3) and write it to `/etc/beehive/github-token`.
+2. Install `deploy-prod.sh` (step 4).
+
+After that, `deploy-prod.sh <tag>` replaces the manual sequence entirely. Until
+then the workflow's packaging steps have never run either — cut a throwaway tag
+first and check the release assets appear before relying on them.
 
 ---
 

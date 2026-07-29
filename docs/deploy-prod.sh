@@ -26,7 +26,10 @@ BASE="/var/www/beehive"
 RELEASES="$BASE/releases"
 SHARED="$BASE/shared"
 CURRENT="$BASE/current"
-DOCROOT="/var/www/wallet.beehive.kr"   # a symlink -> $CURRENT
+# nginx's `root` points straight at $CURRENT, so the swap is one symlink rename
+# and a reload - there is never a moment where the document root is missing.
+# (/var/www/wallet.beehive.kr is no longer the docroot; the launch build lives on
+# as releases/launch-backup.)
 WATCHER_DIR="/opt/beehive-watcher"
 TOKEN_FILE="/etc/beehive/github-token"  # root-only, fine-grained PAT, Contents:read
 KEEP_RELEASES=5
@@ -226,6 +229,6 @@ echo
 say "DEPLOYED"
 echo "    tag:      $TAG"
 echo "    commit:   $COMMIT"
-echo "    docroot:  $DOCROOT -> $(readlink -f "$CURRENT")"
+echo "    serving:  $(readlink -f "$CURRENT")"
 echo "    previous: ${prev_target:-none}"
 echo "    rollback: sudo $0 --rollback"
