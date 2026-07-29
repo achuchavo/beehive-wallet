@@ -20,6 +20,7 @@ import StakingValidatorsManager from './StakingValidatorsManager'
 import UserWatchesManager from './UserWatchesManager'
 import OptionPicker from '../components/OptionPicker'
 import HelpTip from '../components/HelpTip'
+import ConfirmDelete from '../components/ConfirmDelete'
 
 type Tab =
   | 'overview'
@@ -882,8 +883,14 @@ function UptimeManager({
   canToggle: boolean
   onError: (m: string) => void
 }) {
+  const { t } = useT()
   const [enabled, setEnabled] = useState(false)
   const [subs, setSubs] = useState<AdminUptimeSub[]>([])
+  // Withdrawing a live authorisation is confirmed; approving is not. The
+  // asymmetry is deliberate - one starts a service, the other stops one someone
+  // is already depending on, silently.
+  const [revoking, setRevoking] = useState<{ id: number; name: string; email: string } | null>(null)
+  const [revokeBusy, setRevokeBusy] = useState(false)
 
   const load = useCallback(() => {
     api
@@ -917,6 +924,20 @@ function UptimeManager({
     }
   }
 
+  async function confirmRevoke() {
+    if (!revoking) return
+    setRevokeBusy(true)
+    try {
+      await api.adminUptimeDecide(revoking.id, 'deny', 0)
+      setRevoking(null)
+      load()
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Failed')
+    } finally {
+      setRevokeBusy(false)
+    }
+  }
+
   const statusCls: Record<string, string> = {
     pending: 'bg-slate-100 text-slate-600',
     approved: 'bg-green-100 text-green-700',
@@ -925,6 +946,17 @@ function UptimeManager({
 
   return (
     <div className="space-y-4">
+      {revoking && (
+        <ConfirmDelete
+          title={t('admin.uptimeRevokeTitle')}
+          name={`${revoking.name} · ${revoking.email}`}
+          impact={t('admin.uptimeRevokeImpact')}
+          confirmLabel={t('admin.uptimeRevoke')}
+          busy={revokeBusy}
+          onConfirm={confirmRevoke}
+          onCancel={() => setRevoking(null)}
+        />
+      )}
       {canToggle ? (
         <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3">
           <div>
@@ -967,34 +999,61 @@ function UptimeManager({
                       (s.authorized_until ? ` · until ${s.authorized_until.slice(0, 10)}` : ' · no expiry')}
                   </span>
                 </div>
-                {s.status === 'pending' && (
-                  <div className="flex flex-wrap gap-1.5">
+                {/* Actions for EVERY status, not just pending. A decision made
+                    once was previously permanent from this screen: an approved
+                    subscription had no control at all, so withdrawing it meant
+                    editing the database by hand. */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    onClick={() => decide(s.id, 'approve', 30)}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-medium ${
+                      s.status === 'approved'
+                        ? 'border border-slate-300 hover:border-amber-500'
+                        : 'bg-amber-500 text-slate-900 hover:bg-amber-600'
+                    }`}
+                  >
+                    {/* On an approved one this renews the clock rather than
+                        granting anything, so it says so. */}
+                    {s.status === 'approved' ? t('admin.uptimeExtend30') : t('admin.uptimeApprove30')}
+                  </button>
+                  <button
+                    onClick={() => decide(s.id, 'approve', 90)}
+                    className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs hover:border-amber-500"
+                  >
+                    {t('admin.uptime90')}
+                  </button>
+                  <button
+                    onClick={() => decide(s.id, 'approve', 0)}
+                    className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs hover:border-amber-500"
+                  >
+                    {t('admin.uptimeIndefinite')}
+                  </button>
+
+                  {s.status === 'approved' ? (
+                    // Confirmed, because this stops monitoring someone is
+                    // relying on and there is no notification telling them.
                     <button
-                      onClick={() => decide(s.id, 'approve', 30)}
-                      className="rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-medium text-slate-900 hover:bg-amber-600"
-                    >
-                      Approve 30d
-                    </button>
-                    <button
-                      onClick={() => decide(s.id, 'approve', 90)}
-                      className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs hover:border-amber-500"
-                    >
-                      90d
-                    </button>
-                    <button
-                      onClick={() => decide(s.id, 'approve', 0)}
-                      className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs hover:border-amber-500"
-                    >
-                      Indefinite
-                    </button>
-                    <button
-                      onClick={() => decide(s.id, 'deny', 0)}
+                      onClick={() =>
+                        setRevoking({ id: s.id, name: s.moniker || s.validator_address, email: s.email })
+                      }
                       className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs text-red-600 hover:border-red-400"
                     >
-                      Deny
+                      {t('admin.uptimeRevoke')}
                     </button>
-                  </div>
-                )}
+                  ) : (
+                    s.status !== 'denied' && (
+                      <button
+                        onClick={() => decide(s.id, 'deny', 0)}
+                        className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs text-red-600 hover:border-red-400"
+                      >
+                        {t('admin.uptimeDeny')}
+                      </button>
+                    )
+                  )}
+                  {s.status === 'denied' && (
+                    <span className="text-xs text-slate-400">{t('admin.uptimeDeniedNote')}</span>
+                  )}
+                </div>
               </li>
             ))}
           </ul>

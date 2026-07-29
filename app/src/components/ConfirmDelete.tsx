@@ -18,6 +18,7 @@ export default function ConfirmDelete({
   name,
   impact,
   busy,
+  confirmLabel,
   onConfirm,
   onCancel,
 }: {
@@ -25,6 +26,14 @@ export default function ConfirmDelete({
   name: string
   impact: string
   busy?: boolean
+  /**
+   * Text on the confirming button. Defaults to "Remove".
+   *
+   * Not every irreversible action is a deletion - withdrawing an authorisation
+   * removes nothing but stops a service someone relies on, and a button reading
+   * "Remove" would misdescribe what is about to happen.
+   */
+  confirmLabel?: string
   onConfirm: () => void
   onCancel: () => void
 }) {
@@ -52,7 +61,7 @@ export default function ConfirmDelete({
             disabled={busy}
             className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
           >
-            {busy ? t('alarms.working') : t('common.remove')}
+            {busy ? t('alarms.working') : (confirmLabel ?? t('common.remove'))}
           </button>
         </div>
       </div>
