@@ -43,8 +43,13 @@ jobs:
         working-directory: app
         run: node scripts/gen-build-manifest.mjs
 
+      # Build provenance (SLSA, via Sigstore) links these files to this repo and
+      # workflow. It requires a PUBLIC repo (or GitHub Team/Enterprise), so it is
+      # allowed to soft-fail while the repo is still private - the release and
+      # hashes below still publish. It activates automatically once public.
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v1
+        continue-on-error: true
         with:
           subject-path: 'app/dist/**'
 
