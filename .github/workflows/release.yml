@@ -1,0 +1,63 @@
+name: Release (reproducible build)
+
+# Tag a version (e.g. `git tag v0.1.0 && git push origin v0.1.0`) to build the
+# frontend from that exact commit, publish per-file SHA-256 hashes, and attest
+# build provenance so anyone can verify the live site matches this public source.
+# See docs/VERIFYING-THE-BUILD.md.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # create the GitHub Release
+  id-token: write # sign the provenance attestation
+  attestations: write # store the build-provenance attestation
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install (clean, exact versions from the lockfile)
+        working-directory: app
+        run: npm ci
+
+      - name: Build
+        working-directory: app
+        env:
+          VITE_BASE: /
+          VITE_SITE_URL: https://wallet.beehive.kr
+          VITE_COMMIT: ${{ github.sha }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: npm run build
+
+      - name: Generate hash manifest
+        working-directory: app
+        run: node scripts/gen-build-manifest.mjs
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: 'app/dist/**'
+
+      - name: Package bundle
+        run: (cd app && zip -r "$GITHUB_WORKSPACE/beehive-wallet-${{ github.ref_name }}.zip" dist)
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            "beehive-wallet-${{ github.ref_name }}.zip" \
+            app/dist/build-manifest.json \
+            app/dist/SHA256SUMS.txt \
+            --title "${{ github.ref_name }}" \
+            --notes "Reproducible build of commit \`${{ github.sha }}\`. The whole-bundle SHA-256 is \`bundleHash\` in build-manifest.json; per-file hashes are in SHA256SUMS.txt. Build provenance is attested via GitHub/Sigstore. To verify, see docs/VERIFYING-THE-BUILD.md."

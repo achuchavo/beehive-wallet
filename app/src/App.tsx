@@ -37,6 +37,7 @@ import Admin from './pages/Admin'
 import { useT } from './i18n/I18nContext'
 import { LANGUAGES } from './i18n/i18n'
 import OptionPicker from './components/OptionPicker'
+import BuildBadge from './components/BuildBadge'
 import { useChains } from './chainStore'
 
 // Grouped rather than one flat list of eight. The groups answer "what am I
@@ -283,7 +284,10 @@ function App() {
           ))}
         </div>
         {quickActions}
-        <div className="mt-auto px-3 pt-4">{langSwitcher}</div>
+        <div className="mt-auto pt-4">
+          <div className="px-3">{langSwitcher}</div>
+          <BuildBadge />
+        </div>
       </nav>
 
       {/* Mobile slide-in drawer */}
@@ -350,7 +354,10 @@ function App() {
         <div className="px-2" onClick={() => setMenuOpen(false)}>
           {quickActions}
         </div>
-        <div className="mt-auto px-4 py-4">{langSwitcher}</div>
+        <div className="mt-auto py-4">
+          <div className="px-4">{langSwitcher}</div>
+          <BuildBadge />
+        </div>
       </aside>
 
       {/* Mobile bottom bar: primary items (labelled) + Menu */}
