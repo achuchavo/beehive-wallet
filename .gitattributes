@@ -1,0 +1,20 @@
+# Files that are EXECUTED ON LINUX must keep LF endings, regardless of the
+# checkout platform.
+#
+# Development happens on Windows with core.autocrlf=true, so without this the
+# working copy of a shell script gets CRLF. Copying that to the production box
+# (docs/deploying-production.md tells you to `install` it there) yields a script
+# bash cannot run: the carriage return becomes part of the shebang and of every
+# command, producing errors like
+#     /usr/bin/env: 'bash\r': No such file or directory
+#     $'\r': command not found
+# which say nothing about the actual cause.
+#
+# Deliberately narrow. `* text=auto eol=lf` would rewrite every file in the
+# working tree and is not wanted on a Windows machine - only the files Linux has
+# to execute are pinned.
+*.sh text eol=lf
+
+# The systemd unit and the nginx snippets quoted in the runbook are read by
+# Linux daemons; CRLF in a unit file is a parse error.
+*.service text eol=lf
