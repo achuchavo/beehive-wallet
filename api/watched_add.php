@@ -26,10 +26,13 @@ if (!looks_like_address($address, $chain['bech32Prefix'])) {
     json_error("Enter a valid {$chain['chainName']} address");
 }
 
+// The cap is admin-configurable (app_settings.watch_limit); this is the only
+// place it is enforced, so the client-side guard is convenience, not control.
+$limit = watch_limit($db);
 $stmt = $db->prepare('SELECT COUNT(*) AS n FROM watched_addresses WHERE user_id = ?');
 $stmt->execute([$userId]);
-if ((int) $stmt->fetch()['n'] >= 20) {
-    json_error('Watch limit reached (20 addresses)');
+if ((int) $stmt->fetch()['n'] >= $limit) {
+    json_error("Watch limit reached ({$limit} addresses)");
 }
 
 $stmt = $db->prepare(

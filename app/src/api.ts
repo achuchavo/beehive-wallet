@@ -168,7 +168,7 @@ export const api = {
       ...(proof ?? {}),
     }),
   logout: () => call('logout.php', {}),
-  watchedList: () => call<{ addresses: WatchedAddress[] }>('watched_list.php'),
+  watchedList: () => call<{ addresses: WatchedAddress[]; limit: number }>('watched_list.php'),
   watchedAdd: (chain_key: string, address: string, label: string, alarm_type: AlarmType) =>
     call<{ id: number; duplicate: boolean }>('watched_add.php', {
       chain_key,
@@ -194,7 +194,7 @@ export const api = {
   announcementGet: () =>
     call<{ announcement: Announcement | null }>('announcement_get.php'),
   settingsPublic: () =>
-    call<{ uptime_alerts_enabled: boolean }>('settings_public.php'),
+    call<{ uptime_alerts_enabled: boolean; watch_limit: number }>('settings_public.php'),
   adminAnnouncementSet: (message: string, severity: string, expires_hours: number) =>
     call('admin_announcement_set.php', { message, severity, expires_hours }),
   adminAnnouncementClear: () => call('admin_announcement_set.php', { clear: true }),
@@ -229,8 +229,13 @@ export const api = {
     call<{ enabled: boolean; subscriptions: AdminUptimeSub[] }>('admin_uptime_list.php'),
   adminUptimeDecide: (id: number, action: 'approve' | 'deny', days: number) =>
     call('admin_uptime_decide.php', { id, action, days }),
-  adminSettingSet: (key: string, value: boolean) =>
-    call<{ key: string; value: string }>('admin_setting_set.php', { key, value: value ? 1 : 0 }),
+  // Booleans go over the wire as 1/0; numeric settings (watch_limit) are sent
+  // as-is and validated server-side against that key's own range.
+  adminSettingSet: (key: string, value: boolean | number) =>
+    call<{ key: string; value: string }>('admin_setting_set.php', {
+      key,
+      value: typeof value === 'boolean' ? (value ? 1 : 0) : value,
+    }),
   pushConfig: () => call<{ publicKey: string }>('push_config.php'),
   pushSubscribe: (subscription: PushSubscriptionJSON) =>
     call('push_subscribe.php', subscription),

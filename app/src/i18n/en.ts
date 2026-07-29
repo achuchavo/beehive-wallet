@@ -153,6 +153,9 @@ export const en: Record<string, string> = {
   'alarms.removeWatchImpact': 'Its alert history is deleted too, and cannot be restored. The address and its funds are unaffected.',
   'uptime.removeTitle': 'Remove this validator subscription?',
   'uptime.removeImpact': 'Its uptime alert history is deleted too, and cannot be restored. Your delegation is unaffected.',
+  'alarms.watchedCount': '{count} of {limit}',
+  'alarms.watchLimitReached':
+    'You are watching the maximum of {limit} addresses. Remove one to add another.',
   'alarms.noWatched': 'No watched addresses yet. Add one above.',
   'alarms.alarm': 'Alarm',
   'alarms.alerts': 'Alerts',
@@ -503,6 +506,7 @@ export const en: Record<string, string> = {
   'help.snapshot': 'The figures you last saw, stored on this device so the page is not empty while it reloads from the blockchain.',
   'help.account': 'A Beehive account is only for notifications. It cannot see, recover or control your wallets - those live on this device, encrypted with your wallet password.',
   'help.watchAddress': 'Any public address you want to be told about. Watching does not give Beehive - or you - any control over it.',
+  'help.watchLimit': 'You can watch up to {limit} addresses on this account, across all networks. Removing one frees a slot straight away.',
   'help.alarmType': 'Which movements you get told about: tokens leaving the address, arriving at it, both, or undelegations starting.',
   'help.pushPrivate': 'Notifications appear on your lock screen. With this on they say only that something happened, with no wallet name or amount.',
   'help.uptimeFrequency': 'How often you can be alerted about the same validator, so one bad day does not flood your inbox.',

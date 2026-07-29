@@ -453,6 +453,32 @@ function get_setting(PDO $db, string $key, string $default = ''): string
     return $val === false ? $default : (string) $val;
 }
 
+// Per-user cap on watched addresses. Admin-configurable through app_settings,
+// so raising it is a setting change rather than a redeploy.
+const WATCH_LIMIT_DEFAULT = 20;
+const WATCH_LIMIT_MIN = 1;
+const WATCH_LIMIT_MAX = 500;
+
+/**
+ * The effective watch limit.
+ *
+ * Bounds are enforced on READ, not just when the admin saves: the value lives
+ * in a table anyone with DB access can edit, and a junk or out-of-range entry
+ * must not be able to remove the cap entirely (unbounded rows per user) or set
+ * it to zero and lock every user out of a feature they already use.
+ */
+function watch_limit(PDO $db): int
+{
+    $raw = filter_var(
+        get_setting($db, 'watch_limit', (string) WATCH_LIMIT_DEFAULT),
+        FILTER_VALIDATE_INT
+    );
+    if ($raw === false || $raw < WATCH_LIMIT_MIN || $raw > WATCH_LIMIT_MAX) {
+        return WATCH_LIMIT_DEFAULT;
+    }
+    return $raw;
+}
+
 function admin_context(PDO $db, int $userId): array
 {
     $stmt = $db->prepare('SELECT is_admin, is_super_admin FROM users WHERE id = ?');

@@ -147,6 +147,9 @@ export default function Admin() {
             </div>
           )}
 
+          {/* Super admin only, matching admin_setting_set.php's own guard. */}
+          {isSuper && <WatchLimitEditor onError={setError} />}
+
           <section className="space-y-2">
             <h2 className="font-medium">Recent alerts (all users)</h2>
             {!data.recent_alerts?.length ? (
@@ -511,6 +514,101 @@ function StatCard({ label, value }: { label: string; value: number }) {
       <div className="text-xs text-slate-500">{label}</div>
       <div className="text-2xl font-semibold">{value.toLocaleString()}</div>
     </div>
+  )
+}
+
+/**
+ * How many addresses one user may watch. Stored in app_settings, read back
+ * through settings_public.php, and enforced in watched_add.php - this screen
+ * only writes it.
+ */
+function WatchLimitEditor({ onError }: { onError: (m: string) => void }) {
+  // Server bounds, mirrored here so the field can't offer a value the API will
+  // reject. watched_add.php clamps on read regardless.
+  const MIN = 1
+  const MAX = 500
+  const [saved, setSaved] = useState<number | null>(null)
+  const [value, setValue] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState(false)
+
+  const load = useCallback(() => {
+    api
+      .settingsPublic()
+      .then((r) => {
+        setSaved(r.watch_limit)
+        setValue(String(r.watch_limit))
+      })
+      .catch((e) => onError(e instanceof Error ? e.message : 'Failed'))
+  }, [onError])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const parsed = Number(value)
+  const valid = /^\d+$/.test(value.trim()) && parsed >= MIN && parsed <= MAX
+  const changed = saved !== null && parsed !== saved
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault()
+    if (!valid || !changed) return
+    setBusy(true)
+    setDone(false)
+    try {
+      await api.adminSettingSet('watch_limit', parsed)
+      setSaved(parsed)
+      setDone(true)
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (saved === null) return null
+
+  return (
+    <section className="space-y-2">
+      <h2 className="font-medium">Limits</h2>
+      <form
+        onSubmit={save}
+        className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3"
+      >
+        <div>
+          <label htmlFor="watch-limit" className="block text-sm font-medium">
+            Watched addresses per user
+          </label>
+          <p className="text-xs text-slate-500">
+            Applies to every user, across all networks. Lowering it never deletes
+            anything - users already above the new limit keep what they have and
+            simply cannot add more.
+          </p>
+        </div>
+        <input
+          id="watch-limit"
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value.trim())
+            setDone(false)
+          }}
+          inputMode="numeric"
+          aria-invalid={!valid}
+          aria-describedby="watch-limit-range"
+          className="w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm tabular-nums focus:border-amber-500 focus:outline-none"
+        />
+        <button
+          disabled={busy || !valid || !changed}
+          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
+        >
+          {busy ? 'Saving...' : 'Save'}
+        </button>
+        <span id="watch-limit-range" className="text-xs text-slate-500">
+          {valid ? `${MIN}-${MAX}` : `Enter a whole number between ${MIN} and ${MAX}`}
+        </span>
+        {done && !changed && <span className="text-xs font-medium text-green-700">Saved.</span>}
+      </form>
+    </section>
   )
 }
 

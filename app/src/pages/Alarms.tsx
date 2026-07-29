@@ -589,6 +589,9 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
   const { t } = useT()
   const hidden = usePrivacyMode()
   const [addresses, setAddresses] = useState<WatchedAddress[]>([])
+  // Admin-configurable server-side; seeded with the shipped default so the
+  // counter never renders "3 of 0" during the first load.
+  const [watchLimit, setWatchLimit] = useState(20)
   const [alerts, setAlerts] = useState<WalletAlert[]>([])
   const [unread, setUnread] = useState(0)
   const [error, setError] = useState('')
@@ -606,6 +609,7 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
     try {
       const [w, a] = await Promise.all([api.watchedList(), api.alertsList()])
       setAddresses(w.addresses)
+      if (w.limit > 0) setWatchLimit(w.limit)
       setAlerts(a.alerts)
       setUnread(a.unread)
       setError('')
@@ -625,6 +629,8 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
   // for feedback, not enforcement.
   const addressMatchesChain =
     newAddress.trim() === '' || newAddress.trim().startsWith(selectedChain.bech32Prefix + '1')
+
+  const atLimit = addresses.length >= watchLimit
 
   // Removing a watched address deletes its alert history with it, and there is
   // no undo on the server - so it is confirmed, with the consequence named.
@@ -647,6 +653,13 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
     e.preventDefault()
     if (!addressMatchesChain) {
       setError(t('alarms.errWrongNetwork', { chain: selectedChain.chainName }))
+      return
+    }
+    // Convenience only - watched_add.php enforces this. Catches the case where
+    // the list filled up in another tab since this form was opened, and says so
+    // in the user's language rather than passing through the API's English.
+    if (addresses.length >= watchLimit) {
+      setError(t('alarms.watchLimitReached', { limit: watchLimit }))
       return
     }
     setBusy(true)
@@ -715,13 +728,20 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
         <div className="flex items-center justify-between">
           <h2 className="flex items-center gap-1.5 px-1 text-xs font-medium uppercase tracking-wide text-slate-500">
             <Eye className="h-3.5 w-3.5" strokeWidth={1.8} /> {t('alarms.watched')}
-            <HelpTip text={t('help.watchAddress')} />
+            {/* The cap used to be invisible until the server rejected a filled-in
+                form. Stating it up front is the whole point. */}
+            <span className="tabular-nums normal-case">
+              {t('alarms.watchedCount', { count: addresses.length, limit: watchLimit })}
+            </span>
+            <HelpTip text={t('help.watchLimit', { limit: watchLimit })} />
           </h2>
           <button
             type="button"
             onClick={() => setShowAddForm((o) => !o)}
             aria-expanded={showAddForm}
-            className="flex items-center gap-1 rounded-xl bg-white px-2.5 py-1.5 text-sm text-slate-600 ring-1 ring-slate-200 hover:text-amber-700"
+            disabled={atLimit && !showAddForm}
+            title={atLimit ? t('alarms.watchLimitReached', { limit: watchLimit }) : undefined}
+            className="flex items-center gap-1 rounded-xl bg-white px-2.5 py-1.5 text-sm text-slate-600 ring-1 ring-slate-200 hover:text-amber-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-slate-600"
           >
             {showAddForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
             {showAddForm ? t('common.close') : t('alarms.watch')}
@@ -820,6 +840,14 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
               {t('alarms.watch')}
             </button>
           </form>
+        )}
+
+        {/* At the cap, say so where the form would have been - a disabled
+            button with no explanation reads as a bug. */}
+        {atLimit && !showAddForm && (
+          <p role="status" className="rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-600">
+            {t('alarms.watchLimitReached', { limit: watchLimit })}
+          </p>
         )}
 
         {addresses.length === 0 ? (

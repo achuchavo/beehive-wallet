@@ -12,4 +12,6 @@ $stmt = $db->prepare(
 );
 $stmt->execute([$userId]);
 
-json_out(['ok' => true, 'addresses' => $stmt->fetchAll()]);
+// The limit rides along with the list so the page can show "n of N" and stop
+// offering the form at the cap, without a second round trip.
+json_out(['ok' => true, 'addresses' => $stmt->fetchAll(), 'limit' => watch_limit($db)]);

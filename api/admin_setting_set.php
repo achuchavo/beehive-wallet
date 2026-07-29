@@ -9,12 +9,26 @@ $body = read_body();
 $key = trim($body['key'] ?? '');
 $value = $body['value'] ?? '';
 
-// Only known boolean flags are settable through this endpoint.
+// Only known keys are settable through this endpoint, and each is coerced to
+// its own shape - an allow-list, so a typo'd or hostile key cannot write an
+// arbitrary row into app_settings.
 $booleanKeys = ['uptime_alerts_enabled'];
-if (!in_array($key, $booleanKeys, true)) {
+// key => [min, max]. Rejected rather than clamped: silently storing 500 when
+// the admin typed 5000 would look like the save worked as asked.
+$intKeys = ['watch_limit' => [WATCH_LIMIT_MIN, WATCH_LIMIT_MAX]];
+
+if (in_array($key, $booleanKeys, true)) {
+    $value = !empty($value) && $value !== '0' ? '1' : '0';
+} elseif (isset($intKeys[$key])) {
+    [$min, $max] = $intKeys[$key];
+    $n = filter_var($value, FILTER_VALIDATE_INT);
+    if ($n === false || $n < $min || $n > $max) {
+        json_error("Value must be a whole number between {$min} and {$max}");
+    }
+    $value = (string) $n;
+} else {
     json_error('Unknown setting');
 }
-$value = !empty($value) && $value !== '0' ? '1' : '0';
 
 $stmt = $db->prepare(
     'INSERT INTO app_settings (setting_key, setting_value, updated_at)
