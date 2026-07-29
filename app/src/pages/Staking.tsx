@@ -9,6 +9,7 @@ import {
   buildClaim,
   serviceFeeActive,
   isFree,
+  isValidatorAllowed,
   delegationHasServiceFee,
 } from '../wallet/staking'
 import { useTxReview, type Prepare } from '../wallet/useTxReview'
@@ -443,6 +444,10 @@ function ValidatorRow({
   const { active, getSigner } = useWallet()
   const [action, setAction] = useState<'none' | 'delegate' | 'undelegate'>('none')
   const free = isFree(chain, validator.operator)
+  // Whether this app offers delegation here at all. Undelegating stays
+  // available regardless: someone who staked before a restriction was
+  // introduced must always be able to get their tokens back out.
+  const allowed = isValidatorAllowed(chain, validator.operator)
   const up = isUp(validator)
   const power = Number(validator.tokens) / 10 ** chain.decimals
 
@@ -583,16 +588,26 @@ function ValidatorRow({
           </div>
         </div>
         <div className="flex shrink-0 gap-1">
-          <button
-            onClick={() => setAction(action === 'delegate' ? 'none' : 'delegate')}
-            className={`rounded-lg px-2.5 py-1.5 text-xs font-medium ${
-              free
-                ? 'bg-amber-500 text-slate-900 hover:bg-amber-600'
-                : 'text-slate-600 ring-1 ring-slate-200 hover:text-amber-700'
-            }`}
-          >
-            {free ? t('staking.stake') : t('staking.delegate')}
-          </button>
+          {/* Not offered here, rather than offered and then refused. The reason
+              is stated, because a greyed button with no explanation reads as a
+              bug rather than as a deliberate choice by the operator. */}
+          {allowed ? (
+            <button
+              onClick={() => setAction(action === 'delegate' ? 'none' : 'delegate')}
+              className={`rounded-lg px-2.5 py-1.5 text-xs font-medium ${
+                free
+                  ? 'bg-amber-500 text-slate-900 hover:bg-amber-600'
+                  : 'text-slate-600 ring-1 ring-slate-200 hover:text-amber-700'
+              }`}
+            >
+              {free ? t('staking.stake') : t('staking.delegate')}
+            </button>
+          ) : (
+            <span className="flex items-center gap-1 whitespace-nowrap px-1 text-xs text-slate-400">
+              {t('staking.notOffered')}
+              <HelpTip text={t('help.stakingNotOffered')} align="end" />
+            </span>
+          )}
           {staked && (
             <button
               onClick={() => setAction(action === 'undelegate' ? 'none' : 'undelegate')}

@@ -499,6 +499,270 @@ function admin_action_denied_reason(array $actor, array $target): string
     return '';
 }
 
+// --- Per-feature access levels (migration 010) ------------------------------
+//
+// admin_permissions used to be pure membership: a row meant FULL access. The
+// `level` column makes a grant ordered instead, so someone can be given sight
+// of a feature without the ability to change it.
+//
+// NONE is normally expressed by the absence of a row; it exists as a constant
+// so a clamped junk value has somewhere safe to land.
+const PERM_NONE = 0;
+const PERM_READ = 1;
+const PERM_WRITE = 2;
+
+/**
+ * Admin features that can be granted individually. Super admins have all of
+ * them at PERM_WRITE and never have rows in admin_permissions.
+ *
+ * Lives here rather than in common.php so the pure grant helpers below can be
+ * unit-tested without a session or database; common.php requires this file, so
+ * every existing call site is unaffected.
+ *
+ * The split is by WHAT DATA the feature exposes, not by which screen it sits
+ * on:
+ *   - 'wallet_alerts' is separate from 'uptime' because uptime is validator
+ *     liveness while wallet-alert data exposes users' watched ADDRESSES.
+ *   - 'user_watches' is separate from 'wallet_alerts' again: it adds who pays
+ *     for what, which is billing data about a named person.
+ *   - 'roles' is separate from 'users' because user moderation (disable, delete)
+ *     and handing out administrative power are very different blast radii.
+ */
+const ADMIN_FEATURES = [
+    'users',
+    'roles',
+    'chains',
+    'announcements',
+    'uptime',
+    'wallet_alerts',
+    'staking',
+    'alert_pricing',
+    'user_watches',
+    'settings',
+];
+
+/**
+ * Coerce a stored level into a known one.
+ *
+ * Clamped on READ, not merely on write, for the same reason watch_limit() is:
+ * this table is editable by anyone with database access, and the application
+ * must not act on a value it never wrote. Anything above write clamps DOWN to
+ * write (the real ceiling) rather than being read as "even more than write";
+ * anything below read becomes no access at all.
+ */
+function clamp_permission_level(int $level): int
+{
+    if ($level >= PERM_WRITE) {
+        return PERM_WRITE;
+    }
+    if ($level === PERM_READ) {
+        return PERM_READ;
+    }
+    return PERM_NONE;
+}
+
+/**
+ * Whether an actor may grant $feature at $level to someone else.
+ * '' = allowed, otherwise a deny reason:
+ *   unknown_feature | escalation | roles_super_only
+ *
+ * This is the anti-escalation rule, and it is a plain numeric comparison
+ * precisely so it is hard to get subtly wrong: nobody can hand out more access
+ * than they themselves hold.
+ *
+ * Callers must ALSO enforce, with the database: that the actor holds
+ * roles:WRITE at all, the self-edit ban, the super-admin-only rules on
+ * is_super_admin, admin_action_denied_reason() against the target, and the
+ * final-super-admin count.
+ */
+function grant_denied_reason(
+    array $actorLevels,
+    bool $actorIsSuper,
+    string $feature,
+    int $level
+): string {
+    if (!in_array($feature, ADMIN_FEATURES, true)) {
+        return 'unknown_feature';
+    }
+    // A super admin is the ceiling of the whole model - there is nothing above
+    // them to escalate to.
+    if ($actorIsSuper) {
+        return '';
+    }
+    // Only a super admin may hand out role management. Escalation alone would
+    // permit it (an admin with roles:WRITE granting roles:WRITE is sideways,
+    // not upward), but that lets an admin cohort replicate itself indefinitely
+    // with no super admin ever in the loop.
+    if ($feature === 'roles') {
+        return 'roles_super_only';
+    }
+    if (clamp_permission_level($level) > clamp_permission_level((int) ($actorLevels[$feature] ?? PERM_NONE))) {
+        return 'escalation';
+    }
+    return '';
+}
+
+// --- Base-unit amount math --------------------------------------------------
+//
+// The PHP mirror of app/src/wallet/amount.ts, and it exists for the same
+// reason: chain amounts are integers in base units that routinely exceed what a
+// float can represent exactly, and on a 64-bit build PHP_INT_MAX is about
+// 9.2e18 - which an 18-decimal chain passes at ten whole tokens. A fee
+// comparison that silently loses precision is a fee comparison that can be
+// underpaid, so nothing here goes through (int) or (float).
+//
+// Values are non-negative decimal integer STRINGS ("200000000"). bcmath would
+// do this too, but it is an optional extension and the money path must not
+// depend on whether it happens to be compiled in.
+
+/**
+ * Normalise a base-unit string: strip leading zeros, reject anything that is
+ * not a plain non-negative integer. Returns null for junk, so callers must
+ * decide what to do rather than silently receiving a zero.
+ *
+ * Deliberately strict. A value like "1.5", "1e6", "-1" or " 12 " reaching this
+ * function means the caller's assumptions are wrong somewhere upstream, and
+ * coercing it would hide that.
+ */
+function base_normalize(string $value): ?string
+{
+    if (!preg_match('/^[0-9]+$/', $value)) {
+        return null;
+    }
+    $trimmed = ltrim($value, '0');
+    return $trimmed === '' ? '0' : $trimmed;
+}
+
+/**
+ * Compare two base-unit strings: -1, 0 or 1. Junk sorts as invalid, so callers
+ * get null and must handle it explicitly.
+ *
+ * Length-then-lexicographic, which is exact for normalised non-negative
+ * integers of any size and needs no big-number library.
+ */
+function base_cmp(string $a, string $b): ?int
+{
+    $x = base_normalize($a);
+    $y = base_normalize($b);
+    if ($x === null || $y === null) {
+        return null;
+    }
+    if (strlen($x) !== strlen($y)) {
+        return strlen($x) < strlen($y) ? -1 : 1;
+    }
+    return $x <=> $y;
+}
+
+/** Exact addition of two base-unit strings, or null if either is invalid. */
+function base_add(string $a, string $b): ?string
+{
+    $x = base_normalize($a);
+    $y = base_normalize($b);
+    if ($x === null || $y === null) {
+        return null;
+    }
+    // Schoolbook addition over the digits, right to left. Exact at any width.
+    $out = '';
+    $carry = 0;
+    $i = strlen($x) - 1;
+    $j = strlen($y) - 1;
+    while ($i >= 0 || $j >= 0 || $carry > 0) {
+        $sum = $carry;
+        if ($i >= 0) {
+            $sum += (int) $x[$i--];
+        }
+        if ($j >= 0) {
+            $sum += (int) $y[$j--];
+        }
+        $out = ((string) ($sum % 10)) . $out;
+        $carry = intdiv($sum, 10);
+    }
+    return base_normalize($out);
+}
+
+/** True when a base-unit string is a valid amount strictly greater than zero. */
+function base_is_positive(string $value): bool
+{
+    $n = base_normalize($value);
+    return $n !== null && $n !== '0';
+}
+
+// --- Payment transaction parsing --------------------------------------------
+
+/**
+ * Total paid to $to in $denom by the bank sends in a decoded transaction body,
+ * plus the addresses that paid it.
+ *
+ * Pure so the money path's parsing is unit-testable without a node. Shape is
+ * the Cosmos SDK REST form: $txBody['messages'] is a list of decoded messages,
+ * each MsgSend carrying from_address, to_address and an amount[] of coins.
+ *
+ * Deliberately narrow:
+ *   - ONLY '/cosmos.bank.v1beta1.MsgSend'. MsgMultiSend, authz MsgExec wrappers
+ *     and IBC transfers are not counted. Each is a separate shape with its own
+ *     parsing hazards, and the app builds a plain MsgSend; a payer using
+ *     something else is told the payment was not recognised rather than having
+ *     it half-understood.
+ *   - Denominations match EXACTLY as strings, so an IBC voucher whose display
+ *     name resembles the native denom cannot pass as it.
+ *   - A malformed coin is skipped, never guessed at. Skipping can only ever
+ *     UNDERCOUNT, which fails towards refusing a payment rather than towards
+ *     accepting an underpayment.
+ *
+ * Sums with base_add(), so a total is exact at any width.
+ */
+function msgsend_total_to(array $txBody, string $to, string $denom): array
+{
+    $total = '0';
+    $senders = [];
+
+    if ($to === '' || $denom === '') {
+        return ['total' => '0', 'senders' => []];
+    }
+
+    $messages = $txBody['messages'] ?? null;
+    if (!is_array($messages)) {
+        return ['total' => '0', 'senders' => []];
+    }
+
+    foreach ($messages as $msg) {
+        if (!is_array($msg) || ($msg['@type'] ?? '') !== '/cosmos.bank.v1beta1.MsgSend') {
+            continue;
+        }
+        if (($msg['to_address'] ?? '') !== $to) {
+            continue;
+        }
+        $coins = $msg['amount'] ?? null;
+        if (!is_array($coins)) {
+            continue;
+        }
+        $matched = false;
+        foreach ($coins as $coin) {
+            if (!is_array($coin) || ($coin['denom'] ?? '') !== $denom) {
+                continue;
+            }
+            $amount = $coin['amount'] ?? '';
+            if (!is_string($amount)) {
+                continue;
+            }
+            $sum = base_add($total, $amount);
+            if ($sum === null) {
+                continue; // unparseable amount: skip, never guess
+            }
+            $total = $sum;
+            $matched = true;
+        }
+        if ($matched) {
+            $from = $msg['from_address'] ?? '';
+            if (is_string($from) && $from !== '' && !in_array($from, $senders, true)) {
+                $senders[] = $from;
+            }
+        }
+    }
+
+    return ['total' => $total, 'senders' => $senders];
+}
+
 // --- SSRF address checks ----------------------------------------------------
 // filter_var's NO_PRIV/NO_RES flags miss a few ranges that matter for SSRF, so
 // they are enumerated explicitly below.

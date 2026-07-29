@@ -20,13 +20,38 @@ export function isBeehive(chain: ChainInfo, validator: string): boolean {
   return validator === chain.beehiveValidator
 }
 
-// Validators offered for free staking (no service fee), admin-managed.
+/**
+ * On the admin-managed list for this chain.
+ *
+ * What being on it MEANS depends on the chain's staking policy:
+ *   all             nothing - every validator is free and offered
+ *   allowlist       these are the only validators offered at all
+ *   allowlist_paid  these are free; others are offered but cost the fee
+ */
 export function isFree(chain: ChainInfo, validator: string): boolean {
   return chain.freeValidators.includes(validator)
 }
 
+/**
+ * Whether this app offers delegation to this validator.
+ *
+ * SCOPE, worth being honest about: this governs what BEEHIVE offers. A
+ * delegation is a transaction the user signs and broadcasts themselves, so
+ * nothing here prevents staking elsewhere from another wallet or an explorer.
+ * It is a product policy, not a chain rule - and the admin screen says so.
+ */
+export function isValidatorAllowed(chain: ChainInfo, validator: string): boolean {
+  if (chain.stakingPolicy !== 'allowlist') return true
+  return isFree(chain, validator)
+}
+
 /** Whether a delegation to this validator bundles a service-fee bank send. */
 export function delegationHasServiceFee(chain: ChainInfo, validator: string): boolean {
+  // Only the paid policy charges. Under 'all' nothing is chargeable, and under
+  // 'allowlist' anything chargeable is simply not offered - so reading the fee
+  // in either case would bundle a payment for something that is already free or
+  // already refused.
+  if (chain.stakingPolicy !== 'allowlist_paid') return false
   return !isFree(chain, validator) && serviceFeeActive(chain)
 }
 

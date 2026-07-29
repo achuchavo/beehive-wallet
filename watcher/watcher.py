@@ -68,6 +68,10 @@ ALARM_DIRECTIONS = {
 # Per-cycle observability counters (reset at the start of each run_once).
 METRICS: dict = {}
 
+# Whether the paid-alert columns exist (migration 011). Detected once per
+# process; None means "not yet checked". See paid_alerts_available().
+_PAID_ALERTS: bool | None = None
+
 
 def reset_metrics() -> None:
     METRICS.clear()
@@ -687,6 +691,101 @@ def process_uptime(cursor, db, chains: list) -> None:
         evaluate_uptime(cursor, db, sub, down, missed)
 
 
+def paid_alerts_available(cursor) -> bool:
+    """Whether migration 011 has been applied (cached for the process).
+
+    Checked once rather than guessed at per query. Without the columns the
+    watcher must keep working exactly as before - a watcher that stops raising
+    alerts because a migration has not run yet is a far worse failure than one
+    that has not started charging.
+    """
+    global _PAID_ALERTS
+    if _PAID_ALERTS is None:
+        try:
+            cursor.execute(
+                "SELECT COUNT(*) AS n FROM information_schema.COLUMNS "
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'watched_addresses' "
+                "AND COLUMN_NAME = 'payment_state'"
+            )
+            _PAID_ALERTS = int(cursor.fetchone()["n"]) > 0
+        except Exception as e:
+            log("WARN", f"Could not detect paid-alert columns, assuming absent: {e}")
+            _PAID_ALERTS = False
+        if not _PAID_ALERTS:
+            log("INFO", "Paid address alerts not present (migration 011 not applied).")
+    return _PAID_ALERTS
+
+
+def sweep_lapsed(cursor, db) -> int:
+    """Pause paid watches whose period has run out.
+
+    This is the enforcement point for recurring cadences, and it lives here
+    because this is where alerts are actually raised - a check that only ran
+    when someone opened a page would keep delivering a paid service after it
+    expired.
+
+    The chain's grace period is honoured, so 'monthly with 3 days grace' means
+    what it says. A watch is PAUSED, never deleted: the address, label and alert
+    history survive untouched, and renewing sets it straight back to active.
+    """
+    if not paid_alerts_available(cursor):
+        return 0
+    try:
+        # Super admins are exempt from alert charges (they own the collection
+        # address), so their watches are never paused for non-payment.
+        cursor.execute(
+            "UPDATE watched_addresses w "
+            "LEFT JOIN chain_alert_pricing p ON p.chain_key = w.chain_key "
+            "JOIN users u ON u.id = w.user_id "
+            "SET w.payment_state = 'lapsed' "
+            "WHERE w.tier = 'paid' AND w.payment_state = 'active' "
+            "  AND u.is_super_admin = 0 "
+            "  AND w.paid_until IS NOT NULL "
+            "  AND w.paid_until < NOW() - INTERVAL COALESCE(p.grace_days, 0) DAY"
+        )
+        n = cursor.rowcount
+        db.commit()
+        if n > 0:
+            log("INFO", f"Paused {n} lapsed paid watch(es).")
+
+        # And release one that became exempt while paused. Someone who paid as
+        # an ordinary user and was later promoted would otherwise be stuck: the
+        # watch is paused pending a payment they can no longer be asked to make,
+        # and nothing else would ever switch it back on.
+        cursor.execute(
+            "UPDATE watched_addresses w "
+            "JOIN users u ON u.id = w.user_id "
+            "SET w.payment_state = 'active' "
+            "WHERE w.payment_state = 'lapsed' AND u.is_super_admin = 1"
+        )
+        freed = cursor.rowcount
+        db.commit()
+        if freed > 0:
+            log("INFO", f"Resumed {freed} watch(es) belonging to exempt accounts.")
+        return n
+    except Exception as e:
+        db.rollback()
+        log("ERROR", f"Lapse sweep failed: {e}")
+        return 0
+
+
+def watched_query(cursor) -> str:
+    """The per-cycle watched-address query.
+
+    Lapsed rows are excluded here rather than filtered in Python so an expired
+    subscription cannot raise an alert at all - and so the cursor columns of a
+    paused watch are left alone, which means resuming after a renewal does not
+    replay everything that happened while it was paused.
+    """
+    base = (
+        "SELECT w.*, u.push_private FROM watched_addresses w "
+        "JOIN users u ON u.id = w.user_id "
+    )
+    if paid_alerts_available(cursor):
+        base += "WHERE w.payment_state <> 'lapsed' "
+    return base + "ORDER BY w.id"
+
+
 def cleanup(cursor, db) -> None:
     cursor.execute(
         "DELETE FROM wallet_alerts WHERE is_read = 1 AND detected_at < NOW() - INTERVAL %s DAY",
@@ -711,12 +810,13 @@ def run_once() -> None:
     try:
         chains = load_chains(cursor)
         cleanup(cursor, db)
+        # Pause anything whose paid period has run out BEFORE selecting the work
+        # for this cycle, so a subscription that expired since the last pass
+        # does not get one more round of alerts.
+        METRICS["lapsed"] = sweep_lapsed(cursor, db)
         # Join the owner's push privacy preference so format_push_body can
         # redact without a second query per alert.
-        cursor.execute(
-            "SELECT w.*, u.push_private FROM watched_addresses w "
-            "JOIN users u ON u.id = w.user_id ORDER BY w.id"
-        )
+        cursor.execute(watched_query(cursor))
         rows = cursor.fetchall()
         METRICS["addresses"] = len(rows)
         log("INFO", f"Checking {len(rows)} watched address(es).")
@@ -729,10 +829,14 @@ def run_once() -> None:
             log("ERROR", f"Uptime pass error: {e}")
 
         # Backlog = watched addresses not checked in the last 2 polls (stale).
+        # Paused rows are excluded: they are deliberately not being polled, so
+        # counting them would show a permanent backlog and mask a real one.
         try:
+            paused = "AND payment_state <> 'lapsed' " if paid_alerts_available(cursor) else ""
             cursor.execute(
                 "SELECT COUNT(*) AS n FROM watched_addresses "
-                "WHERE last_checked_at IS NULL OR last_checked_at < NOW() - INTERVAL %s SECOND",
+                "WHERE (last_checked_at IS NULL OR last_checked_at < NOW() - INTERVAL %s SECOND) "
+                + paused,
                 (POLL_INTERVAL_SECONDS * 2,),
             )
             METRICS["backlog"] = int(cursor.fetchone()["n"])

@@ -266,5 +266,132 @@ class GracefulShutdown(unittest.TestCase):
         self.assertEqual(calls["n"], 1)
 
 
+class FakeCursor:
+    """Minimal cursor stand-in: canned rows, and a record of what was executed."""
+
+    def __init__(self, rows=None, fail=False):
+        self._rows = rows if rows is not None else [{"n": 1}]
+        self._fail = fail
+        self.executed = []
+        self.rowcount = 0
+
+    def execute(self, sql, params=None):
+        if self._fail:
+            raise RuntimeError("no such table")
+        self.executed.append(sql)
+
+    def fetchone(self):
+        return self._rows[0]
+
+
+class FakeDb:
+    def __init__(self):
+        self.commits = 0
+        self.rollbacks = 0
+
+    def commit(self):
+        self.commits += 1
+
+    def rollback(self):
+        self.rollbacks += 1
+
+
+class PaidAlertGating(unittest.TestCase):
+    """Lapsed paid watches must stop raising alerts - and a deployment that has
+    not applied migration 011 must keep working exactly as before."""
+
+    def setUp(self):
+        watcher._PAID_ALERTS = None
+
+    def tearDown(self):
+        watcher._PAID_ALERTS = None
+
+    def test_columns_present_is_detected(self):
+        self.assertTrue(watcher.paid_alerts_available(FakeCursor([{"n": 1}])))
+
+    def test_columns_absent_is_detected(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertFalse(watcher.paid_alerts_available(FakeCursor([{"n": 0}])))
+
+    def test_detection_failure_assumes_absent(self):
+        # A watcher that stopped alerting because a migration had not run yet
+        # would be a far worse failure than one that had not started charging.
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertFalse(watcher.paid_alerts_available(FakeCursor(fail=True)))
+
+    def test_detection_is_cached(self):
+        cursor = FakeCursor([{"n": 1}])
+        watcher.paid_alerts_available(cursor)
+        watcher.paid_alerts_available(cursor)
+        self.assertEqual(len(cursor.executed), 1)
+
+    def test_query_excludes_lapsed_when_available(self):
+        sql = watcher.watched_query(FakeCursor([{"n": 1}]))
+        self.assertIn("payment_state <> 'lapsed'", sql)
+        self.assertIn("ORDER BY w.id", sql)
+
+    def test_query_unchanged_without_migration(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            sql = watcher.watched_query(FakeCursor([{"n": 0}]))
+        self.assertNotIn("payment_state", sql)
+        self.assertIn("ORDER BY w.id", sql)
+
+    def test_sweep_noop_without_migration(self):
+        db = FakeDb()
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(watcher.sweep_lapsed(FakeCursor([{"n": 0}]), db), 0)
+        self.assertEqual(db.commits, 0)
+
+    def _sweep_statements(self):
+        """Run a sweep and return its (pause, resume) statements.
+
+        Selected by what they DO rather than by position, so adding another
+        statement to the sweep cannot silently re-point these assertions at the
+        wrong SQL.
+        """
+        cursor = FakeCursor([{"n": 1}])
+        self.db = FakeDb()
+        watcher.sweep_lapsed(cursor, self.db)
+        pause = [s for s in cursor.executed if "SET w.payment_state = 'lapsed'" in s]
+        resume = [s for s in cursor.executed if "SET w.payment_state = 'active'" in s]
+        self.assertEqual(len(pause), 1)
+        self.assertEqual(len(resume), 1)
+        return pause[0], resume[0]
+
+    def test_sweep_honours_grace_period(self):
+        pause, _ = self._sweep_statements()
+        self.assertIn("COALESCE(p.grace_days, 0)", pause)
+        # Paused, never deleted - the address and its alert history survive.
+        self.assertNotIn("DELETE", pause.upper())
+        self.assertEqual(self.db.commits, 2)
+
+    def test_sweep_only_touches_active_paid_rows(self):
+        pause, _ = self._sweep_statements()
+        self.assertIn("w.tier = 'paid'", pause)
+        self.assertIn("w.payment_state = 'active'", pause)
+        # A one-time purchase has no expiry and must never be paused.
+        self.assertIn("w.paid_until IS NOT NULL", pause)
+
+    def test_sweep_never_pauses_an_exempt_account(self):
+        # Super admins own the collection address, so they are not charged and
+        # must never have a watch paused for non-payment.
+        pause, _ = self._sweep_statements()
+        self.assertIn("u.is_super_admin = 0", pause)
+
+    def test_sweep_resumes_a_watch_that_became_exempt(self):
+        # Paid as an ordinary user, then promoted: without this the watch stays
+        # paused pending a payment that can no longer be asked for.
+        _, resume = self._sweep_statements()
+        self.assertIn("w.payment_state = 'lapsed'", resume)
+        self.assertIn("u.is_super_admin = 1", resume)
+
+    def test_sweep_failure_rolls_back_and_does_not_raise(self):
+        db = FakeDb()
+        watcher._PAID_ALERTS = True
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(watcher.sweep_lapsed(FakeCursor(fail=True), db), 0)
+        self.assertEqual(db.rollbacks, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

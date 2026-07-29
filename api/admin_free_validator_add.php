@@ -3,7 +3,10 @@ require __DIR__ . '/common.php';
 require_post();
 
 $db = get_db();
-require_permission($db, 'chains');
+// Moved from 'chains' to 'staking' (migration 013). Which validators users may
+// delegate to - and what delegating elsewhere costs - is a different decision
+// from the chain's technical configuration, and now has its own screen.
+require_permission($db, 'staking', PERM_WRITE);
 
 $b = read_body();
 $chainKey = trim($b['chain_key'] ?? '');

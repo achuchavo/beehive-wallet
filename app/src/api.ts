@@ -1,8 +1,16 @@
 // Thin client for the PHP API. Same-origin (/api proxied in dev), so the
 // PHP session cookie rides along automatically.
 
+import type { StakingPolicy } from './chains'
+
 export type AlarmType = 'sent' | 'received' | 'both' | 'unbond'
 export type AlertKind = 'sent' | 'received' | 'unbond'
+
+/** How a watch is paid for. 'free' covers both the free allowance and any
+ *  watch created before a chain had a cap - a cap only gates the next add. */
+export type WatchTier = 'free' | 'paid'
+/** 'lapsed' = a recurring payment ran out, so the watcher has paused it. */
+export type WatchPaymentState = 'active' | 'lapsed'
 
 export interface WatchedAddress {
   id: number
@@ -12,6 +20,49 @@ export interface WatchedAddress {
   alarm_enabled: number
   alarm_type: AlarmType
   created_at: string
+  tier: WatchTier
+  /** null for free watches and for one-off purchases, which never expire. */
+  paid_until: string | null
+  payment_state: WatchPaymentState
+}
+
+export type WatchCadence = 'one_time' | 'weekly' | 'monthly'
+
+/**
+ * What the next watch on a chain would cost. `metered: false` means the chain
+ * has no pricing configured at all - no cap, no fee.
+ */
+export interface WatchQuote {
+  metered: boolean
+  alerts_enabled: boolean
+  free_cap: number
+  free_used: number
+  next_is_free: boolean
+  /** This account is never charged for alerts (super admins own the collection
+   *  address, so charging one means asking it to pay itself). Reported
+   *  separately from `next_is_free` so the UI can say why it is free. */
+  exempt: boolean
+  /** Whether a payment can actually be taken - false means the paid tier is
+   *  unavailable (misconfigured or deliberately not for sale), never free. */
+  sellable: boolean
+  /** Base units, as a string. Never a number: see wallet/amount.ts. */
+  fee_amount: string
+  fee_denom: string
+  collect_address: string
+  cadence: WatchCadence
+  grace_days: number
+}
+
+/** A quote locked for one payment, with the code that binds it to this account. */
+export interface WatchIntent {
+  memo_code: string
+  expires_at: string
+  fee_amount: string
+  fee_denom: string
+  collect_address: string
+  cadence: WatchCadence
+  kind: 'new' | 'renew'
+  watch_id: number | null
 }
 
 export interface WalletAlert {
@@ -78,6 +129,34 @@ export interface AdminUptimeSub {
 
 const API_BASE = `${import.meta.env.BASE_URL}api/`.replace('//', '/')
 
+/**
+ * A failed API call that kept its payload.
+ *
+ * The payment endpoints answer a refusal with structured detail - the quote to
+ * show, whether it is worth retrying, how much was actually paid - and a plain
+ * Error would throw all of that away, leaving the UI with only a sentence. It
+ * still extends Error, so every existing `e instanceof Error ? e.message`
+ * catch site keeps working unchanged.
+ */
+export class ApiError extends Error {
+  readonly status: number
+  /** Machine-readable reason, e.g. 'not_indexed', 'underpaid', 'already_used'. */
+  readonly code: string
+  /** True when the same request could succeed later - a node that has not
+   *  indexed the transaction yet, or an endpoint that was briefly unreachable. */
+  readonly retriable: boolean
+  readonly payload: Record<string, unknown>
+
+  constructor(message: string, status: number, payload: Record<string, unknown>) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = typeof payload.code === 'string' ? payload.code : ''
+    this.retriable = payload.retriable === true
+    this.payload = payload
+  }
+}
+
 async function call<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: body === undefined ? 'GET' : 'POST',
@@ -87,7 +166,11 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
   })
   const data = await res.json()
   if (!res.ok || data.ok === false) {
-    throw new Error(data.error ?? `Request failed (${res.status})`)
+    throw new ApiError(
+      data.error ?? `Request failed (${res.status})`,
+      res.status,
+      typeof data === 'object' && data !== null ? data : {},
+    )
   }
   return data as T
 }
@@ -96,6 +179,10 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
 // an admin without the matching permission simply does not receive that key.
 export interface AdminOverview {
   permissions: string[]
+  /** Per-feature access level. Presentation only - every endpoint enforces its
+   *  own level server-side, so this can never be the thing that protects data. */
+  levels: Partial<Record<AdminFeature, PermLevel>>
+  is_super_admin: boolean
   stats: Partial<{
     users: number
     watched_addresses: number
@@ -132,10 +219,14 @@ export const api = {
   me: () =>
     call<{
       logged_in: boolean
+      /** The caller's own user id, so admin screens can identify their own row. */
+      id?: number
       email?: string
       is_admin?: boolean
       is_super_admin?: boolean
       admin_features?: string[]
+      /** Per-feature access level. Presentation only; the server enforces. */
+      admin_levels?: Partial<Record<AdminFeature, PermLevel>>
       main_address?: string | null
       /** False for addresses linked before ownership proofs existed. */
       main_address_verified?: boolean
@@ -168,7 +259,19 @@ export const api = {
       ...(proof ?? {}),
     }),
   logout: () => call('logout.php', {}),
-  watchedList: () => call<{ addresses: WatchedAddress[]; limit: number }>('watched_list.php'),
+  watchedList: () =>
+    call<{
+      addresses: WatchedAddress[]
+      limit: number
+      /** Per-chain allowance, keyed by chain key. */
+      quotes: Record<string, WatchQuote>
+    }>('watched_list.php'),
+  /**
+   * Add a FREE watch. When the user is over the chain's free allowance this
+   * fails with HTTP 402 and an ApiError carrying `quote` - the caller shows the
+   * fee and moves to the payment flow. This endpoint never creates a paid
+   * watch; only a verified payment can do that.
+   */
   watchedAdd: (chain_key: string, address: string, label: string, alarm_type: AlarmType) =>
     call<{ id: number; duplicate: boolean }>('watched_add.php', {
       chain_key,
@@ -176,6 +279,41 @@ export const api = {
       label,
       alarm_type,
     }),
+  /**
+   * Ask what the next watch (or a renewal) would cost, and get a payment code.
+   * Charges nothing and creates nothing.
+   */
+  watchQuote: (args: {
+    chain_key: string
+    address?: string
+    kind?: 'new' | 'renew'
+    watch_id?: number
+  }) =>
+    call<{ quote: WatchQuote; needs_payment: boolean; intent: WatchIntent | null }>(
+      'watch_quote.php',
+      args,
+    ),
+  /**
+   * Submit an on-chain payment for verification. The server checks the
+   * transaction against the chain and only then enables the watch - the hash is
+   * the only thing here taken at face value, and only as something to look up.
+   */
+  watchPaymentSubmit: (args: {
+    chain_key: string
+    memo_code: string
+    tx_hash: string
+    address?: string
+    label?: string
+    alarm_type?: AlarmType
+  }) =>
+    call<{
+      id: number
+      tier: WatchTier
+      paid_until: string | null
+      cadence: WatchCadence
+      amount: string
+      denom: string
+    }>('watch_payment_submit.php', args),
   watchedRemove: (id: number) => call('watched_remove.php', { id }),
   watchedToggle: (id: number, enabled: boolean) => call('watched_toggle.php', { id, enabled }),
   watchedSetType: (id: number, alarm_type: AlarmType) =>
@@ -185,12 +323,60 @@ export const api = {
   adminOverview: () => call<AdminOverview & { ok: boolean }>('admin_overview.php'),
   adminUserUpdate: (id: number, action: UserAction) =>
     call('admin_user_update.php', { id, action }),
+  /**
+   * `features` is a feature => level map. The server refuses any grant above
+   * the caller's own level, refuses `roles` unless the caller is a super admin,
+   * and refuses self-edits - none of which the UI can be trusted to enforce.
+   */
   adminRoleUpdate: (
     id: number,
     is_admin: boolean,
     is_super_admin: boolean,
-    features: string[],
+    features: Partial<Record<AdminFeature, PermLevel>>,
   ) => call('admin_role_update.php', { id, is_admin, is_super_admin, features }),
+  adminAlertPricing: () =>
+    call<{
+      chains: AdminChainPricing[]
+      cadences: WatchCadence[]
+      free_cap_max: number
+      grace_days_max: number
+    }>('admin_alert_pricing.php'),
+  /** `fee_amount` is BASE UNITS as a string - never a float. */
+  adminAlertPricingSave: (pricing: {
+    chain_key: string
+    alerts_enabled: boolean
+    free_cap: number
+    fee_amount: string
+    fee_denom: string
+    collect_address: string
+    cadence: WatchCadence
+    grace_days: number
+  }) => call('admin_alert_pricing_save.php', pricing),
+  /** Return a chain to unmetered: no cap, no fee. Existing watches are kept. */
+  adminAlertPricingClear: (chain_key: string) =>
+    call('admin_alert_pricing_save.php', { chain_key, clear: true }),
+  /**
+   * Watched addresses grouped under the account that owns them.
+   *
+   * Paged by ACCOUNT, not by address, so expanding someone always shows all of
+   * their matching addresses rather than whichever ones fell on this page.
+   */
+  adminUserWatches: (params: { q?: string; chain_key?: string; tier?: string; page?: number }) => {
+    const qs = new URLSearchParams()
+    if (params.q) qs.set('q', params.q)
+    if (params.chain_key) qs.set('chain_key', params.chain_key)
+    if (params.tier) qs.set('tier', params.tier)
+    if (params.page && params.page > 1) qs.set('page', String(params.page))
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return call<{
+      accounts: AdminWatchAccount[]
+      page: number
+      per_page: number
+      total_accounts: number
+      /** Deployment-wide, independent of the filter or page. */
+      totals: { total: number; paid: number; free: number; lapsed: number }
+    }>(`admin_user_watches.php${suffix}`)
+  },
   announcementGet: () =>
     call<{ announcement: Announcement | null }>('announcement_get.php'),
   settingsPublic: () =>
@@ -207,6 +393,15 @@ export const api = {
   adminEndpointSave: (ep: Partial<AdminEndpoint> & { chain_key: string; kind: string; url: string }) =>
     call('admin_endpoint_save.php', ep),
   adminEndpointDelete: (id: number) => call('admin_endpoint_delete.php', { id }),
+  adminStaking: () =>
+    call<{ chains: AdminStakingChain[]; policies: StakingPolicy[] }>('admin_staking.php'),
+  /** `service_fee` is BASE UNITS as a string - never a float. */
+  adminStakingSave: (args: {
+    chain_key: string
+    staking_policy: StakingPolicy
+    service_fee: string
+    fee_collector: string
+  }) => call('admin_staking_save.php', args),
   adminFreeValidatorAdd: (chain_key: string, valoper: string) =>
     call('admin_free_validator_add.php', { chain_key, valoper }),
   adminFreeValidatorRemove: (id: number) => call('admin_free_validator_remove.php', { id }),
@@ -246,8 +441,104 @@ export const api = {
 
 export type UserAction = 'disable' | 'enable' | 'delete'
 
-export const ADMIN_FEATURES = ['users', 'chains', 'announcements', 'uptime', 'wallet_alerts'] as const
+/**
+ * Access levels, mirroring PERM_* in api/security_lib.php. Ordered, so a check
+ * is `held >= needed` rather than a set of cases.
+ */
+export const PERM_NONE = 0
+export const PERM_READ = 1
+export const PERM_WRITE = 2
+export type PermLevel = 0 | 1 | 2
+
+/**
+ * Must stay in step with ADMIN_FEATURES in api/security_lib.php. A feature
+ * missing here is simply not offered by the admin UI; a feature missing THERE
+ * is refused by the server, which is the direction that matters.
+ */
+export const ADMIN_FEATURES = [
+  'users',
+  'roles',
+  'chains',
+  'announcements',
+  'uptime',
+  'wallet_alerts',
+  'staking',
+  'alert_pricing',
+  'user_watches',
+  'settings',
+] as const
 export type AdminFeature = (typeof ADMIN_FEATURES)[number]
+
+export interface AdminStakingChain {
+  chain_key: string
+  chain_name: string
+  denom: string
+  display_denom: string
+  decimals: number
+  bech32_prefix: string
+  chain_is_active: boolean
+  beehive_validator: string
+  beehive_moniker: string
+  staking_policy: StakingPolicy
+  /** Base units, as a string. Never a number. */
+  service_fee: string
+  fee_collector: string
+  /** Whether a fee could actually be collected (positive fee + valid address). */
+  fee_ready: boolean
+  allowed_validators: { id: number; valoper: string }[]
+}
+
+export interface AdminChainPricing {
+  chain_key: string
+  chain_name: string
+  denom: string
+  display_denom: string
+  decimals: number
+  bech32_prefix: string
+  chain_is_active: boolean
+  /** null = unmetered: no cap and no fee on this chain. */
+  pricing: {
+    alerts_enabled: boolean
+    free_cap: number
+    fee_amount: string
+    fee_denom: string
+    collect_address: string
+    cadence: WatchCadence
+    grace_days: number
+    sellable: boolean
+    updated_at: string | null
+  } | null
+  watch_counts: { free: number; paid: number; lapsed: number; total: number }
+}
+
+/** One account and everything it is watching that matched the filter. */
+export interface AdminWatchAccount {
+  user_id: number
+  email: string
+  watches: AdminUserWatch[]
+  counts: { total: number; paid: number; free: number; lapsed: number }
+}
+
+export interface AdminUserWatch {
+  id: number
+  user_id: number
+  email: string
+  chain_key: string
+  address: string
+  label: string
+  alarm_enabled: number
+  alarm_type: AlarmType
+  created_at: string
+  tier: WatchTier
+  paid_until: string | null
+  payment_state: WatchPaymentState
+  payment_count: number
+  last_tx_hash: string | null
+  last_amount: string | null
+  last_denom: string | null
+  last_cadence: WatchCadence | null
+  last_paid_at: string | null
+}
 
 export interface AdminChain {
   chain_key: string

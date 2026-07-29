@@ -234,6 +234,201 @@ check('unconfigured falls back to host comparison',
     origin_denied_reason('same-origin', 'https://wallet.achumuamah.com', 'wallet.achumuamah.com', true, []), '');
 
 // =============================================================================
+// Per-feature access levels + anti-escalation (migration 010)
+// =============================================================================
+
+// Levels are clamped on READ, because admin_permissions is editable by anyone
+// with database access and the app must not act on a value it never wrote.
+check('level: write kept', clamp_permission_level(PERM_WRITE), PERM_WRITE);
+check('level: read kept', clamp_permission_level(PERM_READ), PERM_READ);
+check('level: zero is none', clamp_permission_level(0), PERM_NONE);
+check('level: negative is none', clamp_permission_level(-5), PERM_NONE);
+// Clamps DOWN to write rather than being read as "more than write".
+check('level: junk high clamps to write', clamp_permission_level(99), PERM_WRITE);
+
+$superLevels = [];              // a super admin needs no rows
+$writeChains = ['chains' => PERM_WRITE];
+$readChains = ['chains' => PERM_READ];
+
+// A super admin is the ceiling: nothing to escalate to.
+check('grant: super may grant write', grant_denied_reason($superLevels, true, 'chains', PERM_WRITE), '');
+check('grant: super may grant roles', grant_denied_reason($superLevels, true, 'roles', PERM_WRITE), '');
+check('grant: super may grant settings', grant_denied_reason($superLevels, true, 'settings', PERM_WRITE), '');
+
+// The core rule: never hand out more than you hold.
+check('grant: write may grant write', grant_denied_reason($writeChains, false, 'chains', PERM_WRITE), '');
+check('grant: write may grant read', grant_denied_reason($writeChains, false, 'chains', PERM_READ), '');
+check('grant: read may grant read', grant_denied_reason($readChains, false, 'chains', PERM_READ), '');
+check('grant: read may NOT grant write', grant_denied_reason($readChains, false, 'chains', PERM_WRITE), 'escalation');
+check(
+    'grant: ungranted feature cannot be granted',
+    grant_denied_reason($writeChains, false, 'users', PERM_READ),
+    'escalation'
+);
+check(
+    'grant: no grants at all cannot grant anything',
+    grant_denied_reason([], false, 'chains', PERM_READ),
+    'escalation'
+);
+
+// Role management is super-admin-only to grant, even for an admin who holds it
+// at write - otherwise an admin cohort can replicate itself indefinitely with
+// no super admin ever in the loop.
+check(
+    'grant: roles is super-only even at write',
+    grant_denied_reason(['roles' => PERM_WRITE], false, 'roles', PERM_WRITE),
+    'roles_super_only'
+);
+check(
+    'grant: roles is super-only even at read',
+    grant_denied_reason(['roles' => PERM_WRITE], false, 'roles', PERM_READ),
+    'roles_super_only'
+);
+
+// An unknown feature is refused rather than ignored, so a typo cannot report
+// success for a grant that was never made.
+check('grant: unknown feature refused', grant_denied_reason($superLevels, true, 'nope', PERM_READ), 'unknown_feature');
+check('grant: unknown feature refused for admin', grant_denied_reason($writeChains, false, 'nope', PERM_READ), 'unknown_feature');
+
+// A junk stored level must not become a licence to grant write.
+check(
+    'grant: junk actor level still clamps',
+    grant_denied_reason(['chains' => 99], false, 'chains', PERM_WRITE),
+    ''
+);
+check(
+    'grant: junk requested level clamps to write, not beyond',
+    grant_denied_reason($readChains, false, 'chains', 99),
+    'escalation'
+);
+
+// The features the app knows about. A feature removed from this list without a
+// matching migration would silently strip access, so the list is asserted.
+check('features: users present', in_array('users', ADMIN_FEATURES, true), true);
+check('features: roles present', in_array('roles', ADMIN_FEATURES, true), true);
+check('features: alert_pricing present', in_array('alert_pricing', ADMIN_FEATURES, true), true);
+check('features: user_watches present', in_array('user_watches', ADMIN_FEATURES, true), true);
+check('features: settings present', in_array('settings', ADMIN_FEATURES, true), true);
+
+// =============================================================================
+// Base-unit amount math (paid alerts)
+// =============================================================================
+
+check('base: normalise strips leading zeros', base_normalize('000200000000'), '200000000');
+check('base: normalise all zeros', base_normalize('0000'), '0');
+check('base: normalise plain', base_normalize('200000000'), '200000000');
+// Strict on purpose - junk means a wrong assumption upstream, not a zero.
+check('base: decimal rejected', base_normalize('1.5'), null);
+check('base: negative rejected', base_normalize('-1'), null);
+check('base: exponent rejected', base_normalize('1e6'), null);
+check('base: whitespace rejected', base_normalize(' 12 '), null);
+check('base: empty rejected', base_normalize(''), null);
+
+check('base: equal', base_cmp('200000000', '200000000'), 0);
+check('base: less', base_cmp('199999999', '200000000'), -1);
+check('base: greater', base_cmp('200000001', '200000000'), 1);
+// Differing widths must not be compared lexicographically alone.
+check('base: shorter is smaller', base_cmp('999', '1000'), -1);
+check('base: leading zeros do not change order', base_cmp('0000999', '1000'), -1);
+check('base: junk compares to null', base_cmp('1.5', '1'), null);
+
+// The whole point: values far past PHP_INT_MAX (~9.2e18) stay exact. An
+// 18-decimal chain reaches this at ten tokens.
+$huge = '10000000000000000000';          // 1e19
+$hugePlusOne = '10000000000000000001';
+check('base: beyond int max, less', base_cmp($huge, $hugePlusOne), -1);
+check('base: beyond int max, greater', base_cmp($hugePlusOne, $huge), 1);
+check('base: beyond int max, equal', base_cmp($huge, '10000000000000000000'), 0);
+
+check('base: add simple', base_add('200000000', '1'), '200000001');
+check('base: add with carry', base_add('999', '1'), '1000');
+check('base: add zero', base_add('0', '0'), '0');
+check('base: add different widths', base_add('1', '999999999999999999999'), '1000000000000000000000');
+// Summing several MsgSend coins must not lose a unit at any width.
+check('base: add beyond int max', base_add($huge, $huge), '20000000000000000000');
+check('base: add rejects junk', base_add('1.5', '1'), null);
+
+check('base: positive', base_is_positive('1'), true);
+check('base: zero is not positive', base_is_positive('0'), false);
+check('base: padded zero is not positive', base_is_positive('0000'), false);
+check('base: junk is not positive', base_is_positive('-1'), false);
+
+// =============================================================================
+// Payment transaction parsing (paid alerts)
+// =============================================================================
+
+$COLLECT = 'panacea1a3mg2ek63ql9gh347uqyg75t0u3ns956ytxkhl';
+$PAYER = 'panacea1hlpw58lg9fvwvwa3ryzgjqyw39tf2nmnaaaaaa';
+
+$send = static fn(string $from, string $to, array $coins): array => [
+    '@type' => '/cosmos.bank.v1beta1.MsgSend',
+    'from_address' => $from,
+    'to_address' => $to,
+    'amount' => $coins,
+];
+$coin = static fn(string $denom, string $amount): array => ['denom' => $denom, 'amount' => $amount];
+
+// The ordinary case.
+$body = ['messages' => [$send($PAYER, $COLLECT, [$coin('umed', '200000000')])]];
+check('tx: exact fee counted', msgsend_total_to($body, $COLLECT, 'umed')['total'], '200000000');
+check('tx: sender captured', msgsend_total_to($body, $COLLECT, 'umed')['senders'], [$PAYER]);
+
+// Overpayment is counted as what it is; the caller decides it is acceptable.
+$body = ['messages' => [$send($PAYER, $COLLECT, [$coin('umed', '500000000')])]];
+check('tx: overpayment counted in full', msgsend_total_to($body, $COLLECT, 'umed')['total'], '500000000');
+
+// Several sends to the collector in one transaction add up exactly.
+$body = ['messages' => [
+    $send($PAYER, $COLLECT, [$coin('umed', '150000000')]),
+    $send($PAYER, $COLLECT, [$coin('umed', '50000000')]),
+]];
+check('tx: multiple sends summed', msgsend_total_to($body, $COLLECT, 'umed')['total'], '200000000');
+
+// Money that went somewhere else does not count towards our fee.
+$body = ['messages' => [$send($PAYER, $PAYER, [$coin('umed', '200000000')])]];
+check('tx: payment to another address ignored', msgsend_total_to($body, $COLLECT, 'umed')['total'], '0');
+
+// An IBC voucher or any other denom is not the fee denom, even in the same tx.
+$body = ['messages' => [$send($PAYER, $COLLECT, [
+    $coin('ibc/AAAA', '999999999999'),
+    $coin('umed', '200000000'),
+])]];
+check('tx: only the exact denom counts', msgsend_total_to($body, $COLLECT, 'umed')['total'], '200000000');
+$body = ['messages' => [$send($PAYER, $COLLECT, [$coin('ibc/UMED', '200000000')])]];
+check('tx: lookalike denom rejected', msgsend_total_to($body, $COLLECT, 'umed')['total'], '0');
+
+// Message types we do not parse must not be half-understood.
+$body = ['messages' => [[
+    '@type' => '/cosmos.bank.v1beta1.MsgMultiSend',
+    'outputs' => [['address' => $COLLECT, 'coins' => [$coin('umed', '200000000')]]],
+]]];
+check('tx: MsgMultiSend not counted', msgsend_total_to($body, $COLLECT, 'umed')['total'], '0');
+$body = ['messages' => [[
+    '@type' => '/cosmos.staking.v1beta1.MsgDelegate',
+    'to_address' => $COLLECT,
+    'amount' => [$coin('umed', '200000000')],
+]]];
+check('tx: non-bank message not counted', msgsend_total_to($body, $COLLECT, 'umed')['total'], '0');
+
+// Malformed input must be skipped, never guessed at - skipping can only
+// undercount, which fails towards refusing a payment.
+$body = ['messages' => [$send($PAYER, $COLLECT, [$coin('umed', '1.5')])]];
+check('tx: decimal amount skipped', msgsend_total_to($body, $COLLECT, 'umed')['total'], '0');
+$body = ['messages' => [$send($PAYER, $COLLECT, [$coin('umed', '-200000000')])]];
+check('tx: negative amount skipped', msgsend_total_to($body, $COLLECT, 'umed')['total'], '0');
+check('tx: no messages key', msgsend_total_to([], $COLLECT, 'umed')['total'], '0');
+check('tx: messages not a list', msgsend_total_to(['messages' => 'nope'], $COLLECT, 'umed')['total'], '0');
+check('tx: empty collect address matches nothing', msgsend_total_to($body, '', 'umed')['total'], '0');
+check('tx: empty denom matches nothing', msgsend_total_to($body, $COLLECT, '')['total'], '0');
+
+// An 18-decimal chain: ten tokens already exceeds PHP_INT_MAX.
+$body = ['messages' => [
+    $send($PAYER, $COLLECT, [$coin('awei', '9000000000000000000')]),
+    $send($PAYER, $COLLECT, [$coin('awei', '9000000000000000000')]),
+]];
+check('tx: sums past int max exactly', msgsend_total_to($body, $COLLECT, 'awei')['total'], '18000000000000000000');
+
+// =============================================================================
 echo "\n";
 if ($failed > 0) {
     echo implode("\n", $failures) . "\n\n";

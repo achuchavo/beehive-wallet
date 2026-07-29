@@ -5,18 +5,56 @@ import {
   type AdminOverview,
   type UserAction,
   type AdminUptimeSub,
+  type AdminFeature,
+  type PermLevel,
   ADMIN_FEATURES,
+  PERM_NONE,
+  PERM_READ,
+  PERM_WRITE,
 } from '../api'
 import { CHAINS, DEFAULT_CHAIN, formatAmount } from '../chains'
+import { useT } from '../i18n/I18nContext'
 import ChainManager from './ChainManager'
+import AlertPricingManager from './AlertPricingManager'
+import StakingValidatorsManager from './StakingValidatorsManager'
+import UserWatchesManager from './UserWatchesManager'
 import OptionPicker from '../components/OptionPicker'
+import HelpTip from '../components/HelpTip'
 
-type Tab = 'overview' | 'users' | 'access' | 'chains' | 'announcements' | 'uptime'
+type Tab =
+  | 'overview'
+  | 'users'
+  | 'access'
+  | 'chains'
+  | 'announcements'
+  | 'uptime'
+  | 'pricing'
+  | 'watches'
+  | 'staking'
+
+/** Label key per feature, so the access editor reads as English rather than as
+ *  database identifiers. */
+const FEATURE_KEY: Record<AdminFeature, string> = {
+  users: 'admin.featureUsers',
+  roles: 'admin.featureRoles',
+  chains: 'admin.featureChains',
+  announcements: 'admin.featureAnnouncements',
+  uptime: 'admin.featureUptime',
+  wallet_alerts: 'admin.featureWalletAlerts',
+  staking: 'admin.featureStaking',
+  alert_pricing: 'admin.featureAlertPricing',
+  user_watches: 'admin.featureUserWatches',
+  settings: 'admin.featureSettings',
+}
 
 export default function Admin() {
+  const { t } = useT()
   const [data, setData] = useState<AdminOverview | null>(null)
-  const [features, setFeatures] = useState<string[]>([])
+  const [levels, setLevels] = useState<Partial<Record<AdminFeature, PermLevel>>>({})
   const [isSuper, setIsSuper] = useState(false)
+  // Who we are. Every self-edit is refused server-side, so the access screen
+  // needs this to mark its own row instead of offering a control that 403s.
+  const [meId, setMeId] = useState<number | null>(null)
   const [tab, setTab] = useState<Tab>('overview')
   const [error, setError] = useState('')
 
@@ -34,15 +72,22 @@ export default function Admin() {
 
   useEffect(() => {
     api.me().then((r) => {
-      setFeatures(r.admin_features ?? [])
+      setLevels(r.admin_levels ?? {})
       setIsSuper(r.is_super_admin === true)
+      setMeId(r.id ?? null)
     })
     load()
     const t = setInterval(load, 30000)
     return () => clearInterval(t)
   }, [load])
 
-  const can = (feature: string) => features.includes(feature)
+  /**
+   * What this admin holds for a feature. Presentation only - every endpoint
+   * enforces its own level, so this can hide a control but never protect data.
+   */
+  const levelOf = (feature: AdminFeature): PermLevel => levels[feature] ?? PERM_NONE
+  const can = (feature: AdminFeature) => levelOf(feature) >= PERM_READ
+  const canWrite = (feature: AdminFeature) => levelOf(feature) >= PERM_WRITE
 
   async function userAction(id: number, action: UserAction) {
     if (action === 'delete' && !window.confirm('Delete this user and all their data?')) {
@@ -78,10 +123,15 @@ export default function Admin() {
   const allTabs: { id: Tab; label: string; show: boolean }[] = [
     { id: 'overview', label: 'Overview', show: true },
     { id: 'users', label: 'Users', show: can('users') },
-    { id: 'access', label: 'Access', show: isSuper },
+    // Visible with roles at read or better - a read-only holder can see who has
+    // what without being able to change it. The server refuses the write.
+    { id: 'access', label: 'Access', show: can('roles') },
     { id: 'chains', label: 'Chains', show: can('chains') },
     { id: 'announcements', label: 'Announcements', show: can('announcements') },
     { id: 'uptime', label: 'Uptime', show: can('uptime') },
+    { id: 'staking', label: t('admin.tabStaking'), show: can('staking') },
+    { id: 'pricing', label: t('admin.tabPricing'), show: can('alert_pricing') },
+    { id: 'watches', label: t('admin.tabWatches'), show: can('user_watches') },
   ]
   const tabs = allTabs.filter((t) => t.show)
 
@@ -147,8 +197,9 @@ export default function Admin() {
             </div>
           )}
 
-          {/* Super admin only, matching admin_setting_set.php's own guard. */}
-          {isSuper && <WatchLimitEditor onError={setError} />}
+          {/* Matches admin_setting_set.php's own guard, which is now the
+              'settings' feature at write rather than super-admin only. */}
+          {canWrite('settings') && <WatchLimitEditor onError={setError} />}
 
           <section className="space-y-2">
             <h2 className="font-medium">Recent alerts (all users)</h2>
@@ -185,11 +236,29 @@ export default function Admin() {
       {activeTab === 'chains' && can('chains') && <ChainManager onError={setError} />}
 
       {activeTab === 'uptime' && can('uptime') && (
-        <UptimeManager isSuper={isSuper} onError={setError} />
+        <UptimeManager canToggle={canWrite('settings')} onError={setError} />
       )}
 
-      {activeTab === 'access' && isSuper && (
-        <RoleManager users={data.users ?? []} onChanged={load} onError={setError} />
+      {activeTab === 'staking' && can('staking') && (
+        <StakingValidatorsManager level={levelOf('staking')} onError={setError} />
+      )}
+
+      {activeTab === 'pricing' && can('alert_pricing') && (
+        <AlertPricingManager level={levelOf('alert_pricing')} onError={setError} />
+      )}
+
+      {activeTab === 'watches' && can('user_watches') && <UserWatchesManager onError={setError} />}
+
+      {activeTab === 'access' && can('roles') && (
+        <RoleManager
+          users={data.users ?? []}
+          meId={meId}
+          actorLevels={levels}
+          actorIsSuper={isSuper}
+          canWrite={canWrite('roles')}
+          onChanged={load}
+          onError={setError}
+        />
       )}
 
       {activeTab === 'users' && can('users') && (
@@ -274,33 +343,79 @@ export default function Admin() {
   )
 }
 
+/**
+ * Grant and revoke admin access, per feature, at no / view / view-and-change.
+ *
+ * Every rule this screen appears to enforce is ALSO enforced server-side in
+ * admin_role_update.php with the rows locked - no self-edit, super admin only
+ * for super status and for granting `roles`, and never granting above your own
+ * level. What happens here is only to avoid offering a control that will be
+ * refused; it is not, and must not become, the enforcement.
+ */
 function RoleManager({
   users,
+  meId,
+  actorLevels,
+  actorIsSuper,
+  canWrite,
   onChanged,
   onError,
 }: {
   users: NonNullable<AdminOverview['users']>
+  /** The signed-in admin's own id, or null while it is still loading. */
+  meId: number | null
+  actorLevels: Partial<Record<AdminFeature, PermLevel>>
+  actorIsSuper: boolean
+  canWrite: boolean
   onChanged: () => void
   onError: (msg: string) => void
 }) {
+  const { t } = useT()
   const [editing, setEditing] = useState<number | null>(null)
-  const [isAdmin, setIsAdmin] = useState(false)
   const [isSuper, setIsSuper] = useState(false)
-  const [feats, setFeats] = useState<string[]>([])
+  const [feats, setFeats] = useState<Partial<Record<AdminFeature, PermLevel>>>({})
   const [busy, setBusy] = useState(false)
+
+  // Being an admin is a CONSEQUENCE of holding at least one grant, not a
+  // separate box to tick. "Admin with no features" was a state you could
+  // previously create: it let someone into the admin area to see nothing at
+  // all. The server derives the same way, so the two cannot disagree.
+  const grantedCount = Object.keys(feats).length
+
+  /** Grants come back as "chains:2,uptime:1". */
+  function parseFeatures(raw: string | null): Partial<Record<AdminFeature, PermLevel>> {
+    const out: Partial<Record<AdminFeature, PermLevel>> = {}
+    for (const part of (raw ?? '').split(',')) {
+      const [name, lvl] = part.split(':')
+      const feature = ADMIN_FEATURES.find((f) => f === name)
+      if (!feature) continue
+      // A grant written before levels existed carries no suffix and has always
+      // meant full access, so that is what it stays.
+      out[feature] = lvl === '1' ? PERM_READ : PERM_WRITE
+    }
+    return out
+  }
+
+  /** The highest level the signed-in admin may hand out for this feature. */
+  function ceilingFor(feature: AdminFeature): PermLevel {
+    if (actorIsSuper) return PERM_WRITE
+    if (feature === 'roles') return PERM_NONE // super admins only
+    return actorLevels[feature] ?? PERM_NONE
+  }
 
   function startEdit(u: NonNullable<AdminOverview['users']>[number]) {
     setEditing(u.id)
-    setIsAdmin(u.is_admin === 1)
     setIsSuper(u.is_super_admin === 1)
-    setFeats(u.features ? u.features.split(',') : [])
+    setFeats(parseFeatures(u.features))
   }
 
   async function save(id: number) {
     setBusy(true)
     onError('')
     try {
-      await api.adminRoleUpdate(id, isAdmin, isSuper, feats)
+      // is_admin is derived, never asked for: any grant makes an admin, and a
+      // super admin implies one. The server derives it the same way.
+      await api.adminRoleUpdate(id, isSuper || grantedCount > 0, isSuper, feats)
       setEditing(null)
       onChanged()
     } catch (e) {
@@ -310,89 +425,235 @@ function RoleManager({
     }
   }
 
-  function toggleFeat(f: string) {
-    setFeats((prev) => (prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f]))
+  function setLevel(f: AdminFeature, level: PermLevel) {
+    setFeats((prev) => {
+      const next = { ...prev }
+      if (level === PERM_NONE) delete next[f]
+      else next[f] = level
+      return next
+    })
+  }
+
+  /** Every feature the actor can actually hand out, at their own ceiling. */
+  function grantAll() {
+    const next: Partial<Record<AdminFeature, PermLevel>> = {}
+    for (const f of ADMIN_FEATURES) {
+      const ceiling = ceilingFor(f)
+      if (ceiling > PERM_NONE) next[f] = ceiling
+    }
+    setFeats(next)
+  }
+
+  function clearAll() {
+    setFeats({})
+  }
+
+  /**
+   * Why this row cannot be edited, or '' if it can.
+   *
+   * Each case mirrors a rule admin_role_update.php enforces with the rows
+   * locked. Duplicating them here does NOT make the UI the enforcement - the
+   * server refuses regardless - it stops the screen offering a control that can
+   * only ever end in a 403, which is what made this tab feel broken.
+   */
+  function blockedReason(u: NonNullable<AdminOverview['users']>[number]): string {
+    if (!canWrite) return t('admin.readOnlyBadge')
+    if (meId !== null && u.id === meId) return t('admin.ownRoleNote')
+    // Only a super admin may act on another admin or super admin.
+    if (!actorIsSuper && (u.is_admin === 1 || u.is_super_admin === 1)) {
+      return t('admin.cannotEditAdmin')
+    }
+    return ''
+  }
+
+  // The last active super admin cannot be demoted, so the checkbox that would
+  // do it is held. Counted from the same list the screen renders; the server
+  // counts again inside the transaction, which is what actually guarantees it.
+  const activeSupers = users.filter((u) => u.is_super_admin === 1 && u.is_disabled !== 1)
+  const isLastSuper = (u: NonNullable<AdminOverview['users']>[number]) =>
+    u.is_super_admin === 1 && activeSupers.length <= 1
+
+  function summarise(u: NonNullable<AdminOverview['users']>[number]): string {
+    if (u.is_super_admin === 1) return t('admin.roleSuper')
+    if (u.is_admin !== 1) return t('admin.roleUser')
+    const parsed = parseFeatures(u.features)
+    const names = (Object.keys(parsed) as AdminFeature[]).map(
+      (f) => `${t(FEATURE_KEY[f])} (${parsed[f] === PERM_READ ? t('admin.levelRead') : t('admin.levelWrite')})`,
+    )
+    return `${t('admin.roleAdmin')} · ${names.length ? names.join(', ') : '—'}`
   }
 
   return (
     <section className="space-y-2">
       <h2 className="flex items-center gap-2 font-medium">
-        <ShieldCheck className="h-4 w-4 text-purple-500" /> Admin access
+        <ShieldCheck className="h-4 w-4 text-purple-500" /> {t('admin.accessTitle')}
+        <HelpTip text={t('help.adminLevels')} />
       </h2>
-      <p className="text-sm text-slate-500">
-        Grant admin access and choose which features each admin can use. Super admins have every
-        feature and can manage other admins.
-      </p>
+      <p className="text-sm text-slate-500">{t('admin.accessIntro')}</p>
+      {!canWrite && (
+        <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          {t('admin.readOnlyNote')}
+        </p>
+      )}
       <div className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
-        {users.map((u) => (
+        {users.length === 0 && (
+          <p className="px-4 py-3 text-sm text-slate-500">{t('admin.noUsers')}</p>
+        )}
+        {users.map((u) => {
+        const blocked = blockedReason(u)
+        return (
           <div key={u.id} className="px-4 py-3">
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
-                <div className="truncate text-sm font-medium">{u.email}</div>
-                <div className="text-xs text-slate-500">
-                  {u.is_super_admin === 1
-                    ? 'Super admin'
-                    : u.is_admin === 1
-                      ? `Admin · ${u.features || 'no features'}`
-                      : 'User'}
+                <div className="flex items-center gap-1.5 truncate text-sm font-medium">
+                  {u.email}
+                  {meId !== null && u.id === meId && (
+                    <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-normal text-slate-600">
+                      {t('admin.you')}
+                    </span>
+                  )}
                 </div>
+                <div className="text-xs text-slate-500">{summarise(u)}</div>
               </div>
-              <button
-                onClick={() => (editing === u.id ? setEditing(null) : startEdit(u))}
-                className="shrink-0 text-xs text-amber-700 hover:underline"
-              >
-                {editing === u.id ? 'Cancel' : 'Edit access'}
-              </button>
+              {blocked ? (
+                // Say why, rather than showing a control that does nothing.
+                <span className="shrink-0 text-xs text-slate-400">{blocked}</span>
+              ) : (
+                <button
+                  onClick={() => (editing === u.id ? setEditing(null) : startEdit(u))}
+                  className="shrink-0 text-xs text-amber-700 hover:underline"
+                >
+                  {editing === u.id ? t('common.cancel') : t('admin.editAccess')}
+                </button>
+              )}
             </div>
             {editing === u.id && (
-              <div className="mt-3 space-y-2 rounded-lg bg-slate-50 p-3">
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={isSuper}
-                    onChange={(e) => {
-                      setIsSuper(e.target.checked)
-                      if (e.target.checked) setIsAdmin(true)
-                    }}
-                  />
-                  Super admin (all features, manages admins)
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={isAdmin}
-                    disabled={isSuper}
-                    onChange={(e) => setIsAdmin(e.target.checked)}
-                  />
-                  Admin
-                </label>
-                {isAdmin && !isSuper && (
-                  <div className="flex flex-wrap gap-3 pl-6">
-                    {ADMIN_FEATURES.map((f) => (
-                      <label key={f} className="flex items-center gap-1.5 text-sm capitalize">
-                        <input
-                          type="checkbox"
-                          checked={feats.includes(f)}
-                          onChange={() => toggleFeat(f)}
-                        />
-                        {f}
-                      </label>
-                    ))}
+              <div className="mt-3 space-y-3 rounded-lg bg-slate-50 p-3">
+                {/* THE per-feature matrix, always visible.
+                    It used to render only when the target was already a
+                    non-super admin, which meant the main control of this screen
+                    was unreachable for a plain user (until you ticked "Admin")
+                    and for a super admin (at all). Being an admin is now simply
+                    a CONSEQUENCE of holding at least one grant, so there is no
+                    role checkbox to find first. */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-slate-500">
+                      {t('admin.featureAccess')}
+                      <HelpTip text={t('help.adminLevels')} align="start" />
+                    </span>
+                    {!isSuper && (
+                      <div className="flex gap-2 text-xs">
+                        <button type="button" onClick={grantAll} className="text-amber-700 hover:underline">
+                          {t('admin.grantAll')}
+                        </button>
+                        <button type="button" onClick={clearAll} className="text-slate-500 hover:underline">
+                          {t('admin.clearAll')}
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
+
+                  {ADMIN_FEATURES.map((f) => {
+                    const ceiling = ceilingFor(f)
+                    // A super admin holds everything implicitly, including any
+                    // feature added in future. Shown as such, and locked, so it
+                    // is obvious WHY there is nothing to choose here.
+                    const current = isSuper ? PERM_WRITE : (feats[f] ?? PERM_NONE)
+                    const options = [
+                      { value: String(PERM_NONE), label: t('admin.levelNone') },
+                      ...(ceiling >= PERM_READ
+                        ? [{ value: String(PERM_READ), label: t('admin.levelRead') }]
+                        : []),
+                      ...(ceiling >= PERM_WRITE
+                        ? [{ value: String(PERM_WRITE), label: t('admin.levelWrite') }]
+                        : []),
+                    ]
+                    return (
+                      <div key={f} className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-1.5 text-sm">
+                          {t(FEATURE_KEY[f])}
+                          {f === 'roles' && <HelpTip text={t('help.adminRoles')} align="start" />}
+                          {f === 'settings' && (
+                            <HelpTip text={t('help.adminSettings')} align="start" />
+                          )}
+                          {f === 'user_watches' && (
+                            <HelpTip text={t('help.adminUserWatches')} align="start" />
+                          )}
+                          {f === 'alert_pricing' && (
+                            <HelpTip text={t('help.adminAlertPricingFeature')} align="start" />
+                          )}
+                        </span>
+                        {isSuper ? (
+                          <span className="text-xs font-medium text-purple-700">
+                            {t('admin.levelWrite')}
+                          </span>
+                        ) : ceiling === PERM_NONE ? (
+                          // You cannot grant what you do not hold, and only a
+                          // super admin can grant `roles`.
+                          <span className="text-xs text-slate-400">
+                            {f === 'roles' ? t('admin.rolesSuperOnly') : t('admin.cannotGrantAbove')}
+                          </span>
+                        ) : (
+                          <OptionPicker
+                            label={t(FEATURE_KEY[f])}
+                            value={String(current)}
+                            onChange={(v) => setLevel(f, Number(v) as PermLevel)}
+                            className="py-1 text-xs"
+                            options={options}
+                          />
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Super admin is deliberately NOT "has every box ticked" - see
+                    the note beside it. Kept last, because it is the exception
+                    rather than the way access is normally given. */}
+                <div className="border-t border-slate-200 pt-3">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={isSuper}
+                      // Only a super admin may create or remove one, and the
+                      // last active one is held so the deployment is never left
+                      // without anybody able to administer it.
+                      disabled={!actorIsSuper || isLastSuper(u)}
+                      onChange={(e) => setIsSuper(e.target.checked)}
+                    />
+                    {t('admin.roleSuper')}
+                    <HelpTip text={t('help.adminSuperVsAll')} />
+                  </label>
+                  {isLastSuper(u) && (
+                    <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      {t('admin.lastSuperNote')}
+                    </p>
+                  )}
+                </div>
+
+                {/* What this will actually do, in a sentence. */}
+                <p className="text-xs text-slate-500">
+                  {isSuper
+                    ? t('admin.willBeSuper')
+                    : grantedCount === 0
+                      ? t('admin.willBeUser')
+                      : t('admin.willBeAdmin', { count: grantedCount })}
+                </p>
+
                 <button
                   onClick={() => save(u.id)}
                   disabled={busy}
                   className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
                 >
-                  {busy ? 'Saving...' : 'Save access'}
+                  {busy ? t('alarms.working') : t('admin.saveAccess')}
                 </button>
               </div>
             )}
           </div>
-        ))}
+        )
+        })}
       </div>
-      <p className="text-xs text-slate-500">Your own role can't be changed here.</p>
     </section>
   )
 }
@@ -612,7 +873,15 @@ function WatchLimitEditor({ onError }: { onError: (m: string) => void }) {
   )
 }
 
-function UptimeManager({ isSuper, onError }: { isSuper: boolean; onError: (m: string) => void }) {
+/** `canToggle` mirrors admin_setting_set.php's guard: the global on/off switch
+ *  lives in app_settings, so it needs the 'settings' feature at write. */
+function UptimeManager({
+  canToggle,
+  onError,
+}: {
+  canToggle: boolean
+  onError: (m: string) => void
+}) {
   const [enabled, setEnabled] = useState(false)
   const [subs, setSubs] = useState<AdminUptimeSub[]>([])
 
@@ -656,7 +925,7 @@ function UptimeManager({ isSuper, onError }: { isSuper: boolean; onError: (m: st
 
   return (
     <div className="space-y-4">
-      {isSuper ? (
+      {canToggle ? (
         <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3">
           <div>
             <div className="text-sm font-medium">Validator uptime alerts</div>
@@ -673,7 +942,7 @@ function UptimeManager({ isSuper, onError }: { isSuper: boolean; onError: (m: st
         </div>
       ) : (
         <p className="text-sm text-slate-500">
-          Feature is currently {enabled ? 'on' : 'off'} (a super admin controls the global switch).
+          Feature is currently {enabled ? 'on' : 'off'} (changing it needs the Settings permission).
         </p>
       )}
 

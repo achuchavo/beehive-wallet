@@ -2,7 +2,9 @@
 require __DIR__ . '/common.php';
 
 $db = get_db();
-require_permission($db, 'uptime');
+// Read-only: viewing the application queue. Approving or denying one is
+// admin_uptime_decide.php, which still requires PERM_WRITE.
+require_permission($db, 'uptime', PERM_READ);
 
 $enabled = get_setting($db, 'uptime_alerts_enabled', '0') === '1';
 

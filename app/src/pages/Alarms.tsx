@@ -13,8 +13,17 @@ import {
   ShieldCheck,
   TriangleAlert,
 } from 'lucide-react'
-import { api, type WatchedAddress, type WalletAlert, type AlarmType, type AlertKind } from '../api'
-import { DEFAULT_CHAIN, formatAmount, CHAINS } from '../chains'
+import {
+  api,
+  ApiError,
+  type WatchedAddress,
+  type WalletAlert,
+  type AlarmType,
+  type AlertKind,
+  type WatchQuote,
+  type WatchIntent,
+} from '../api'
+import { DEFAULT_CHAIN, formatAmount, CHAINS, findChain, chainForAddress } from '../chains'
 import { useWallet } from '../wallet/WalletContext'
 import { useAuth } from '../auth/AuthContext'
 import { useT } from '../i18n/I18nContext'
@@ -27,6 +36,7 @@ import PageHeader from '../components/PageHeader'
 import Toggle from '../components/Toggle'
 import Checkbox from '../components/Checkbox'
 import ConfirmDelete from '../components/ConfirmDelete'
+import WatchPaymentDialog from '../components/WatchPaymentDialog'
 import { maskAmount, usePrivacyMode } from '../privacyMode'
 
 const POLL_MS = 15000
@@ -605,11 +615,25 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
   const [busy, setBusy] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
 
+  // Per-chain allowance, so the page can say what the next alert costs before
+  // the user fills anything in - the fee should never be a surprise raised by a
+  // rejected form.
+  const [quotes, setQuotes] = useState<Record<string, WatchQuote>>({})
+
+  // A payment in progress: the locked quote plus what it is buying.
+  const [paying, setPaying] = useState<{
+    chainKey: string
+    quote: WatchQuote
+    intent: WatchIntent
+    pending?: { address: string; label: string; alarmType: AlarmType }
+  } | null>(null)
+
   const refresh = useCallback(async () => {
     try {
       const [w, a] = await Promise.all([api.watchedList(), api.alertsList()])
       setAddresses(w.addresses)
       if (w.limit > 0) setWatchLimit(w.limit)
+      setQuotes(w.quotes ?? {})
       setAlerts(a.alerts)
       setUnread(a.unread)
       setError('')
@@ -624,7 +648,63 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
     return () => clearInterval(t)
   }, [refresh])
 
+  // The address linked to this ACCOUNT. Offered as a suggestion alongside the
+  // wallets held in this browser, because they are not the same set: an account
+  // can be signed in on a device that holds none of its wallets, and the linked
+  // address is usually the first thing someone wants to watch.
+  const [mainAddress, setMainAddress] = useState<string | null>(null)
+  useEffect(() => {
+    api
+      .me()
+      .then((r) => setMainAddress(r.main_address ?? null))
+      .catch(() => {})
+  }, [])
+
   const selectedChain = CHAINS.find((c) => c.key === newChain) ?? DEFAULT_CHAIN
+
+  /**
+   * Addresses worth offering, newest information first.
+   *
+   * Deduplicated by address (a linked wallet is usually also a stored one),
+   * with the ones on the currently selected network first so the relevant
+   * choices are not buried behind wallets for a chain you are not filing under.
+   */
+  const suggestions = (() => {
+    const seen = new Set<string>()
+    const out: {
+      address: string
+      chainKey: string
+      name: string
+      isMain: boolean
+      watched: boolean
+    }[] = []
+
+    const push = (address: string, chainKey: string, name: string, isMain: boolean) => {
+      if (!address || seen.has(address)) return
+      seen.add(address)
+      out.push({
+        address,
+        chainKey,
+        name,
+        isMain,
+        watched: addresses.some((w) => w.address === address && w.chain_key === chainKey),
+      })
+    }
+
+    if (mainAddress) {
+      // Resolve the network from the address itself: the linked address carries
+      // no chain key, and filing it under the wrong one would mean the watcher
+      // polls a node the address does not exist on.
+      const chain = chainForAddress(mainAddress)
+      const wallet = wallets.find((w) => w.address === mainAddress)
+      push(mainAddress, chain.key, wallet?.name ?? t('alarms.mainAddress'), true)
+    }
+    for (const w of wallets) push(w.address, w.chainKey, w.name, false)
+
+    return out.sort(
+      (a, b) => Number(b.chainKey === newChain) - Number(a.chainKey === newChain),
+    )
+  })()
   // Client-side HRP check. The server re-validates (watched_add.php) - this is
   // for feedback, not enforcement.
   const addressMatchesChain =
@@ -677,9 +757,55 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
       setShowAddForm(false)
       await refresh()
     } catch (err) {
+      // 402: this one is over the chain's free allowance. Move to the payment
+      // flow rather than reporting a failure - nothing has gone wrong, there is
+      // simply a price. The server told us what it is.
+      if (err instanceof ApiError && err.code === 'payment_required') {
+        await startPayment(newChain, {
+          address: newAddress.trim(),
+          label: newLabel.trim(),
+          alarmType: newType,
+        })
+        setBusy(false)
+        return
+      }
       setError(err instanceof Error ? err.message : 'Could not add address')
     } finally {
       setBusy(false)
+    }
+  }
+
+  /**
+   * Ask for a locked quote and open the payment dialog.
+   *
+   * The quote (and its memo code) comes from the server, so the price shown is
+   * the price that will be accepted even if an admin changes it meanwhile.
+   */
+  async function startPayment(
+    chainKey: string,
+    pending?: { address: string; label: string; alarmType: AlarmType },
+    watchId?: number,
+  ) {
+    try {
+      const r = await api.watchQuote({
+        chain_key: chainKey,
+        address: pending?.address,
+        kind: watchId ? 'renew' : 'new',
+        watch_id: watchId,
+      })
+      if (!r.intent) {
+        // Nothing to sell. Say which of the two reasons it is, because
+        // "switched off" and "sold out" call for different responses.
+        setError(
+          r.quote.metered && !r.quote.alerts_enabled
+            ? t('pay.alertsOff', { chain: chainName(chainKey) })
+            : t('pay.notSellable'),
+        )
+        return
+      }
+      setPaying({ chainKey, quote: r.quote, intent: r.intent, pending })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not start the payment')
     }
   }
 
@@ -705,6 +831,24 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
           busy={removingBusy}
           onConfirm={confirmRemoveWatch}
           onCancel={() => setRemovingWatch(null)}
+        />
+      )}
+
+      {paying && findChain(paying.chainKey) && (
+        <WatchPaymentDialog
+          chain={findChain(paying.chainKey)!}
+          quote={paying.quote}
+          intent={paying.intent}
+          pending={paying.pending}
+          onDone={() => {
+            setPaying(null)
+            setNewAddress('')
+            setNewLabel('')
+            setNewType('both')
+            setShowAddForm(false)
+            refresh()
+          }}
+          onCancel={() => setPaying(null)}
         />
       )}
       <PageHeader title={t('alarms.title')} help={t('help.account')}>
@@ -769,6 +913,43 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
                 }))}
               />
             </label>
+            {/* The price of the NEXT alert on the selected network, stated
+                before the form is filled in. A fee that only appears as a
+                rejected submission reads as a failure rather than a price. */}
+            {(() => {
+              const q = quotes[newChain]
+              if (!q?.metered) return null
+              // An exempt account is not working through an allowance, so it is
+              // not shown one ticking down towards a limit it will never reach.
+              if (q.exempt) {
+                return (
+                  <p className="flex items-center gap-1.5 text-xs text-slate-500">
+                    {t('pay.exempt')}
+                    <HelpTip text={t('help.payExempt')} align="start" />
+                  </p>
+                )
+              }
+              if (q.next_is_free) {
+                const left = Math.max(0, q.free_cap - q.free_used)
+                return (
+                  <p className="flex items-center gap-1.5 text-xs text-slate-500">
+                    {t('pay.freeRemaining', { left, chain: selectedChain.chainName })}
+                    <HelpTip text={t('help.freeCap')} align="start" />
+                  </p>
+                )
+              }
+              return (
+                <p className="flex items-center gap-1.5 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  {q.sellable
+                    ? t('pay.feeLine', {
+                        amount: formatAmount(q.fee_amount, selectedChain),
+                        denom: selectedChain.displayDenom,
+                      })
+                    : t('pay.notSellable')}
+                  <HelpTip text={t('help.paidAlerts')} align="start" />
+                </p>
+              )
+            })()}
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-slate-600">
                 {t('alarms.addressLabel')}
@@ -788,6 +969,45 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
                 {t('alarms.errWrongNetwork', { chain: selectedChain.chainName })}
               </p>
             )}
+
+            {/* Addresses this account already knows about, offered right under
+                the field they fill in rather than below the whole form. An
+                address is 45 characters of base32 that nobody should be
+                retyping, and the ones already being watched are shown disabled
+                instead of hidden - "why is my wallet missing?" is a worse
+                question than seeing it marked as already covered. */}
+            {suggestions.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs text-slate-500">{t('alarms.yourWallets')}</span>
+                {suggestions.map((s) => (
+                  <button
+                    key={s.address}
+                    type="button"
+                    disabled={s.watched}
+                    title={s.watched ? t('alarms.alreadyWatching') : s.address}
+                    onClick={() => {
+                      // Picking a saved address must bring its network with it -
+                      // otherwise the address and the chain disagree.
+                      setNewAddress(s.address)
+                      setNewChain(s.chainKey)
+                      if (!newLabel && s.name) setNewLabel(s.name)
+                    }}
+                    className="flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-xs text-slate-600 ring-1 ring-slate-200 hover:text-amber-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:line-through disabled:hover:text-slate-400"
+                  >
+                    {s.name}
+                    {s.isMain && (
+                      <span className="rounded bg-amber-100 px-1 text-[10px] text-amber-800">
+                        {t('alarms.mainAddressShort')}
+                      </span>
+                    )}
+                    <span className="rounded bg-slate-100 px-1 text-[10px] text-slate-600">
+                      {chainName(s.chainKey)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-slate-600">
                 {t('alarms.labelOptional')}
@@ -809,30 +1029,6 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
                 options={ALARM_TYPES.map((ty) => ({ value: ty, label: t(TYPE_KEY[ty]) }))}
               />
             </label>
-            {wallets.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-xs text-slate-500">{t('alarms.yourWallets')}</span>
-                {wallets.map((w) => (
-                  <button
-                    key={w.id}
-                    type="button"
-                    onClick={() => {
-                      // Picking a saved wallet must bring its network with it -
-                      // otherwise the address and the chain disagree.
-                      setNewAddress(w.address)
-                      setNewChain(w.chainKey)
-                      if (!newLabel) setNewLabel(w.name)
-                    }}
-                    className="flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-xs text-slate-600 ring-1 ring-slate-200 hover:text-amber-700"
-                  >
-                    {w.name}
-                    <span className="rounded bg-slate-100 px-1 text-[10px] text-slate-600">
-                      {chainName(w.chainKey)}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
             <button
               disabled={busy}
               className="w-full rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50 sm:w-auto"
@@ -863,6 +1059,16 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
                       <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-normal text-slate-500">
                         {chainName(w.chain_key)}
                       </span>
+                      {/* Only paid watches say anything: a "free" badge on every
+                          row would be noise on a page where free is normal. */}
+                      {w.tier === 'paid' && (
+                        <span className="flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-normal text-amber-800">
+                          {w.paid_until
+                            ? t('pay.paidUntil', { date: w.paid_until.slice(0, 10) })
+                            : t('pay.paidForever')}
+                          <HelpTip text={t('help.payCadence')} align="start" />
+                        </span>
+                      )}
                     </div>
                     <CopyAddress address={w.address} className="max-w-full text-xs text-slate-500" />
                   </div>
@@ -874,6 +1080,25 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
+                {/* A paused alert has to say so where the alert lives. The
+                    address, its label and its history are all still here - only
+                    the watching stopped - so the prompt is a renewal, not a
+                    recovery. */}
+                {w.payment_state === 'lapsed' && (
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    <span className="flex items-center gap-1.5">
+                      <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
+                      {t('pay.lapsedNote')}
+                      <HelpTip text={t('help.payLapsed')} align="start" />
+                    </span>
+                    <button
+                      onClick={() => startPayment(w.chain_key, undefined, w.id)}
+                      className="shrink-0 rounded-lg bg-amber-500 px-3 py-1 font-medium text-slate-900 hover:bg-amber-600"
+                    >
+                      {t('pay.renew')}
+                    </button>
+                  </div>
+                )}
                 <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-100 pt-3">
                   <label className="flex items-center gap-1.5 text-xs text-slate-500">
                     {t('alarms.alarmType')}

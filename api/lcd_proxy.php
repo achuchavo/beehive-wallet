@@ -28,49 +28,26 @@ if (strlen($_SERVER['QUERY_STRING'] ?? '') > 4096) {
 }
 
 $db = get_db();
-$stmt = $db->prepare(
-    "SELECT url FROM chain_endpoints
-     WHERE chain_key = ? AND kind = 'lcd' AND is_active = 1
-     ORDER BY priority, id"
-);
-$stmt->execute([$chainKey]);
-$endpoints = array_column($stmt->fetchAll(), 'url');
-
-if (!$endpoints) {
-    json_out(['error' => 'No LCD endpoint for chain'], 502);
-}
 
 $query = $_SERVER['QUERY_STRING'] ?? '';
 $suffix = $lcdPath . ($query !== '' ? '?' . $query : '');
 
-$sawTooLarge = false;
+// The failover loop itself lives in common.php (lcd_fetch), shared with the
+// server-side payment verification so both get the same SSRF revalidation,
+// redirect refusal and bounded read.
+$res = lcd_fetch($db, $chainKey, $suffix);
 
-foreach ($endpoints as $base) {
-    // proxy_fetch re-resolves DNS, pins the connection to the validated
-    // addresses and refuses redirects, so each hop cannot escape the guard.
-    $res = proxy_fetch(rtrim($base, '/') . $suffix, [
-        'timeout' => 30,
-        'max_bytes' => 8 * 1024 * 1024,
-    ]);
-
-    if ($res['too_large']) {
-        // A truncated body is not a valid response - never pass it off as one.
-        $sawTooLarge = true;
-        continue;
-    }
-    if ($res['error'] !== '' || $res['status'] === 0) {
-        continue; // endpoint unreachable - try the next
-    }
-    // 5xx from an endpoint means try the next; otherwise return this response.
-    if ($res['status'] >= 500) {
-        continue;
-    }
-    http_response_code($res['status']);
-    echo $res['body'];
-    exit;
+switch ($res['error']) {
+    case '':
+        http_response_code($res['status']);
+        echo $res['body'];
+        exit;
+    case 'no_endpoint':
+        json_out(['error' => 'No LCD endpoint for chain'], 502);
+        // no break - json_out exits
+    case 'too_large':
+        json_out(['error' => 'Upstream response too large'], 502);
+        // no break - json_out exits
+    default:
+        json_out(['error' => 'All LCD endpoints failed'], 502);
 }
-
-if ($sawTooLarge) {
-    json_out(['error' => 'Upstream response too large'], 502);
-}
-json_out(['error' => 'All LCD endpoints failed'], 502);

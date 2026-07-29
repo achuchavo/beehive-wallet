@@ -1,5 +1,13 @@
 import { useSyncExternalStore } from 'react'
-import { CHAINS, setChainRegistry, proxyLcd, proxyRpc, type ChainInfo } from './chains'
+import {
+  CHAINS,
+  setChainRegistry,
+  proxyLcd,
+  proxyRpc,
+  STAKING_POLICIES,
+  type ChainInfo,
+  type StakingPolicy,
+} from './chains'
 
 // Loads chain metadata from the DB (chains_public.php) and folds it into the
 // in-memory CHAINS registry. The static entry in chains.ts is the bootstrap so
@@ -27,6 +35,9 @@ interface ApiChain {
   beehiveMoniker: string
   coingeckoId: string
   freeValidators: string[]
+  // Already narrowed by the sanitiser below - anything unrecognised became
+  // 'all' there, so nothing downstream has to re-check it.
+  stakingPolicy: StakingPolicy
   serviceFee: string
   feeCollector: string
 }
@@ -88,6 +99,12 @@ function validateApiChain(raw: unknown): ApiChain | null {
     beehiveMoniker: String(c.beehiveMoniker ?? ''),
     coingeckoId: String(c.coingeckoId ?? ''),
     freeValidators,
+    // Fails towards 'all' - the permissive option - for anything unrecognised.
+    // A policy the client cannot read must not silently stop users delegating
+    // to validators they could reach a moment ago.
+    stakingPolicy: STAKING_POLICIES.includes(c.stakingPolicy as StakingPolicy)
+      ? (c.stakingPolicy as StakingPolicy)
+      : 'all',
     serviceFee: /^\d+$/.test(String(c.serviceFee)) ? String(c.serviceFee) : '0',
     feeCollector: String(c.feeCollector ?? ''),
   }

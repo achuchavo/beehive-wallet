@@ -9,6 +9,9 @@ import {
   formatBase,
 } from './wallet/amount'
 
+export type StakingPolicy = 'all' | 'allowlist' | 'allowlist_paid'
+export const STAKING_POLICIES: StakingPolicy[] = ['all', 'allowlist', 'allowlist_paid']
+
 export interface ChainInfo {
   key: string
   chainId: string
@@ -26,8 +29,15 @@ export interface ChainInfo {
   beehiveValidator: string
   beehiveMoniker: string
   coingeckoId: string
-  // Validators offered for free staking (no service fee), admin-managed.
+  // Admin-managed validator list. What it means depends on stakingPolicy.
   freeValidators: string[]
+  /**
+   * What this app offers for delegation on this chain (migration 013):
+   *   all             every validator, no fee
+   *   allowlist       only freeValidators, at any price
+   *   allowlist_paid  freeValidators free, others bundle serviceFee
+   */
+  stakingPolicy: StakingPolicy
   // Service fee charged when delegating to a validator NOT in freeValidators,
   // bundled as a bank send in the same signed tx. "0" = no fee.
   serviceFee: string
@@ -74,6 +84,9 @@ export let CHAINS: ChainInfo[] = [
     beehiveMoniker: 'MatanVerse [Official]',
     coingeckoId: 'medibloc',
     freeValidators: ['panaceavaloper1hlpw58lg9fvwvwa3ryzgjqyw39tf2nmns4r0z5'],
+    // Bootstrap default: unrestricted, matching the shipped behaviour before a
+    // policy is loaded from the database.
+    stakingPolicy: 'all',
     serviceFee: '0',
     feeCollector: '',
   },

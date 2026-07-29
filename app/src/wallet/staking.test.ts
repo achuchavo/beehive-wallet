@@ -1,17 +1,31 @@
 import { describe, it, expect } from 'vitest'
-import { buildDelegate, buildUndelegate, buildClaim, buildRestake } from './staking'
+import {
+  buildDelegate,
+  buildUndelegate,
+  buildClaim,
+  buildRestake,
+  isValidatorAllowed,
+  delegationHasServiceFee,
+} from './staking'
 import type { ChainInfo } from '../chains'
 
-// Minimal chain fixture - the builders only read denom/serviceFee/feeCollector/freeValidators.
+// Minimal chain fixture - the builders read denom, serviceFee, feeCollector,
+// freeValidators and stakingPolicy.
 const FREE = 'panaceavaloper1free'
 const chain = {
   denom: 'umed',
   serviceFee: '1000000',
   feeCollector: 'panacea1feecollector',
   freeValidators: [FREE],
+  // The policy under which a fee is charged at all. Without it the fixture
+  // describes a chain that charges nothing, which is what the app now does for
+  // every policy except this one.
+  stakingPolicy: 'allowlist_paid',
 } as unknown as ChainInfo
 
 const noFee = { ...chain, serviceFee: '0', feeCollector: '' } as ChainInfo
+const openChain = { ...chain, stakingPolicy: 'all' } as ChainInfo
+const restricted = { ...chain, stakingPolicy: 'allowlist' } as ChainInfo
 
 const DEL = 'panacea1delegator'
 const VAL = 'panaceavaloper1other'
@@ -35,6 +49,51 @@ describe('buildDelegate', () => {
   it('paid validator but no fee configured: no bundled send', () => {
     const { messages } = buildDelegate(noFee, DEL, VAL, '5000000')
     expect(messages).toHaveLength(1)
+  })
+
+  it('policy "all": nothing is chargeable even with a fee still configured', () => {
+    // An admin who switches back to "any validator" without clearing the fee
+    // must not keep charging for it - "every validator, no fee" is the whole
+    // meaning of that policy.
+    const { messages } = buildDelegate(openChain, DEL, VAL, '5000000')
+    expect(messages).toHaveLength(1)
+  })
+
+  it('policy "allowlist": nothing is chargeable, because nothing outside the list is offered', () => {
+    const { messages } = buildDelegate(restricted, DEL, VAL, '5000000')
+    expect(messages).toHaveLength(1)
+  })
+})
+
+describe('staking policy', () => {
+  it('allows every validator under "all"', () => {
+    expect(isValidatorAllowed(openChain, VAL)).toBe(true)
+    expect(isValidatorAllowed(openChain, FREE)).toBe(true)
+  })
+
+  it('allows only the listed validators under "allowlist"', () => {
+    expect(isValidatorAllowed(restricted, FREE)).toBe(true)
+    expect(isValidatorAllowed(restricted, VAL)).toBe(false)
+  })
+
+  it('still offers everything under "allowlist_paid" - the list only sets the price', () => {
+    expect(isValidatorAllowed(chain, FREE)).toBe(true)
+    expect(isValidatorAllowed(chain, VAL)).toBe(true)
+  })
+
+  it('charges only outside the list, and only under the paid policy', () => {
+    expect(delegationHasServiceFee(chain, VAL)).toBe(true)
+    expect(delegationHasServiceFee(chain, FREE)).toBe(false)
+    expect(delegationHasServiceFee(openChain, VAL)).toBe(false)
+    expect(delegationHasServiceFee(restricted, VAL)).toBe(false)
+  })
+
+  it('does not charge when the policy is missing entirely', () => {
+    // Fails towards NOT charging. An unreadable policy costing a user money is
+    // strictly worse than one that costs us a fee, so the ambiguous case sides
+    // with the user.
+    const noPolicy = { ...chain, stakingPolicy: undefined } as unknown as ChainInfo
+    expect(delegationHasServiceFee(noPolicy, VAL)).toBe(false)
   })
 })
 

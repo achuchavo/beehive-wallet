@@ -10,9 +10,19 @@ $adminId = require_admin($db);
 // sections are omitted entirely rather than returned as nulls, so the
 // frontend cannot be tricked into rendering data it never received.
 $ctx = admin_context($db, $adminId);
-$can = static fn(string $f): bool => in_array($f, $ctx['features'], true);
+// Read-or-better. Every section here is a READ, so this is the right question
+// to ask of a levelled grant - an admin with chains:READ still sees the data,
+// they just cannot change it from the screens that render it.
+$can = static fn(string $f): bool => context_level($ctx, $f) >= PERM_READ;
 
-$out = ['ok' => true, 'permissions' => $ctx['features']];
+$out = [
+    'ok' => true,
+    'permissions' => $ctx['features'],
+    // Per-feature level, so the UI can render a section read-only instead of
+    // offering controls the server will refuse. Presentation only.
+    'levels' => (object) $ctx['levels'],
+    'is_super_admin' => $ctx['is_super_admin'],
+];
 
 // --- Stats -----------------------------------------------------------------
 // Aggregate counts are split by the feature that owns the underlying data.
@@ -46,11 +56,15 @@ if ($can('wallet_alerts')) {
 $out['stats'] = $stats;
 
 // --- User directory (PII: emails, wallet addresses, role grants) ------------
-if ($can('users')) {
+// Also released to a 'roles' holder: assigning access requires seeing who you
+// are assigning it to, so gating this on 'users' alone would leave the access
+// screen with an empty list. It is the minimum the feature cannot work without,
+// not a widening of what 'roles' is for.
+if ($can('users') || $can('roles')) {
     $out['users'] = $db->query(
         'SELECT u.id, u.email, u.is_admin, u.is_super_admin, u.is_disabled, u.main_address,
                 u.created_at, COUNT(w.id) AS watched_count,
-                GROUP_CONCAT(DISTINCT p.feature) AS features
+                GROUP_CONCAT(DISTINCT CONCAT(p.feature, \':\', p.level)) AS features
          FROM users u
          LEFT JOIN watched_addresses w ON w.user_id = u.id
          LEFT JOIN admin_permissions p ON p.user_id = u.id

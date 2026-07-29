@@ -43,6 +43,9 @@ foreach ($chains as $c) {
         'serviceFee' => $c['service_fee'],
         'feeCollector' => $c['fee_collector'],
         'freeValidators' => $freeValidators,
+        // all | allowlist | allowlist_paid. Decides whether freeValidators is
+        // "these cost nothing" or "these and nothing else". See migration 013.
+        'stakingPolicy' => $c['staking_policy'] ?? 'all',
         'lcdEndpoints' => $lcd,
         'rpcEndpoints' => $rpc,
     ];

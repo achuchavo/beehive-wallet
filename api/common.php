@@ -420,11 +420,10 @@ function require_user(PDO $db): int
     return $userId;
 }
 
-// Admin features that can be granted individually. Super admins have all.
-// 'wallet_alerts' is separate from 'uptime' on purpose: uptime is about
-// validator liveness, while wallet-alert data exposes users' watched ADDRESSES
-// and labels. Granting one should not grant the other.
-const ADMIN_FEATURES = ['users', 'chains', 'announcements', 'uptime', 'wallet_alerts'];
+// ADMIN_FEATURES, PERM_NONE/READ/WRITE, clamp_permission_level() and
+// grant_denied_reason() live in security_lib.php so they can be unit-tested
+// without a session or database. See the notes there for why the features are
+// split the way they are.
 
 /**
  * Best-effort audit trail for administrator account changes. Never allowed to
@@ -479,6 +478,19 @@ function watch_limit(PDO $db): int
     return $raw;
 }
 
+/**
+ * Who this admin is and what they may do.
+ *
+ * Returns:
+ *   is_admin, is_super_admin - booleans
+ *   levels   - feature => PERM_READ|PERM_WRITE for everything they hold
+ *   features - the features at PERM_READ or above, i.e. "can see this at all"
+ *
+ * `features` is kept in the historical shape (a flat list) because
+ * admin_overview.php gates its PII sections on it and the frontend reads it
+ * from me.php. Its meaning is unchanged for a read-or-better grant, which is
+ * exactly what those call sites were asking about.
+ */
 function admin_context(PDO $db, int $userId): array
 {
     $stmt = $db->prepare('SELECT is_admin, is_super_admin FROM users WHERE id = ?');
@@ -488,15 +500,44 @@ function admin_context(PDO $db, int $userId): array
     $isSuper = $row && (int) $row['is_super_admin'] === 1;
 
     if ($isSuper) {
-        return ['is_admin' => true, 'is_super_admin' => true, 'features' => ADMIN_FEATURES];
+        return [
+            'is_admin' => true,
+            'is_super_admin' => true,
+            'features' => ADMIN_FEATURES,
+            'levels' => array_fill_keys(ADMIN_FEATURES, PERM_WRITE),
+        ];
     }
-    $features = [];
+
+    $levels = [];
     if ($isAdmin) {
-        $stmt = $db->prepare('SELECT feature FROM admin_permissions WHERE user_id = ?');
+        $stmt = $db->prepare('SELECT feature, level FROM admin_permissions WHERE user_id = ?');
         $stmt->execute([$userId]);
-        $features = array_column($stmt->fetchAll(), 'feature');
+        foreach ($stmt->fetchAll() as $r) {
+            // A row naming a feature this build does not know about is ignored
+            // rather than trusted - it may be left over from a rolled-back
+            // deploy, and an unknown feature has no defined blast radius.
+            if (!in_array($r['feature'], ADMIN_FEATURES, true)) {
+                continue;
+            }
+            $level = clamp_permission_level((int) $r['level']);
+            if ($level > PERM_NONE) {
+                $levels[$r['feature']] = $level;
+            }
+        }
     }
-    return ['is_admin' => $isAdmin, 'is_super_admin' => false, 'features' => $features];
+
+    return [
+        'is_admin' => $isAdmin,
+        'is_super_admin' => false,
+        'features' => array_keys($levels),
+        'levels' => $levels,
+    ];
+}
+
+/** This context's level for one feature. */
+function context_level(array $ctx, string $feature): int
+{
+    return (int) ($ctx['levels'][$feature] ?? PERM_NONE);
 }
 
 function require_admin(PDO $db): int
@@ -509,11 +550,24 @@ function require_admin(PDO $db): int
     return $userId;
 }
 
-function require_permission(PDO $db, string $feature): int
+/**
+ * Require $feature at $need or above.
+ *
+ * $need DEFAULTS TO PERM_WRITE on purpose. Every call site that predates
+ * levels asked "does this admin hold the feature", which has always meant full
+ * access - so the default keeps all of them at exactly their previous
+ * strictness, and the levels refactor cannot silently weaken an endpoint.
+ * Read-only endpoints opt down explicitly by passing PERM_READ.
+ *
+ * The 403 is identical for every denial (wrong feature, insufficient level, not
+ * an admin at all), matching how admin_user_update.php refuses without telling
+ * the caller anything about what they were missing.
+ */
+function require_permission(PDO $db, string $feature, int $need = PERM_WRITE): int
 {
     $userId = require_user($db);
     $ctx = admin_context($db, $userId);
-    if (!$ctx['is_admin'] || !in_array($feature, $ctx['features'], true)) {
+    if (!$ctx['is_admin'] || context_level($ctx, $feature) < $need) {
         json_error('You do not have access to this feature', 403);
     }
     return $userId;
@@ -926,6 +980,101 @@ function proxy_fetch(string $url, array $opts = []): array
     return ['body' => $body, 'status' => $status, 'error' => '', 'too_large' => false];
 }
 
+// --- LCD access -------------------------------------------------------------
+//
+// One failover implementation, shared by the public relay (lcd_proxy.php) and
+// by server-side verification (watch_payment_submit.php). Two copies of an
+// endpoint-failover loop is two places for a security property to drift: the
+// SSRF revalidation, the redirect refusal and the bounded read all live in
+// proxy_fetch(), and both callers must get all three.
+
+/** Active LCD base URLs for a chain, in priority order. */
+function lcd_endpoints(PDO $db, string $chainKey): array
+{
+    $stmt = $db->prepare(
+        "SELECT url FROM chain_endpoints
+         WHERE chain_key = ? AND kind = 'lcd' AND is_active = 1
+         ORDER BY priority, id"
+    );
+    $stmt->execute([$chainKey]);
+    return array_column($stmt->fetchAll(), 'url');
+}
+
+/**
+ * Try each of the chain's LCD endpoints until one answers.
+ *
+ * $suffix is the path (plus any query string) appended to each base URL.
+ * Returns ['status' => int, 'body' => string, 'error' => string], where error
+ * is one of '', 'no_endpoint', 'all_failed' or 'too_large'.
+ *
+ * A 5xx moves to the next endpoint; any other status is that endpoint's answer
+ * and is returned as-is - a 404 from a healthy node is real information ("this
+ * transaction is not indexed here"), not a failure to retry around.
+ */
+function lcd_fetch(PDO $db, string $chainKey, string $suffix, array $opts = []): array
+{
+    $endpoints = lcd_endpoints($db, $chainKey);
+    if (!$endpoints) {
+        return ['status' => 0, 'body' => '', 'error' => 'no_endpoint'];
+    }
+
+    $sawTooLarge = false;
+    foreach ($endpoints as $base) {
+        // proxy_fetch re-resolves DNS, pins the connection to the addresses it
+        // just validated and refuses redirects, so no hop escapes the guard.
+        $res = proxy_fetch(rtrim($base, '/') . $suffix, [
+            'timeout' => (int) ($opts['timeout'] ?? 30),
+            'max_bytes' => (int) ($opts['max_bytes'] ?? 8 * 1024 * 1024),
+        ]);
+
+        if ($res['too_large']) {
+            // A truncated body is not a valid response - never pass it off as
+            // one, but do let a healthier endpoint answer.
+            $sawTooLarge = true;
+            continue;
+        }
+        if ($res['error'] !== '' || $res['status'] === 0 || $res['status'] >= 500) {
+            continue;
+        }
+        return ['status' => $res['status'], 'body' => $res['body'], 'error' => ''];
+    }
+
+    return [
+        'status' => 0,
+        'body' => '',
+        'error' => $sawTooLarge ? 'too_large' : 'all_failed',
+    ];
+}
+
+/**
+ * lcd_fetch() plus JSON decoding, for server-side reads.
+ *
+ * Returns ['ok' => bool, 'status' => int, 'data' => ?array, 'error' => string].
+ * `error` adds 'not_found' (an honest 404 from a live node), 'http_error' and
+ * 'bad_json' to the lcd_fetch set.
+ *
+ * Callers on the money path MUST distinguish these: "the node has not indexed
+ * this transaction yet" invites a retry, while "the amount was wrong" is final.
+ */
+function lcd_get(PDO $db, string $chainKey, string $path): array
+{
+    $res = lcd_fetch($db, $chainKey, $path);
+    if ($res['error'] !== '') {
+        return ['ok' => false, 'status' => $res['status'], 'data' => null, 'error' => $res['error']];
+    }
+    if ($res['status'] === 404) {
+        return ['ok' => false, 'status' => 404, 'data' => null, 'error' => 'not_found'];
+    }
+    if ($res['status'] < 200 || $res['status'] >= 300) {
+        return ['ok' => false, 'status' => $res['status'], 'data' => null, 'error' => 'http_error'];
+    }
+    $data = json_decode($res['body'], true);
+    if (!is_array($data)) {
+        return ['ok' => false, 'status' => $res['status'], 'data' => null, 'error' => 'bad_json'];
+    }
+    return ['ok' => true, 'status' => $res['status'], 'data' => $data, 'error' => ''];
+}
+
 // Per-IP + global rate limit for the public proxies. Uses APCu when available
 // (in-memory, no DB write per request) and otherwise falls back to a shared
 // database counter, so the limiter is never silently disabled. Emits 429 with
@@ -1118,7 +1267,17 @@ function record_attempt(PDO $db, string $ip, string $identifier, string $kind, b
         'INSERT INTO login_attempts (ip, identifier, kind, success, attempted_at)
          VALUES (?, ?, ?, ?, NOW())'
     );
-    $stmt->execute([$ip, mb_substr($identifier, 0, 190), $kind, $success ? 1 : 0]);
+    // Every value is bounded to its column width. The kind was NOT, and a kind
+    // one character too long is not a truncated row under MySQL strict mode -
+    // it is error 1406, an uncaught PDOException, and an empty 500 body that
+    // the browser reports as "Unexpected end of JSON input". That took address
+    // linking offline entirely (see migration 012).
+    //
+    // Deliberately NOT wrapped in a try/catch: this write is what makes rate
+    // limiting work, so a failure here must stay loud. Swallowing it would mean
+    // failed logins silently stop being counted, which is unmetered password
+    // guessing - strictly worse than a visible error.
+    $stmt->execute([$ip, mb_substr($identifier, 0, 190), mb_substr($kind, 0, 20), $success ? 1 : 0]);
 
     // Opportunistic cleanup of old rows (~1% of requests).
     if (random_int(1, 100) === 1) {

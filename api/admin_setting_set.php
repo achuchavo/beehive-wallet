@@ -3,7 +3,11 @@ require __DIR__ . '/common.php';
 require_post();
 
 $db = get_db();
-require_super_admin($db);
+// Was super-admin only. Now a delegable feature, so a trusted operator can be
+// given the global switches without being handed the entire deployment. This
+// widens access deliberately - and only a super admin can hand out the grant
+// in the first place (see grant_denied_reason and admin_role_update.php).
+require_permission($db, 'settings', PERM_WRITE);
 $body = read_body();
 
 $key = trim($body['key'] ?? '');
