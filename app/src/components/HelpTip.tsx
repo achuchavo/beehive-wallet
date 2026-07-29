@@ -3,18 +3,19 @@ import { HelpCircle } from 'lucide-react'
 import { useT } from '../i18n/I18nContext'
 
 /**
- * A "?" button that opens a small explanation popover.
+ * A "?" that reveals a short explanation.
  *
- * Deliberately NOT hover-only. Hover excludes touch (there is no hover on a
- * phone) and keyboard users, and a tooltip that disappears the moment the
- * pointer moves cannot be read at leisure - which is the whole point of an
- * explanation. So: click or Enter/Space opens it, Escape / clicking away / a
- * second click closes it.
+ * OPENS ON HOVER. It also opens on tap and on keyboard focus, because those are
+ * the only ways the same content can be reached without a mouse - a phone has
+ * no hover state at all, so hover-only would mean every tip on the site is
+ * invisible to a phone user.
  *
- * The help text is the popover's content and is linked to the button with
- * aria-describedby, so assistive tech announces "Help, button" and then reads
- * the explanation - rather than announcing an entire sentence as the button's
- * own name, which is what an aria-label holding the text would do.
+ * Clicking PINS it open. Hover alone closes as soon as the pointer leaves, which
+ * is right for a glance but wrong for a paragraph about how a fee is charged -
+ * pinning lets the text be read, and selected, at leisure.
+ *
+ * The close is delayed a little so that moving the pointer from the "?" onto the
+ * popover does not dismiss it in the gap between the two elements.
  */
 export default function HelpTip({
   text,
@@ -32,21 +33,50 @@ export default function HelpTip({
 }) {
   const { t } = useT()
   const [open, setOpen] = useState(false)
+  // Pinned by a click/tap: stays until dismissed rather than following the
+  // pointer.
+  const [pinned, setPinned] = useState(false)
   const panelId = useId()
   const wrapRef = useRef<HTMLSpanElement>(null)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Dismiss on Escape or on a click outside. Both are bound only while open, so
-  // a page full of tips adds no listeners until one is actually used.
+  function cancelClose() {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current)
+      closeTimer.current = null
+    }
+  }
+
+  function show() {
+    cancelClose()
+    setOpen(true)
+  }
+
+  function scheduleClose() {
+    if (pinned) return
+    cancelClose()
+    closeTimer.current = setTimeout(() => setOpen(false), 120)
+  }
+
+  // A timer that outlives the component would call setState on an unmounted one.
+  useEffect(() => cancelClose, [])
+
+  // Escape, and clicking away, both close a PINNED tip. Bound only while open,
+  // so a page full of tips adds no listeners until one is actually used.
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
+        setPinned(false)
         setOpen(false)
       }
     }
     const onPointer = (e: PointerEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+      if (!wrapRef.current?.contains(e.target as Node)) {
+        setPinned(false)
+        setOpen(false)
+      }
     }
     document.addEventListener('keydown', onKey)
     document.addEventListener('pointerdown', onPointer)
@@ -60,7 +90,14 @@ export default function HelpTip({
     align === 'start' ? 'left-0' : align === 'end' ? 'right-0' : 'left-1/2 -translate-x-1/2'
 
   return (
-    <span ref={wrapRef} className={`relative inline-flex align-middle ${className}`}>
+    <span
+      ref={wrapRef}
+      // On the wrapper, not the button, so the popover counts as "inside" and
+      // moving onto it keeps the tip open.
+      onPointerEnter={show}
+      onPointerLeave={scheduleClose}
+      className={`relative inline-flex align-middle ${className}`}
+    >
       <button
         type="button"
         onClick={(e) => {
@@ -71,14 +108,27 @@ export default function HelpTip({
           // the click out of any clickable row this tip is nested in.
           e.preventDefault()
           e.stopPropagation()
-          setOpen((o) => !o)
+          // Tap on touch (where there is no hover) opens; click on a desktop
+          // pins what hover already opened, and a second click releases it.
+          if (pinned) {
+            setPinned(false)
+            setOpen(false)
+          } else {
+            setPinned(true)
+            setOpen(true)
+          }
         }}
+        // Keyboard users get the same content: focus opens, blur closes.
+        onFocus={show}
+        onBlur={scheduleClose}
         aria-expanded={open}
         // Both only while open: the panel does not exist when closed, and an
         // aria-controls/aria-describedby pointing at a missing id is a dangling
         // reference that some screen readers report as an error.
         aria-controls={open ? panelId : undefined}
-        // Described by the popover, named "Help" - see the note above.
+        // Described by the popover, named "Help" - so assistive tech announces
+        // "Help, button" and then reads the explanation, rather than announcing
+        // an entire sentence as the button's own name.
         aria-describedby={open ? panelId : undefined}
         aria-label={t('help.label')}
         // Inherits the colour of whatever label it sits beside (slate on a

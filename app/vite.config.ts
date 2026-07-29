@@ -1,3 +1,7 @@
+/// <reference types="vitest/config" />
+// The reference (rather than importing defineConfig from 'vitest/config') adds
+// the `test` key to Vite's config type without making the build config import
+// the test runner.
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -50,5 +54,23 @@ export default defineConfig({
         rewrite: (p) => p.replace(base.replace(/\/$/, ''), ''),
       },
     },
+  },
+  test: {
+    /**
+     * Vitest's default is 5s, which the wallet crypto tests can exceed on a
+     * loaded machine.
+     *
+     * They are slow BY DESIGN: encrypt/decrypt derive a key with PBKDF2 at
+     * 600,000 iterations (300,000 for the legacy v1 payload), which is the
+     * whole point - it is what makes a stolen wallet file expensive to attack.
+     * Each takes ~120ms idle, but the suite runs files in parallel and a
+     * concurrent `npm run build` is enough to push one past five seconds.
+     *
+     * The symptom was a test failing roughly twice in forty runs with no
+     * pattern, which reads as flakiness in the code under test rather than as
+     * the harness being impatient. Raised rather than lowering the iteration
+     * count: the cost is a security property, not a performance bug.
+     */
+    testTimeout: 30_000,
   },
 })
