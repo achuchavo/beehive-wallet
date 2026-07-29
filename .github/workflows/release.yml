@@ -56,13 +56,112 @@ jobs:
       - name: Package bundle
         run: (cd app && zip -r "$GITHUB_WORKSPACE/beehive-wallet-${{ github.ref_name }}.zip" dist)
 
+      # --- Deployable bundle ---------------------------------------------------
+      # The zip above is the PUBLIC verification artifact and stays frontend-only,
+      # because docs/VERIFYING-THE-BUILD.md publishes its bundleHash as a promise
+      # about what the browser is served.
+      #
+      # A deploy needs more than that: this release ships new PHP endpoints and a
+      # watcher that enforces paid-alert lapses, so a frontend-only artifact would
+      # put a new UI in front of an old API. This tarball is the whole deployable
+      # set - one tag, one known-good answer to "what is live".
+      - name: Refuse to package secrets
+        run: |
+          set -euo pipefail
+          # These are all git-ignored, so a clean checkout cannot contain them.
+          # Checked anyway: the cost of being wrong is publishing a production
+          # database password or the VAPID signing key to a release asset, and a
+          # failed build is infinitely cheaper than a leaked credential.
+          bad=0
+          for f in api/db_config.php api/db_config.php.example \
+                   watcher/db_config.json watcher/vapid_private.pem; do
+            if [ -e "$f" ]; then echo "REFUSING: $f is present in the checkout"; bad=1; fi
+          done
+          if [ "$bad" -ne 0 ]; then
+            echo "A secret-bearing file reached the build. Not packaging."
+            exit 1
+          fi
+
+      - name: Package deployable (frontend + api + watcher)
+        run: |
+          set -euo pipefail
+          stage="$(mktemp -d)"
+          mkdir -p "$stage/dist" "$stage/api" "$stage/watcher"
+
+          cp -r app/dist/. "$stage/dist/"
+
+          # api/: no secrets, no tests (a test runner on a public web root is
+          # surface with no upside), and no chains.json - nothing reads it any
+          # more, and re-shipping it would restore the second source of truth
+          # that made Chihuahua addresses fail as "Unknown chain".
+          rsync -a --exclude 'db_config.php' \
+                   --exclude 'db_config.php.example' \
+                   --exclude 'chains.json' \
+                   --exclude 'tests/' \
+                   api/ "$stage/api/"
+
+          # watcher/: source only. The venv is built on the server, and the
+          # config and VAPID key live there and must never travel.
+          rsync -a --exclude 'db_config.json' \
+                   --exclude 'db_config.json.example' \
+                   --exclude 'vapid_private.pem' \
+                   --exclude 'venv/' \
+                   --exclude '__pycache__/' \
+                   --exclude 'logs/' \
+                   --exclude '*.log' \
+                   watcher/ "$stage/watcher/"
+
+          # Per-file hashes, so the server can verify every file it unpacks
+          # rather than trusting the transfer.
+          (cd "$stage" && find . -type f ! -name 'deploy-SHA256SUMS.txt' -print0 \
+            | sort -z | xargs -0 sha256sum > deploy-SHA256SUMS.txt)
+          cp "$stage/deploy-SHA256SUMS.txt" "deploy-SHA256SUMS.txt"
+
+          # Deterministic tar: fixed mtime/owner and a sorted file list, so the
+          # same commit produces the same bytes.
+          tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
+              -czf "beehive-deploy-${{ github.ref_name }}.tar.gz" -C "$stage" .
+
+          sha256sum "beehive-deploy-${{ github.ref_name }}.tar.gz" \
+            | cut -d' ' -f1 > "beehive-deploy-${{ github.ref_name }}.tar.gz.sha256"
+
+          echo "commit=${{ github.sha }}" > deploy-release.txt
+          echo "tag=${{ github.ref_name }}" >> deploy-release.txt
+          echo "tarball_sha256=$(cat "beehive-deploy-${{ github.ref_name }}.tar.gz.sha256")" >> deploy-release.txt
+
+      # Notes go through a FILE, not an inline --notes string. They are multi-line
+      # and contain backticks for markdown code spans: inline, the continuation
+      # lines would have to sit at column 0, which ends the YAML block scalar and
+      # fails the whole workflow to parse. The heredoc is quoted ('EOF') so those
+      # backticks stay literal instead of becoming command substitution.
+      - name: Write release notes
+        run: |
+          cat > release-notes.md <<'EOF'
+          Reproducible build of commit `__COMMIT__`.
+
+          **Verifying what the browser is served:** the whole-bundle SHA-256 is
+          `bundleHash` in `build-manifest.json`; per-file hashes are in
+          `SHA256SUMS.txt`. Build provenance is attested via GitHub/Sigstore.
+          See `docs/VERIFYING-THE-BUILD.md`.
+
+          **Deploying:** `beehive-deploy-__TAG__.tar.gz` is the deployable set —
+          frontend, `api/` and `watcher/`, with no secrets and no tests. It is
+          consumed by `docs/deploy-prod.sh`; see `docs/deploying-production.md`.
+          Run any outstanding database migrations BEFORE swapping the release.
+          EOF
+          sed -i "s/__COMMIT__/${{ github.sha }}/g; s/__TAG__/${{ github.ref_name }}/g" release-notes.md
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ github.ref_name }}" \
             "beehive-wallet-${{ github.ref_name }}.zip" \
+            "beehive-deploy-${{ github.ref_name }}.tar.gz" \
+            "beehive-deploy-${{ github.ref_name }}.tar.gz.sha256" \
+            deploy-SHA256SUMS.txt \
+            deploy-release.txt \
             app/dist/build-manifest.json \
             app/dist/SHA256SUMS.txt \
             --title "${{ github.ref_name }}" \
-            --notes "Reproducible build of commit \`${{ github.sha }}\`. The whole-bundle SHA-256 is \`bundleHash\` in build-manifest.json; per-file hashes are in SHA256SUMS.txt. Build provenance is attested via GitHub/Sigstore. To verify, see docs/VERIFYING-THE-BUILD.md."
+            --notes-file release-notes.md
