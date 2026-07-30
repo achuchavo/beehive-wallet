@@ -82,7 +82,21 @@ function session_login(int $userId, bool $remember = false): void
 // yields no usable cookie. Every use rotates the verifier.
 
 const REMEMBER_COOKIE = 'beehive_remember';
-const REMEMBER_TTL = 30 * 86400;   // 30 days
+
+/**
+ * How long "keep me signed in" lasts without being used.
+ *
+ * 400 days, not longer, because that is the ceiling browsers actually honour:
+ * Chrome (and others following the same cookie-lifetime limit) silently clamp
+ * any Expires further out than 400 days, so a bigger number here would just be
+ * a lie told to the database while the cookie quietly expired sooner.
+ *
+ * This is a ceiling on IDLE time, not on total time. Every use slides it
+ * forward - see remember_resume() - so somebody who opens the app even once a
+ * month stays signed in indefinitely, which is what "at all times" has to mean
+ * in practice.
+ */
+const REMEMBER_TTL = 400 * 86400;
 const REMEMBER_GRACE_SECONDS = 60; // window in which the previous verifier still works
 
 function remember_cookie_options(int $expires): array
@@ -92,7 +106,22 @@ function remember_cookie_options(int $expires): array
         'path' => '/',
         'secure' => cookie_secure(),
         'httponly' => true,
-        'samesite' => 'Strict',
+        /**
+         * Lax, deliberately, where the SESSION cookie stays Strict.
+         *
+         * Strict is not sent when the user arrives by following a link from
+         * anywhere else - including a message, a QR code, or a bookmark opened
+         * through another app - so a signed-in user who reached the site that
+         * way was shown the signed-out page, which is exactly the complaint
+         * this cookie exists to prevent.
+         *
+         * It does not weaken CSRF protection: Lax still withholds the cookie
+         * from cross-site POSTs, and every mutation is gated by
+         * require_same_origin() (Sec-Fetch-Site + Origin against a configured
+         * allowlist), which is the actual control. This cookie only
+         * re-establishes a session; it authorises nothing on its own.
+         */
+        'samesite' => 'Lax',
     ];
 }
 
@@ -216,6 +245,13 @@ function remember_resume(PDO $db): ?int
 
         // Rotate: new verifier, previous one honoured for the grace window so
         // parallel requests carrying the same cookie still succeed.
+        //
+        // expires_at SLIDES. It used to be set once at login and never touched,
+        // while the cookie's own expiry was refreshed on every use - so the two
+        // disagreed, and a user who signed in with "keep me signed in" was
+        // logged out exactly REMEMBER_TTL after that login no matter how often
+        // they came back. The database row was the shorter of the two and won.
+        // Now any use extends both, so continuous use never expires.
         $newVerifier = bin2hex(random_bytes(32));
         $db->prepare(
             'UPDATE remember_tokens
@@ -223,6 +259,7 @@ function remember_resume(PDO $db): ?int
                  verifier_hash = ?,
                  rotated_at = NOW(),
                  last_used_at = NOW(),
+                 expires_at = NOW() + INTERVAL ' . REMEMBER_TTL . ' SECOND,
                  ip = ?
              WHERE id = ?'
         )->execute([hash('sha256', $newVerifier), client_ip(), $row['id']]);
