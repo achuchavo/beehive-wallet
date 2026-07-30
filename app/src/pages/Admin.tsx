@@ -21,6 +21,7 @@ import UserWatchesManager from './UserWatchesManager'
 import OptionPicker from '../components/OptionPicker'
 import HelpTip from '../components/HelpTip'
 import ConfirmDelete from '../components/ConfirmDelete'
+import { notifySettingsChanged } from '../settingsSignal'
 
 type Tab =
   | 'overview'
@@ -823,6 +824,7 @@ function WatchLimitEditor({ onError }: { onError: (m: string) => void }) {
     setDone(false)
     try {
       await api.adminSettingSet('watch_limit', parsed)
+      notifySettingsChanged()
       setSaved(parsed)
       setDone(true)
     } catch (e) {
@@ -914,6 +916,9 @@ function UptimeManager({
     try {
       await api.adminSettingSet('uptime_alerts_enabled', !enabled)
       load()
+      // The nav entry that shows/hides this feature lives in App.tsx, which has
+      // no shared ancestor with this screen to pass state through.
+      notifySettingsChanged()
     } catch (e) {
       onError(e instanceof Error ? e.message : 'Failed')
     }

@@ -39,6 +39,7 @@ import { LANGUAGES } from './i18n/i18n'
 import OptionPicker from './components/OptionPicker'
 import BuildBadge from './components/BuildBadge'
 import { useChains } from './chainStore'
+import { onSettingsChanged } from './settingsSignal'
 
 // Grouped rather than one flat list of eight. The groups answer "what am I
 // here to do" - hold, stake, monitor - instead of making the user scan.
@@ -124,11 +125,35 @@ function App() {
     return () => clearInterval(id)
   }, [])
 
+  // Global feature flags. This used to run once on mount with no way to change
+  // its mind, so an admin turning uptime alerts on or off never reached an
+  // already-open tab - the nav entry stayed as it was until a hard reload.
+  //
+  // Three triggers, cheapest first: the admin screen signals immediately after
+  // writing the switch, coming back to the tab re-reads it (covering a change
+  // made by another admin or in another tab), and a slow poll is the backstop
+  // for a tab left open and focused.
   useEffect(() => {
-    api
-      .settingsPublic()
-      .then((r) => setUptimeEnabled(r.uptime_alerts_enabled))
-      .catch(() => {})
+    const loadSettings = () =>
+      api
+        .settingsPublic()
+        .then((r) => setUptimeEnabled(r.uptime_alerts_enabled))
+        .catch(() => {})
+    loadSettings()
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') loadSettings()
+    }
+    const stopSignal = onSettingsChanged(loadSettings)
+    window.addEventListener('focus', onVisible)
+    document.addEventListener('visibilitychange', onVisible)
+    const id = setInterval(loadSettings, 5 * 60 * 1000)
+    return () => {
+      stopSignal()
+      window.removeEventListener('focus', onVisible)
+      document.removeEventListener('visibilitychange', onVisible)
+      clearInterval(id)
+    }
   }, [])
 
   // Close the mobile drawer whenever the route changes.
