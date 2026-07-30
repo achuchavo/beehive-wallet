@@ -147,6 +147,18 @@ export function formatAmount(raw: string | number | bigint, chain: ChainInfo): s
   return formatBase(raw, chain.decimals)
 }
 
+// Compact display for the dashboard/overview: hides decimals by default (whole
+// numbers), truncated/floored - NEVER rounded up - so a shown balance is never
+// MORE than the wallet actually holds. Full precision stays on formatAmount for
+// anything spendable (Send review, staking forms, etc.).
+export function formatAmountShort(
+  raw: string | number | bigint,
+  chain: ChainInfo,
+  maxDp = 0,
+): string {
+  return formatBase(raw, chain.decimals, maxDp)
+}
+
 // "1500000" umed -> "1.5" MED as a clean, input-friendly string (no commas).
 export function fromBaseUnits(base: string | number | bigint, chain: ChainInfo): string {
   return amountFromBaseUnits(base, chain.decimals)

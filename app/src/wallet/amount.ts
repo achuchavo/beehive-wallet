@@ -33,9 +33,19 @@ export function fromBaseUnits(base: string | number | bigint, decimals: number):
 }
 
 /** Human display with thousands separators, exact (no Number, no rounding). */
-export function formatBase(base: string | number | bigint, decimals: number): string {
+export function formatBase(
+  base: string | number | bigint,
+  decimals: number,
+  maxFractionDigits?: number,
+): string {
   const s = fromBaseUnits(base, decimals)
-  const [whole, frac] = s.split('.')
+  const [whole, fracFull] = s.split('.')
+  // Truncate (floor) the fraction to maxFractionDigits when asked - never round
+  // up, so a displayed balance is never MORE than the wallet actually holds.
+  const frac =
+    maxFractionDigits !== undefined && fracFull
+      ? fracFull.slice(0, maxFractionDigits).replace(/0+$/, '')
+      : fracFull
   const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
   return frac ? `${grouped}.${frac}` : grouped
 }

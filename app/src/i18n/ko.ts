@@ -7,7 +7,7 @@ export const ko: Record<string, string> = {
   'navGroup.admin': '관리',
   'nav.dashboard': '대시보드',
   'nav.send': '송금',
-  'nav.validators': '밸리데이터',
+  'nav.validators': '스테이킹',
   'nav.rewards': '보상',
   'nav.history': '내역',
   'nav.alarms': '거래 알림',
@@ -383,7 +383,7 @@ export const ko: Record<string, string> = {
   'settings.repeatPassword': '비밀번호 재입력',
   'settings.createDesc':
     '새 24단어 시드 문구가 기기에서 생성됩니다. 반드시 종이에 적어 안전하게 보관하세요. 이것이 지갑을 복구할 수 있는 유일한 방법입니다.',
-  'settings.generateSeed': '시드 문구 생성',
+  'settings.generateSeed': '지갑 생성',
   'settings.stepOf': '{total}단계 중 {step}단계',
   'settings.seedWarning':
     '이 24개 단어를 순서대로 종이에 적으세요. 절대 디지털로 저장하거나 공유하지 마세요. 이 단어를 아는 사람은 누구나 자금을 제어할 수 있습니다.',
@@ -411,7 +411,7 @@ export const ko: Record<string, string> = {
   'settings.removeConfirmBtn': '지갑 삭제',
   'settings.network': '네트워크',
   'settings.encrypting': '암호화 중...',
-  'settings.saveWallet': '지갑 저장',
+  'settings.saveWallet': '지갑 만들기',
   'settings.seedPhrase': '시드 문구',
   'settings.privateKey': '개인 키',
   'settings.importMnemonicDesc':

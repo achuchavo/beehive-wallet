@@ -18,7 +18,7 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react'
-import { DEFAULT_CHAIN, findChain, formatAmount, type ChainInfo } from '../chains'
+import { DEFAULT_CHAIN, findChain, formatAmountShort, type ChainInfo } from '../chains'
 import { useChains } from '../chainStore'
 import { useColdStart } from '../coldStart'
 import { usePrivacyMode, setPrivacyMode } from '../privacyMode'
@@ -541,7 +541,7 @@ export default function Dashboard() {
                   // A change in the balance is still information about the
                   // balance, so it is masked with everything else.
                   text={`${deltas[g.chain.key].startsWith('-') ? '−' : '+'}${maskAmount(
-                    formatAmount(deltas[g.chain.key].replace('-', ''), g.chain),
+                    formatAmountShort(deltas[g.chain.key].replace('-', ''), g.chain),
                     hidden,
                   )} ${g.chain.displayDenom}`}
                   onDone={() =>
@@ -557,9 +557,9 @@ export default function Dashboard() {
 
             <div className="mt-1 text-4xl font-semibold tracking-tight tabular-nums text-amber-950">
               {hidden ? (
-                <span>{maskAmount(formatAmount(g.total, g.chain), true)}</span>
+                <span>{maskAmount(formatAmountShort(g.total, g.chain), true)}</span>
               ) : (
-                <CountUp value={g.total} from={countFrom[g.chain.key]} format={(b) => formatAmount(b, g.chain)} />
+                <CountUp value={g.total} from={countFrom[g.chain.key]} format={(b) => formatAmountShort(b, g.chain)} />
               )}{' '}
               <span className="text-lg font-medium text-amber-800/80">{g.chain.displayDenom}</span>
             </div>
@@ -642,7 +642,7 @@ export default function Dashboard() {
                   {isPositiveBase(monthly[g.chain.key]?.amount ?? '0') ? (
                     <>
                       <div className="truncate text-2xl font-semibold leading-tight tabular-nums text-green-900 sm:text-3xl">
-                        {maskAmount(formatAmount(monthly[g.chain.key]!.amount, g.chain), hidden)}{' '}
+                        {maskAmount(formatAmountShort(monthly[g.chain.key]!.amount, g.chain), hidden)}{' '}
                         <span className="text-base font-medium text-green-800/80 sm:text-lg">
                           {g.chain.displayDenom}
                         </span>
@@ -682,7 +682,7 @@ export default function Dashboard() {
               <span className="flex items-center gap-2">
                 <Gift className="h-4 w-4" strokeWidth={1.8} />{' '}
                 {t('dash.claimable', {
-                  amount: maskAmount(formatAmount(g.claimable, g.chain), hidden),
+                  amount: maskAmount(formatAmountShort(g.claimable, g.chain), hidden),
                   denom: g.chain.displayDenom,
                 })}
               </span>
@@ -780,9 +780,9 @@ function Stat({
             the mask length follows the digit count, so animating one would
             make the dots twitch. Same reasoning as the headline total. */}
         {hidden ? (
-          maskAmount(formatAmount(base, chain), true)
+          maskAmount(formatAmountShort(base, chain), true)
         ) : (
-          <CountUp value={base} from={from} format={(b) => formatAmount(b, chain)} />
+          <CountUp value={base} from={from} format={(b) => formatAmountShort(b, chain)} />
         )}
       </div>
     </div>
@@ -844,7 +844,7 @@ function WalletRow({
   const panelId = useId()
   const total = addBase(addBase(p.available, p.staked), p.unbonding)
   /** Every figure in this row goes through here, so none can miss the mask. */
-  const show = (base: string) => maskAmount(formatAmount(base, chain), hidden)
+  const show = (base: string) => maskAmount(formatAmountShort(base, chain), hidden)
 
   return (
     <Card padded={false}>

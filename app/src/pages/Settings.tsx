@@ -528,7 +528,16 @@ function CreateWallet({ onDone }: { onDone: () => void }) {
               <p className="text-xs text-slate-500">{t('settings.seedHiddenAfterBackup')}</p>
             ) : (
               <SecretShield>
-                <p className="font-mono text-sm leading-relaxed">{mnemonic}</p>
+                <ol className="grid grid-cols-3 gap-x-3 gap-y-1.5 font-mono text-sm sm:grid-cols-4">
+                  {words.map((word, i) => (
+                    <li key={i} className="flex items-baseline gap-1.5">
+                      <span className="w-4 shrink-0 text-right text-xs tabular-nums text-slate-400">
+                        {i + 1}
+                      </span>
+                      <span>{word}</span>
+                    </li>
+                  ))}
+                </ol>
               </SecretShield>
             )}
           </div>
