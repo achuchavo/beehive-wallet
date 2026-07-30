@@ -1,64 +1,66 @@
-# Beehive Wallet
+<!-- Language: keep this line in sync with README.ko.md -->
+**[English](README.md)** · [한국어](README.ko.md)
 
-Non-custodial web wallet for Cosmos chains run by Beehive validators, starting with
-Medibloc. Successor niche to Cosmostation: add a wallet, stake (free to Beehive),
-see history, send - plus outgoing-transaction alarms on any watched address.
+# 🐝 Beehive Wallet
 
-## Security model (the one rule)
+Non-custodial wallet for the Cosmos ecosystem, starting with **Medibloc (MED)**. Add a
+wallet, check balances, send and stake — and get an **alert the moment funds move** on any
+address you watch.
 
-Private keys and seed phrases exist ONLY in the user's browser, encrypted with the
-user's password. Transactions are signed client-side with CosmJS; only signed bytes
-leave the device. The server stores public data only: emails, addresses, alarm
-settings, alerts. Nothing in `api/`, `watcher/`, or the database ever handles a key.
+**Live:** https://wallet.beehive.kr
 
-## Layout
+## The one rule: your keys never leave your device
 
-| Folder     | What                                            | Runs where                        |
-|------------|--------------------------------------------------|-----------------------------------|
-| `app/`     | React + TypeScript + CosmJS + Tailwind frontend | Built to static files, Apache     |
-| `api/`     | PHP endpoints (accounts, watchlist, alerts)     | Apache + MySQL                    |
-| `watcher/` | Python daemon detecting outgoing txs            | Any server with DB + LCD access   |
-| `config/`  | Chain registry shared by api + watcher          | Copied on deploy                  |
-| `docs/`    | `schema.sql`, notes                             | -                                 |
+Your private keys and seed phrase exist **only in your browser**, encrypted with your
+password. Transactions are signed on your device with CosmJS — only the *signed bytes* are
+sent out. The server stores public data only (account email, addresses, alarm settings);
+nothing in `api/`, `watcher/`, or the database ever sees a key.
+
+**Even if our server were fully compromised, your funds are safe** — there is nothing there
+to steal.
+
+## Verify what you're running
+
+Because the browser code is the only thing that could ever touch a key, we make it
+checkable:
+
+- **Reproducible builds** — anyone can rebuild a release and get byte-identical files.
+- **Published hashes + build provenance** — every release ships SHA-256 hashes and a
+  Sigstore attestation tying the files to this public source.
+- **In-app badge** — the footer shows `Build <commit> · Verify`, linking the running site to
+  its exact commit.
+
+Full steps: **[docs/VERIFYING-THE-BUILD.md](docs/VERIFYING-THE-BUILD.md)**.
+
+> Honest limit: it's a website, so reproducible builds + hashes let anyone *detect*
+> tampering, but a web app can't be 100% tamper-proof on its own. We'd rather say so plainly.
+
+## Features
+
+- Non-custodial wallets (create / import), balances, send & receive
+- Staking — delegate and claim rewards; **free** to the Beehive validator
+- Transaction history
+- **Outgoing-transaction alarms** on any watched address — the signature feature
+- Chains: Medibloc, Chihuahua
+
+## Tech
+
+- **Frontend:** React 19 · TypeScript · Vite · CosmJS · Tailwind
+- **API:** PHP · MySQL
+- **Watcher:** a Python daemon that detects outgoing transactions and raises alerts
 
 ## Development
 
-```
+```bash
 cd app
 npm install
-npm run dev        # http://localhost:5173, /api proxied to local Apache
+npm run dev
 ```
 
-Backend setup (once):
-1. Run `docs/schema.sql` in MySQL.
-2. Copy `api/db_config.php.example` to `api/db_config.php` and fill in.
-3. Copy `watcher/db_config.json.example` to `watcher/db_config.json` and fill in.
-4. `pip install -r watcher/requirements.txt`, then `python watcher/watcher.py --once`.
+Backend setup, migrations, and deployment live in [`docs/`](docs/) — see
+`deploying-production.md`, `operations.md`, and `schema.sql`.
 
-## Deploy (dev server)
+## Reporting security issues
 
-Build and copy to Apache; site is served at beehive.achumuamah.com
-(vhost DocumentRoot: `D:/WebServer/Apache24/beeweb/wallet`):
-
-```
-cd app && npm run build
-robocopy app\dist D:\WebServer\Apache24\beeweb\wallet /MIR /XD api
-robocopy api D:\WebServer\Apache24\beeweb\wallet\api /MIR /XF db_config.php.example
-copy config\chains.json D:\WebServer\Apache24\beeweb\wallet\api\chains.json
-```
-
-(`db_config.php` on the server is created once by hand and never overwritten by deploy.)
-
-## Endpoints (target: our own nodes)
-
-`app/src/chains.ts` and `config/chains.json` currently point at public Medibloc
-endpoints for development. Before launch, switch to our Vultr Seoul app node behind
-`rpc-medi.achumuamah.com` / `lcd-medi.achumuamah.com`. The validator node stays
-private - the app never talks to it.
-
-## Roadmap
-
-1. Phase 1 - read-only wallet + watcher alarms (in-app notifications)
-2. Phase 2 - key create/import + send (client-side signing), web push
-3. Phase 3 - staking UI, Beehive pinned free
-4. Phase 4 - more chains (rizon, chihuahua, ...) as config entries
+Please report vulnerabilities **privately** via GitHub Security Advisories rather than
+opening a public issue.
