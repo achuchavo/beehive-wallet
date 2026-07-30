@@ -5,15 +5,14 @@
  * dismissal of #4 says nothing about #5. The server keeps no per-user read
  * state; this is the whole mechanism, and it is deliberately per-browser.
  *
- * Two layers:
- *   localStorage    dismissed forever / snoozed until a timestamp
- *   sessionStorage  "already shown this session" - a modal that was neither
- *                   dismissed nor snoozed (tab reloaded with it open) should
- *                   not re-open on every navigation within the same session.
+ * Only the EXPLICIT choices persist: "don't show again" forever, snooze until
+ * a timestamp. Closing the modal with X / Escape / backdrop records nothing -
+ * an unsilenced announcement comes back on the next reload or Dashboard
+ * visit, by design. (X used to mean "never again"; that buried announcements
+ * people had only meant to push aside for a moment.)
  */
 
 const STATE_KEY = 'beehive_announcement_state_v1'
-const SESSION_KEY = 'beehive_announcement_shown_v1'
 
 type Entry = { status: 'dismissed' } | { status: 'snoozed'; until: string }
 
@@ -44,21 +43,7 @@ export function shouldShowAnnouncement(id: number, now: Date = new Date()): bool
     // costs one extra modal, failing closed loses the announcement entirely.
     if (!Number.isNaN(until) && until > now.getTime()) return false
   }
-  try {
-    if (sessionStorage.getItem(SESSION_KEY) === String(id)) return false
-  } catch {
-    // Blocked sessionStorage: show it; the localStorage layer still applies.
-  }
   return true
-}
-
-/** Record that the modal for this announcement is on screen this session. */
-export function markAnnouncementShown(id: number): void {
-  try {
-    sessionStorage.setItem(SESSION_KEY, String(id))
-  } catch {
-    // Best effort only.
-  }
 }
 
 /** Close = never show THIS announcement again. */

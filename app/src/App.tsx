@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Routes, Route, NavLink, Navigate, Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
@@ -39,7 +39,6 @@ import OptionPicker from './components/OptionPicker'
 import AnnouncementModal from './components/AnnouncementModal'
 import {
   shouldShowAnnouncement,
-  markAnnouncementShown,
   dismissAnnouncement,
   snoozeAnnouncement,
 } from './announcementState'
@@ -115,25 +114,50 @@ function App() {
   const drawerRef = useRef<HTMLElement>(null)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
 
+  // The id this page-load has already auto-opened the popup for. In memory on
+  // purpose: a soft close (X/Escape/backdrop) persists nothing, so this ref is
+  // the only thing stopping the 5-minute poll from re-opening a popup the user
+  // just pushed aside - while a genuinely NEW id still opens immediately, and
+  // a plain reload starts fresh and shows an unsilenced announcement again.
+  const openedAnnouncementId = useRef<number | null>(null)
+  // Mirror of `announcement` for effects that must read the latest value
+  // without re-running when the poll swaps in an identical object.
+  const announcementRef = useRef<Announcement | null>(null)
+
+  const maybeOpenAnnouncement = useCallback((a: Announcement | null) => {
+    // dismissed and snoozed ids stay closed; danger never uses the popup.
+    if (a && a.severity !== 'danger' && shouldShowAnnouncement(a.id)) {
+      openedAnnouncementId.current = a.id
+      setAnnouncementOpen(true)
+    }
+  }, [])
+
   useEffect(() => {
     const loadAnnouncement = () =>
       api
         .announcementGet()
         .then((r) => {
           setAnnouncement(r.announcement)
-          const a = r.announcement
-          // The popup opens at most once per session per announcement id;
-          // dismissed and snoozed ids stay closed. danger never uses the popup.
-          if (a && a.severity !== 'danger' && shouldShowAnnouncement(a.id)) {
-            markAnnouncementShown(a.id)
-            setAnnouncementOpen(true)
+          announcementRef.current = r.announcement
+          // Auto-open each id once per page load. A soft close (X/Escape/
+          // backdrop) persists nothing, so this in-memory gate is all that
+          // stops the 5-minute poll from re-opening a popup the user just
+          // pushed aside; a reload starts fresh and shows it again.
+          if (openedAnnouncementId.current !== r.announcement?.id) {
+            maybeOpenAnnouncement(r.announcement)
           }
         })
         .catch(() => {})
     loadAnnouncement()
     const id = setInterval(loadAnnouncement, 5 * 60 * 1000)
     return () => clearInterval(id)
-  }, [])
+  }, [maybeOpenAnnouncement])
+
+  // Coming (back) to the Dashboard re-opens an unsilenced announcement even
+  // if it was soft-closed earlier: home is where announcements live.
+  useEffect(() => {
+    if (location.pathname === '/') maybeOpenAnnouncement(announcementRef.current)
+  }, [location.pathname, maybeOpenAnnouncement])
 
   // Global feature flags. This used to run once on mount with no way to change
   // its mind, so an admin turning uptime alerts on or off never reached an
@@ -443,6 +467,7 @@ function App() {
         {announcementOpen && announcement && announcement.severity !== 'danger' && (
           <AnnouncementModal
             announcement={announcement}
+            onClose={() => setAnnouncementOpen(false)}
             onDismiss={() => {
               dismissAnnouncement(announcement.id)
               setAnnouncementOpen(false)

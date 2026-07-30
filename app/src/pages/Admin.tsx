@@ -930,6 +930,7 @@ function AnnouncementEditor({ onChanged }: { onChanged: () => void }) {
       {previewing && (
         <AnnouncementModal
           announcement={draft}
+          onClose={() => setPreviewing(false)}
           onDismiss={() => setPreviewing(false)}
           onSnooze={() => setPreviewing(false)}
           onCta={() => setPreviewing(false)}

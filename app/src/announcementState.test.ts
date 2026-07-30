@@ -2,21 +2,19 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
   shouldShowAnnouncement,
-  markAnnouncementShown,
   dismissAnnouncement,
   snoozeAnnouncement,
 } from './announcementState'
 
 /**
  * The contract these tests pin down: dismissal and snooze are PER ANNOUNCEMENT
- * ID. A new announcement must always break through old state - that is the
- * difference between "the user closed announcement #4" and "the user closed
- * announcements".
+ * ID, and only those two EXPLICIT actions silence anything - merely having
+ * been shown records nothing, so an unsilenced announcement keeps coming back.
+ * A new announcement must always break through old state.
  */
 
 beforeEach(() => {
   localStorage.clear()
-  sessionStorage.clear()
 })
 
 describe('shouldShowAnnouncement', () => {
@@ -46,17 +44,11 @@ describe('shouldShowAnnouncement', () => {
     expect(shouldShowAnnouncement(2)).toBe(true)
   })
 
-  it('does not re-show within the same session once marked shown', () => {
-    markAnnouncementShown(3)
-    expect(shouldShowAnnouncement(3)).toBe(false)
-    // ...but a different id still gets through.
-    expect(shouldShowAnnouncement(4)).toBe(true)
-  })
-
-  it('dismissing wins over the session mark being for another id', () => {
-    markAnnouncementShown(3)
-    dismissAnnouncement(4)
-    expect(shouldShowAnnouncement(4)).toBe(false)
+  it('keeps showing an announcement that was never explicitly silenced', () => {
+    // Repeated checks model repeated reloads/visits: nothing is recorded by
+    // the act of showing, so the answer never flips on its own.
+    expect(shouldShowAnnouncement(3)).toBe(true)
+    expect(shouldShowAnnouncement(3)).toBe(true)
   })
 
   it('survives corrupted stored state by failing open', () => {
