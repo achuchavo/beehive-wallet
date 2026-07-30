@@ -196,6 +196,7 @@ export const ko: Record<string, string> = {
   'send.receiveNetwork': '이 주소로는 {chain} ({denom})만 보내세요',
   'send.receiveWarning': '다른 네트워크로 보낸 자금은 사라지며 복구할 수 없습니다. 보내는 쪽이 {chain}을(를) 사용하는지 확인하세요.',
   'send.from': '보내는 지갑',
+  'send.fromWallet': '보내는 지갑 선택',
   'send.balance': '잔액',
   'send.recipient': '받는 주소 ({prefix}1...)',
   'send.recipientLabel': '받는 주소',

@@ -24,6 +24,7 @@ import HelpTip from '../components/HelpTip'
 import PageHeader from '../components/PageHeader'
 import Tabs, { TabPanel } from '../components/Tabs'
 import TxReview, { type ReviewRow } from '../components/TxReview'
+import WalletSwitcher from '../components/WalletSwitcher'
 import TxUnresolved from '../components/TxUnresolved'
 import { maskAmount, usePrivacyMode } from '../privacyMode'
 
@@ -141,7 +142,7 @@ function Receive() {
 }
 
 function SendForm() {
-  const { active, getSigner } = useWallet()
+  const { active, wallets, getSigner } = useWallet()
   const { t } = useT()
   const hidden = usePrivacyMode()
   // The chain comes from the active wallet's own chainKey - never a global
@@ -185,6 +186,18 @@ function SendForm() {
       setPassword('')
     }
   }, [active?.address])
+
+  // A different sender means a different balance, denom and fee context, so
+  // anything computed for the previous wallet is stale: the typed amount, any
+  // pending review (its signer belongs to the old wallet), and old outcomes.
+  // Recipient and memo survive - switching sender to reach the same recipient
+  // is the common case, and address validation catches a chain mismatch.
+  useEffect(() => {
+    setAmount('')
+    setError('')
+    setTxHash('')
+    setReview(null)
+  }, [active?.id])
 
   useEffect(() => {
     if (!active || !chain) return
@@ -350,11 +363,17 @@ function SendForm() {
       <Card className="flex items-center justify-between gap-3">
         <span className="min-w-0">
           <span className="block text-xs text-slate-500">{t('send.from')}</span>
-          <span className="block truncate text-sm font-medium">{active.name}</span>
+          {/* With one wallet the name is a fact; with several it is a choice,
+              so it becomes the switcher right where the user reads "From". */}
+          {wallets.length > 1 ? (
+            <WalletSwitcher label={t('send.fromWallet')} className="mt-0.5 max-w-full" />
+          ) : (
+            <span className="block truncate text-sm font-medium">{active.name}</span>
+          )}
           <CopyAddress
             address={active.address}
             display={`${active.address.slice(0, 14)}...${active.address.slice(-6)}`}
-            className="max-w-full text-xs text-slate-500"
+            className="mt-0.5 max-w-full text-xs text-slate-500"
           />
         </span>
         {balance !== null && (

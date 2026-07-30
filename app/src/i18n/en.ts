@@ -201,6 +201,7 @@ export const en: Record<string, string> = {
   'send.receiveNetwork': 'Send only {chain} ({denom}) to this address',
   'send.receiveWarning': 'Funds sent on any other network will be lost and cannot be recovered. Check the sender is using {chain}.',
   'send.from': 'From',
+  'send.fromWallet': 'Sending wallet',
   'send.balance': 'Balance',
   'send.recipient': 'Recipient ({prefix}1...)',
   'send.recipientLabel': 'Recipient address',

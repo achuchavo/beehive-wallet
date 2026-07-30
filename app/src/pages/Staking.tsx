@@ -21,7 +21,7 @@ import LoadingOverlay from '../components/LoadingOverlay'
 import PageHeader from '../components/PageHeader'
 import PercentButtons from '../components/PercentButtons'
 import CopyAddress from '../components/CopyAddress'
-import OptionPicker from '../components/OptionPicker'
+import WalletSwitcher from '../components/WalletSwitcher'
 import BottomSheet from '../components/BottomSheet'
 import { maskAmount, usePrivacyMode } from '../privacyMode'
 import { useT } from '../i18n/I18nContext'
@@ -160,7 +160,7 @@ async function fetchStakeData(chain: ChainInfo, address: string): Promise<StakeD
 
 export default function Staking() {
   const { t } = useT()
-  const { active, wallets, setActive, getSigner } = useWallet()
+  const { active, wallets, getSigner } = useWallet()
   const hidden = usePrivacyMode()
   // Chain resolved from the active wallet, never a global default.
   const chain = active ? findChain(active.chainKey) : undefined
@@ -287,19 +287,11 @@ export default function Staking() {
             className="max-w-full text-xs text-slate-500"
           />
         </div>
+        {/* Keyed by wallet id via WalletSwitcher. This used to hand the
+            ADDRESS to setActive (which takes an id), so picking any wallet
+            here silently fell back to the first one. */}
         {wallets.length > 1 ? (
-          <OptionPicker
-            label={t('staking.stakingFrom')}
-            value={active.address}
-            onChange={setActive}
-            className="shrink-0"
-            layout="list"
-            options={wallets.map((w) => ({
-              value: w.address,
-              label: w.name,
-              hint: `${w.address.slice(0, 16)}...${w.address.slice(-6)}`,
-            }))}
-          />
+          <WalletSwitcher label={t('staking.stakingFrom')} className="shrink-0" />
         ) : (
           <span className="shrink-0 text-sm font-medium">{active.name}</span>
         )}
