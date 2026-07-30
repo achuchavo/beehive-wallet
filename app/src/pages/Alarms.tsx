@@ -630,7 +630,12 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
 
   const refresh = useCallback(async () => {
     try {
-      const [w, a] = await Promise.all([api.watchedList(), api.alertsList()])
+      // me() rides along: the suggestion list offers the account's linked
+      // address, so linking or unlinking one has to show up here without a
+      // remount. Same request the page already needed, one fewer round trip
+      // than a separate effect.
+      const [w, a, me] = await Promise.all([api.watchedList(), api.alertsList(), api.me()])
+      setMainAddress(me.main_address ?? null)
       setAddresses(w.addresses)
       if (w.limit > 0) setWatchLimit(w.limit)
       setQuotes(w.quotes ?? {})
@@ -653,12 +658,6 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
   // can be signed in on a device that holds none of its wallets, and the linked
   // address is usually the first thing someone wants to watch.
   const [mainAddress, setMainAddress] = useState<string | null>(null)
-  useEffect(() => {
-    api
-      .me()
-      .then((r) => setMainAddress(r.main_address ?? null))
-      .catch(() => {})
-  }, [])
 
   const selectedChain = CHAINS.find((c) => c.key === newChain) ?? DEFAULT_CHAIN
 

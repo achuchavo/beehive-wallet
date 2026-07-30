@@ -72,16 +72,32 @@ export default function Admin() {
     [],
   )
 
+  // Own identity and per-feature levels. Folded into the SAME poll as the
+  // overview: read once, the screen kept offering controls a super admin had
+  // just revoked (harmless - every endpoint re-checks - but it looked like the
+  // change had not taken) and kept hiding ones just granted.
+  const loadMe = useCallback(
+    () =>
+      api
+        .me()
+        .then((r) => {
+          setLevels(r.admin_levels ?? {})
+          setIsSuper(r.is_super_admin === true)
+          setMeId(r.id ?? null)
+        })
+        .catch(() => {}),
+    [],
+  )
+
   useEffect(() => {
-    api.me().then((r) => {
-      setLevels(r.admin_levels ?? {})
-      setIsSuper(r.is_super_admin === true)
-      setMeId(r.id ?? null)
-    })
+    loadMe()
     load()
-    const t = setInterval(load, 30000)
+    const t = setInterval(() => {
+      void loadMe()
+      void load()
+    }, 30000)
     return () => clearInterval(t)
-  }, [load])
+  }, [load, loadMe])
 
   /**
    * What this admin holds for a feature. Presentation only - every endpoint
