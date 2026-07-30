@@ -458,6 +458,8 @@ export const api = {
     cta_path: string
     severity: string
     expires_hours: number
+    /** Edit the active announcement in place (same id, dismissals survive). */
+    update_id?: number
   }) => call('admin_announcement_set.php', a),
   adminAnnouncementClear: () => call('admin_announcement_set.php', { clear: true }),
   adminChains: () =>

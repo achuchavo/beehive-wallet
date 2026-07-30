@@ -42,12 +42,36 @@ if (($ctaLabel === '') !== ($ctaPath === '')) {
     json_error('CTA label and CTA path must be set together');
 }
 
-$db->exec('UPDATE announcements SET is_active = 0 WHERE is_active = 1');
-
 $expiresAt = null;
 if ($expiresHours > 0) {
     $expiresAt = (new DateTime())->modify("+{$expiresHours} hours")->format('Y-m-d H:i:s');
 }
+
+// Two ways to ship the same fields, with different id semantics:
+//   update_id set    edit the ACTIVE announcement in place. The id survives,
+//                    so users who already dismissed it stay dismissed - this
+//                    is the typo-fix path, not a re-announcement.
+//   update_id absent publish a NEW announcement (new id). Everyone sees it,
+//                    including people who dismissed the previous one.
+$updateId = isset($body['update_id']) ? (int) $body['update_id'] : 0;
+
+if ($updateId > 0) {
+    $check = $db->prepare('SELECT id FROM announcements WHERE id = ? AND is_active = 1');
+    $check->execute([$updateId]);
+    if (!$check->fetch()) {
+        json_error('No active announcement with that id - it may have been taken down');
+    }
+    // Expiry is re-applied from now: the editor re-states it on every save.
+    $stmt = $db->prepare(
+        'UPDATE announcements
+         SET message = ?, body = ?, cta_label = ?, cta_path = ?, severity = ?, expires_at = ?
+         WHERE id = ? AND is_active = 1'
+    );
+    $stmt->execute([$message, $richBody, $ctaLabel, $ctaPath, $severity, $expiresAt, $updateId]);
+    json_out(['ok' => true]);
+}
+
+$db->exec('UPDATE announcements SET is_active = 0 WHERE is_active = 1');
 
 $stmt = $db->prepare(
     'INSERT INTO announcements

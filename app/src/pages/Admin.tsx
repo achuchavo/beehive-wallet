@@ -696,6 +696,8 @@ function AnnouncementEditor({ onChanged }: { onChanged: () => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [previewing, setPreviewing] = useState(false)
+  // Non-null while the form holds the ACTIVE announcement for editing.
+  const [editingId, setEditingId] = useState<number | null>(null)
 
   const refresh = useCallback(
     () => api.announcementGet().then((r) => setCurrent(r.announcement)).catch(() => {}),
@@ -717,8 +719,29 @@ function AnnouncementEditor({ onChanged }: { onChanged: () => void }) {
     severity: severity as Announcement['severity'],
   }
 
-  async function publish(e: React.FormEvent) {
-    e.preventDefault()
+  function resetForm() {
+    setMessage('')
+    setBody('')
+    setCtaLabel('')
+    setCtaPath('')
+    setSeverity('info')
+    setEditingId(null)
+    setError('')
+  }
+
+  function startEdit() {
+    if (!current) return
+    setEditingId(current.id)
+    setMessage(current.message)
+    setBody(current.body)
+    setCtaLabel(current.cta_label)
+    setCtaPath(current.cta_path)
+    setSeverity(current.severity)
+    setError('')
+  }
+
+  // asNew publishes a fresh id even while editing - the "re-announce" path.
+  async function submit(asNew: boolean) {
     setBusy(true)
     setError('')
     try {
@@ -729,11 +752,9 @@ function AnnouncementEditor({ onChanged }: { onChanged: () => void }) {
         cta_path: ctaPath.trim(),
         severity,
         expires_hours: Number(hours) || 0,
+        ...(editingId !== null && !asNew ? { update_id: editingId } : {}),
       })
-      setMessage('')
-      setBody('')
-      setCtaLabel('')
-      setCtaPath('')
+      resetForm()
       await refresh()
       onChanged()
     } catch (err) {
@@ -741,6 +762,11 @@ function AnnouncementEditor({ onChanged }: { onChanged: () => void }) {
     } finally {
       setBusy(false)
     }
+  }
+
+  function publish(e: React.FormEvent) {
+    e.preventDefault()
+    submit(false)
   }
 
   async function clear() {
@@ -774,16 +800,33 @@ function AnnouncementEditor({ onChanged }: { onChanged: () => void }) {
               </span>
             )}
           </span>
-          <button
-            onClick={clear}
-            disabled={busy}
-            className="shrink-0 text-xs text-red-600 hover:underline disabled:opacity-50"
-          >
-            Take down
-          </button>
+          <span className="flex shrink-0 items-center gap-3">
+            <button
+              onClick={startEdit}
+              disabled={busy}
+              className="text-xs text-amber-700 hover:underline disabled:opacity-50"
+            >
+              Edit
+            </button>
+            <button
+              onClick={clear}
+              disabled={busy}
+              className="text-xs text-red-600 hover:underline disabled:opacity-50"
+            >
+              Take down
+            </button>
+          </span>
         </div>
       ) : (
         <p className="text-sm text-slate-500">No active announcement.</p>
+      )}
+      {editingId !== null && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          Editing the live announcement. <strong>Save changes</strong> keeps its id, so users who
+          already dismissed it will not see it again — right for typo fixes.{' '}
+          <strong>Publish as new</strong> gives it a fresh id and shows it to everyone again.
+          Expiry is re-applied from now on either path.
+        </p>
       )}
       <form onSubmit={publish} className="space-y-2">
         <input
@@ -859,8 +902,28 @@ function AnnouncementEditor({ onChanged }: { onChanged: () => void }) {
             disabled={busy}
             className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
           >
-            Publish
+            {editingId !== null ? 'Save changes' : 'Publish'}
           </button>
+          {editingId !== null && (
+            <>
+              <button
+                type="button"
+                onClick={() => submit(true)}
+                disabled={busy}
+                className="rounded-lg border border-amber-500 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+              >
+                Publish as new
+              </button>
+              <button
+                type="button"
+                onClick={resetForm}
+                disabled={busy}
+                className="rounded-lg px-3 py-2 text-sm text-slate-500 hover:text-slate-700 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </>
+          )}
         </div>
       </form>
       {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
