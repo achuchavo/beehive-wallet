@@ -8,6 +8,7 @@ import {
   type ChainInfo,
   type StakingPolicy,
 } from './chains'
+import { apiRoot, isNative } from './platform'
 
 // Loads chain metadata from the DB (chains_public.php) and folds it into the
 // in-memory CHAINS registry. The static entry in chains.ts is the bootstrap so
@@ -182,8 +183,12 @@ async function doLoad(quiet = false): Promise<void> {
     emit()
   }
   try {
-    const base = `${import.meta.env.BASE_URL}api/chains_public.php`.replace('//', '/')
-    const res = await fetch(base, { credentials: 'same-origin' })
+    // apiRoot(), not BASE_URL: on native the WebView origin is localhost and a
+    // base-relative URL resolves to Capacitor's own local server, which answers
+    // 404 for anything not in the bundle. See platform.ts.
+    const res = await fetch(`${apiRoot()}/chains_public.php`, {
+      credentials: isNative() ? 'omit' : 'same-origin',
+    })
     if (!res.ok) throw new Error(`chains_public returned ${res.status}`)
     const data = await res.json()
     const rawChains: unknown[] = Array.isArray(data?.chains) ? data.chains : []

@@ -1,6 +1,7 @@
 // Fiat currency preference and price conversion.
 
 import { fromBaseUnits } from './wallet/amount'
+import { apiRoot } from './platform'
 
 export interface Currency {
   code: string
@@ -30,7 +31,8 @@ export function setCurrency(code: string): void {
 // Price of one display token in the given currency (via cached server proxy).
 export async function fetchPrice(coingeckoId: string, currency: string): Promise<number | null> {
   if (!coingeckoId) return null
-  const base = `${import.meta.env.BASE_URL}api/price.php`.replace('//', '/')
+  // apiRoot(), not BASE_URL - see the note in chainStore.ts.
+  const base = `${apiRoot()}/price.php`
   try {
     const res = await fetch(`${base}?id=${coingeckoId}&currency=${currency}`)
     if (!res.ok) return null

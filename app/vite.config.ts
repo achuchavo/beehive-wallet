@@ -65,7 +65,11 @@ function nativeCsp(): Plugin {
         "default-src 'self'",
         "base-uri 'self'",
         "object-src 'none'",
-        "frame-ancestors 'none'",
+        // No frame-ancestors: it is IGNORED in a meta-delivered policy (the
+        // WebView logs a warning saying so), and listing it would imply a
+        // protection that is not in force. It is also moot here - a native
+        // WebView has no embedding context for a frame to sit in. The web build
+        // still asserts it via the Apache header, where it does work.
         "form-action 'self'",
         "script-src 'self'",
         // React inline style attributes / Tailwind. Scripts stay strict.
