@@ -36,6 +36,29 @@ body {
   }
 }
 
+/* BottomSheet rises from the bottom edge it is anchored to, so the motion
+   explains where the panel came from and where dismissing it sends it back.
+   Deliberately NOT exempted from the reduce-motion rule below: this is exactly
+   the large positional movement that preference exists to suppress, and the
+   sheet is perfectly usable appearing in place. */
+@keyframes sheet-rise {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+[data-sheet] {
+  animation: sheet-rise 220ms cubic-bezier(0.32, 0.72, 0, 1);
+  /* About half the viewport: enough for a form, little enough that the list
+     behind stays visible for context. Clamped so it can neither swallow the
+     screen on a short window nor collapse below a usable height. Lives here
+     rather than as an inline style so the whole rule is in one place. */
+  height: min(85vh, max(50vh, 22rem));
+}
+
 /* Respect the OS "reduce motion" preference: near-instant transitions/animations. */
 @media (prefers-reduced-motion: reduce) {
   *,

@@ -22,6 +22,7 @@ import PageHeader from '../components/PageHeader'
 import PercentButtons from '../components/PercentButtons'
 import CopyAddress from '../components/CopyAddress'
 import OptionPicker from '../components/OptionPicker'
+import BottomSheet from '../components/BottomSheet'
 import { maskAmount, usePrivacyMode } from '../privacyMode'
 import { useT } from '../i18n/I18nContext'
 
@@ -443,6 +444,8 @@ function ValidatorRow({
   const { t } = useT()
   const { active, getSigner } = useWallet()
   const [action, setAction] = useState<'none' | 'delegate' | 'undelegate'>('none')
+  // Shown when a validator this app does not offer is tapped anyway.
+  const [blockedInfo, setBlockedInfo] = useState(false)
   const free = isFree(chain, validator.operator)
   // Whether this app offers delegation here at all. Undelegating stays
   // available regardless: someone who staked before a restriction was
@@ -603,10 +606,16 @@ function ValidatorRow({
               {free ? t('staking.stake') : t('staking.delegate')}
             </button>
           ) : (
-            <span className="flex items-center gap-1 whitespace-nowrap px-1 text-xs text-slate-400">
-              {t('staking.notOffered')}
-              <HelpTip text={t('help.stakingNotOffered')} align="end" />
-            </span>
+            /* Still a button, greyed rather than removed, and it EXPLAINS
+               itself when pressed. A disabled control with no explanation is
+               indistinguishable from a broken one, and silently hiding the
+               action invites "why can I stake here in another wallet?". */
+            <button
+              onClick={() => setBlockedInfo(true)}
+              className="cursor-help rounded-lg px-2.5 py-1.5 text-xs text-slate-400 ring-1 ring-slate-200"
+            >
+              {free ? t('staking.stake') : t('staking.delegate')}
+            </button>
           )}
           {staked && (
             <button
@@ -619,10 +628,18 @@ function ValidatorRow({
         </div>
       </div>
 
+      {/* Both forms live in a sheet anchored to the bottom of the screen rather
+          than expanding inline. Inline, opening a form under one row pushed
+          every row below it, and on a phone it could open below the fold - so
+          tapping "Delegate" looked like nothing happened. */}
       {action === 'delegate' && (
-        <div className="px-3 pb-3">
+        <BottomSheet
+          title={t('staking.delegateTo', { name: validator.moniker })}
+          subtitle={validator.operator}
+          onClose={() => setAction('none')}
+        >
           {!free && serviceFeeActive(chain) && (
-            <p className="mb-1 flex items-center gap-1 text-xs text-slate-500">
+            <p className="mb-2 flex items-center gap-1 text-xs text-slate-500">
               {t('staking.serviceFee', { fee: formatAmount(chain.serviceFee, chain), denom: chain.displayDenom })}
               <HelpTip text={t('help.serviceFee')} align="start" />
             </p>
@@ -640,11 +657,15 @@ function ValidatorRow({
             onSubmit={submitDelegate}
             onError={onError}
           />
-        </div>
+        </BottomSheet>
       )}
       {action === 'undelegate' && (
-        <div className="px-3 pb-3">
-          <p className="mb-1 flex items-center gap-1 text-xs text-slate-500">
+        <BottomSheet
+          title={t('staking.undelegateFrom', { name: validator.moniker })}
+          subtitle={validator.operator}
+          onClose={() => setAction('none')}
+        >
+          <p className="mb-2 flex items-center gap-1 text-xs text-slate-500">
             {t('staking.unbondNote')}
             <HelpTip text={t('help.unbonding')} align="start" />
           </p>
@@ -657,7 +678,32 @@ function ValidatorRow({
             onSubmit={submitUndelegate}
             onError={onError}
           />
-        </div>
+        </BottomSheet>
+      )}
+
+      {/* Why this validator is not available, in the user's terms. It is
+          deliberately explicit that this is OUR policy and not a restriction on
+          their tokens - they can still delegate anywhere from another wallet,
+          and anything already staked here is untouched. */}
+      {blockedInfo && (
+        <BottomSheet
+          title={t('staking.notOfferedTitle')}
+          subtitle={validator.moniker}
+          onClose={() => setBlockedInfo(false)}
+        >
+          <div className="space-y-3 text-sm text-slate-600">
+            <p>{t('staking.notOfferedBody', { chain: chain.chainName })}</p>
+            <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs">
+              {t('staking.notOfferedYourStake')}
+            </p>
+            <button
+              onClick={() => setBlockedInfo(false)}
+              className="w-full rounded-lg bg-amber-500 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600"
+            >
+              {t('common.close')}
+            </button>
+          </div>
+        </BottomSheet>
       )}
     </div>
   )

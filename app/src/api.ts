@@ -191,6 +191,9 @@ export interface AdminOverview {
     failed_logins_24h: number
     watcher_last_run: string | null
     watcher_age_seconds: number | null
+    /** How many addresses the watcher is responsible for, so "healthy but
+     *  idle" is distinguishable from "healthy and working". */
+    watcher_watched: number
   }>
   users?: {
     id: number

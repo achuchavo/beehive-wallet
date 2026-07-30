@@ -846,6 +846,29 @@ def run_once() -> None:
         cursor.close()
         db.close()
 
+    # Heartbeat. Written at the end of EVERY cycle, including one that found
+    # nothing to do, because "alive" and "did some work" are different questions
+    # and the admin screen needs the first one. It used to be inferred from the
+    # freshest watched_addresses.last_checked_at, which is NULL on a deployment
+    # where nobody is watching anything yet - so a healthy watcher reported
+    # itself as stale.
+    #
+    # Own connection: run_once's has been closed by now, and a failure here must
+    # never mask the cycle that already succeeded.
+    try:
+        hb = get_db()
+        cur = hb.cursor()
+        cur.execute(
+            "INSERT INTO app_settings (setting_key, setting_value, updated_at) "
+            "VALUES ('watcher_last_run', NOW(), NOW()) "
+            "ON DUPLICATE KEY UPDATE setting_value = NOW(), updated_at = NOW()"
+        )
+        hb.commit()
+        cur.close()
+        hb.close()
+    except Exception as e:
+        log("WARN", f"Could not write heartbeat: {e}")
+
     METRICS["duration_ms"] = int((time.monotonic() - started) * 1000)
     level = "ERROR" if (METRICS.get("cursor_gaps") or METRICS.get("chain_errors")) else "INFO"
     log(

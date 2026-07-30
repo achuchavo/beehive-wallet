@@ -44,14 +44,30 @@ if ($can('wallet_alerts')) {
         'SELECT COUNT(*) FROM wallet_alerts WHERE detected_at > NOW() - INTERVAL 1 DAY'
     )->fetchColumn();
 
-    // Watcher health: freshest last_checked_at across watched addresses.
+    // Watcher health, from the watcher's OWN heartbeat.
+    //
+    // This used to infer liveness from MAX(last_checked_at) across
+    // watched_addresses - the freshest address it had polled. That is a proxy
+    // for "did any work happen", not for "is it alive", and the two diverge in
+    // the most misleading direction possible: with no addresses being watched
+    // there is nothing to poll, so the column stays NULL and a perfectly
+    // healthy watcher is reported as "not running or stale". A new deployment
+    // therefore accuses itself of being broken.
+    //
+    // The watcher now stamps app_settings.watcher_last_run at the end of every
+    // cycle, whether or not it found anything to do.
     $row = $db->query(
-        'SELECT MAX(last_checked_at) AS last_run,
-                TIMESTAMPDIFF(SECOND, MAX(last_checked_at), NOW()) AS age_seconds
-         FROM watched_addresses'
+        "SELECT setting_value AS last_run,
+                TIMESTAMPDIFF(SECOND, setting_value, NOW()) AS age_seconds
+         FROM app_settings WHERE setting_key = 'watcher_last_run'"
     )->fetch();
-    $stats['watcher_last_run'] = $row['last_run'];
-    $stats['watcher_age_seconds'] = $row['age_seconds'] === null ? null : (int) $row['age_seconds'];
+    $stats['watcher_last_run'] = $row ? $row['last_run'] : null;
+    $stats['watcher_age_seconds'] = $row && $row['age_seconds'] !== null
+        ? (int) $row['age_seconds']
+        : null;
+    // How many addresses it is actually responsible for, so "healthy but idle"
+    // is distinguishable from "healthy and working" on the screen.
+    $stats['watcher_watched'] = (int) $db->query('SELECT COUNT(*) FROM watched_addresses')->fetchColumn();
 }
 $out['stats'] = $stats;
 

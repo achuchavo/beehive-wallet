@@ -188,9 +188,13 @@ export default function Admin() {
             >
               <span className="font-medium">
                 Watcher: {watcherHealthy ? 'healthy' : 'not running or stale'}
+                {/* Healthy with nothing to poll is a normal state for a new
+                    deployment, and saying only "healthy" invites the question
+                    "then why are there no alerts?". */}
+                {watcherHealthy && stats.watcher_watched === 0 && ' · idle, no addresses watched'}
               </span>
               <span>
-                Last check:{' '}
+                Last beat:{' '}
                 {stats.watcher_last_run
                   ? `${stats.watcher_last_run} (${stats.watcher_age_seconds}s ago)`
                   : 'never'}
