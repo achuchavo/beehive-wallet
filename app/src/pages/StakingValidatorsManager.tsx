@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Landmark, TriangleAlert, Search, Trash2 } from 'lucide-react'
 import { api, PERM_WRITE, type AdminStakingChain, type PermLevel } from '../api'
 import { findChain, type StakingPolicy } from '../chains'
+import { refreshChains } from '../chainStore'
 import { toBaseUnits, fromBaseUnits, formatBase, compareBase } from '../wallet/amount'
 import { useT } from '../i18n/I18nContext'
 import HelpTip from '../components/HelpTip'
@@ -190,6 +191,10 @@ export default function StakingValidatorsManager({
       })
       setSaved(true)
       load()
+      // The staking page reads the policy from the in-memory chain registry,
+      // which is loaded once per tab. Without this the admin saves a change and
+      // then watches their own app ignore it.
+      await refreshChains()
     } catch (e) {
       onError(e instanceof Error ? e.message : 'Failed')
     } finally {
@@ -208,6 +213,7 @@ export default function StakingValidatorsManager({
         await api.adminFreeValidatorAdd(chain.chain_key, v.operator)
       }
       load()
+      await refreshChains()
     } catch (e) {
       onError(e instanceof Error ? e.message : 'Failed')
     }
@@ -220,6 +226,7 @@ export default function StakingValidatorsManager({
       await api.adminFreeValidatorRemove(removing.id)
       setRemoving(null)
       load()
+      await refreshChains()
     } catch (e) {
       onError(e instanceof Error ? e.message : 'Failed')
     } finally {

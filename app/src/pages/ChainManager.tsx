@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Server, Plus, Trash2, Settings2 } from 'lucide-react'
 import { api, type AdminChain, type AdminEndpoint, type AdminFreeValidator } from '../api'
+// Editing a chain changes what the rest of the app signs against, so the live
+// registry has to be told - it is loaded once per tab otherwise.
+import { refreshChains } from '../chainStore'
 import Modal from '../components/Modal'
 import HelpTip from '../components/HelpTip'
 import OptionPicker from '../components/OptionPicker'
@@ -61,6 +64,7 @@ export default function ChainManager({ onError }: { onError: (m: string) => void
   async function saveChain(chain: AdminChain) {
     try {
       await api.adminChainSave(chain)
+      await refreshChains()
       await load()
       // Keep the modal open on an existing chain (so endpoints stay reachable);
       // close it after creating a new one.
@@ -252,6 +256,7 @@ function EndpointList({
     onError('')
     try {
       await api.adminEndpointSave({ chain_key: chainKey, kind, url, priority: endpoints.length, is_active: 1 })
+      await refreshChains()
       setUrl('')
       await onChanged()
     } catch (e) {
@@ -263,11 +268,13 @@ function EndpointList({
 
   async function toggle(ep: AdminEndpoint) {
     await api.adminEndpointSave({ ...ep, is_active: ep.is_active === 1 ? 0 : 1 })
+    await refreshChains()
     onChanged()
   }
 
   async function remove(id: number) {
     await api.adminEndpointDelete(id)
+    await refreshChains()
     onChanged()
   }
 

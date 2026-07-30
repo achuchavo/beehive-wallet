@@ -166,10 +166,21 @@ export function chainsUsable(): boolean {
   return status === 'ready'
 }
 
-async function doLoad(): Promise<void> {
-  status = 'loading'
-  error = ''
-  emit()
+/**
+ * @param quiet Do not flip status to 'loading'.
+ *
+ * A refresh must be invisible. chainsUsable() gates every signing operation on
+ * status === 'ready', so announcing 'loading' on a background refresh would
+ * briefly disable Send and Stake - and if the refresh failed, it would downgrade
+ * a working, already-validated registry to 'error' over a transient network
+ * blip. A refresh either replaces the registry or changes nothing.
+ */
+async function doLoad(quiet = false): Promise<void> {
+  if (!quiet) {
+    status = 'loading'
+    error = ''
+    emit()
+  }
   try {
     const base = `${import.meta.env.BASE_URL}api/chains_public.php`.replace('//', '/')
     const res = await fetch(base, { credentials: 'same-origin' })
@@ -177,29 +188,45 @@ async function doLoad(): Promise<void> {
     const data = await res.json()
     const rawChains: unknown[] = Array.isArray(data?.chains) ? data.chains : []
 
-    // Build a brand new registry rather than mutating the live one.
-    const next: ChainInfo[] = CHAINS.map((c) => ({ ...c }))
+    // Built from the API response ALONE, not merged over whatever is currently
+    // in the registry. chains_public.php returns every field a ChainInfo needs,
+    // so a validated entry is self-sufficient - and merging meant a chain the
+    // admin had just DEACTIVATED stayed in the registry for the life of the tab,
+    // still offered for sending and staking. The database is the authority when
+    // it answers; the bootstrap entry is only a cold-start fallback.
+    const next: ChainInfo[] = []
     for (const raw of rawChains) {
       const api = validateApiChain(raw)
       if (!api) continue // invalid definitions never enter the registry
-      const merged = toChainInfo(api)
-      const i = next.findIndex((c) => c.key === api.key)
-      if (i >= 0) {
-        next[i] = merged
-      } else {
-        next.push(merged)
-      }
+      next.push(toChainInfo(api))
     }
+
+    // Refuse to install an empty registry. Every chain being rejected (or the
+    // endpoint returning none) would leave the app with nothing to sign
+    // against, which is worse than keeping the previous known-good set.
+    if (next.length === 0) {
+      throw new Error('chains_public returned no usable chain')
+    }
+
     setChainRegistry(next)
     status = 'ready'
+    error = ''
   } catch (e) {
-    // Keep the bootstrap config, but say so: callers must be able to tell a
-    // confirmed config from an unverified fallback.
-    error = e instanceof Error ? e.message : 'Could not load chain configuration'
+    const message = e instanceof Error ? e.message : 'Could not load chain configuration'
+    if (quiet) {
+      // A background refresh that fails changes nothing: the registry already
+      // in place was validated when it loaded, and downgrading it to 'error'
+      // over a transient blip would disable signing for no reason.
+      console.warn('[chains] refresh failed, keeping the current config:', message)
+      return
+    }
+    // First load: keep the bootstrap config, but SAY so - callers must be able
+    // to tell a confirmed config from an unverified fallback.
+    error = message
     status = 'error'
     console.warn('[chains] load failed, using bootstrap config:', error)
   } finally {
-    emit()
+    if (!quiet || status === 'ready') emit()
   }
 }
 
@@ -212,7 +239,43 @@ export async function loadChains(): Promise<void> {
   return chainsReady
 }
 
-/** Re-fetch the registry (e.g. after an admin edits chains). */
+/**
+ * Re-fetch the registry, quietly.
+ *
+ * The registry used to load exactly once, at module evaluation, so every
+ * chain-derived setting - staking policy, the allowed-validator list, the
+ * service fee and its collector, endpoints, explorer URLs - was frozen for the
+ * life of the tab. An admin could save a change, walk to the staking page in the
+ * same tab, and see the old behaviour with nothing to suggest why. Signing out
+ * did not help either: the registry is a module singleton and logout only clears
+ * auth state.
+ *
+ * Called after any admin save that alters chain configuration, and whenever the
+ * tab regains focus - which also covers a change made by a different admin, or
+ * in another tab.
+ */
 export async function refreshChains(): Promise<void> {
-  await doLoad()
+  await doLoad(true)
+}
+
+/**
+ * Keep the registry fresh for the lifetime of the tab.
+ *
+ * Focus and visibility rather than a timer: the interesting moment is the user
+ * coming back to the app, and polling a config that changes a few times a year
+ * would be traffic spent on nothing. Installed once from main.tsx.
+ */
+export function watchChainConfig(): void {
+  let last = 0
+  const maybeRefresh = () => {
+    if (document.visibilityState !== 'visible') return
+    // Coalesce: focus and visibilitychange both fire on a tab switch, and
+    // refetching twice for one return is pointless.
+    const now = Date.now()
+    if (now - last < 5_000) return
+    last = now
+    void refreshChains()
+  }
+  window.addEventListener('focus', maybeRefresh)
+  document.addEventListener('visibilitychange', maybeRefresh)
 }

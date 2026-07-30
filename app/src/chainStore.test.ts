@@ -168,4 +168,77 @@ describe('chain store readiness', () => {
     expect(chains.findChain('does-not-exist')).toBeUndefined()
     expect(() => chains.resolveChain('does-not-exist')).toThrow()
   })
+
+  it('a refresh picks up a changed staking policy', async () => {
+    // The reported bug: an admin saves a policy and the staking page keeps the
+    // old one, because the registry only ever loaded once per tab.
+    const withPolicy = (policy: string) => ({
+      chains: [{ ...CHAINS_JSON.chains[0], stakingPolicy: policy }],
+    })
+    let current = withPolicy('all')
+    stubFetch(() => okResponse(current) as never)
+    const store = await import('./chainStore')
+    const chains = await import('./chains')
+    await store.chainsReady
+    expect(chains.findChain('medibloc')!.stakingPolicy).toBe('all')
+
+    current = withPolicy('allowlist')
+    await store.refreshChains()
+    expect(chains.findChain('medibloc')!.stakingPolicy).toBe('allowlist')
+  })
+
+  it('a refresh drops a chain the admin deactivated', async () => {
+    // Merging over the live registry meant a deactivated chain lingered for the
+    // life of the tab, still offered for sending and staking.
+    const second = {
+      ...CHAINS_JSON.chains[0],
+      key: 'chihuahua',
+      chainId: 'chihuahua-1',
+      chainName: 'Chihuahua',
+      bech32Prefix: 'chihuahua',
+      denom: 'uhuahua',
+      displayDenom: 'HUAHUA',
+      gasPrice: '1uhuahua',
+    }
+    let current: unknown = { chains: [CHAINS_JSON.chains[0], second] }
+    stubFetch(() => okResponse(current) as never)
+    const store = await import('./chainStore')
+    const chains = await import('./chains')
+    await store.chainsReady
+    expect(chains.findChain('chihuahua')).toBeDefined()
+
+    current = { chains: [CHAINS_JSON.chains[0]] }
+    await store.refreshChains()
+    expect(chains.findChain('chihuahua')).toBeUndefined()
+    expect(chains.findChain('medibloc')).toBeDefined()
+  })
+
+  it('a failed refresh keeps the working registry and stays usable', async () => {
+    stubFetch(() => okResponse(CHAINS_JSON) as never)
+    const store = await import('./chainStore')
+    const chains = await import('./chains')
+    await store.chainsReady
+    const before = chains.findChain('medibloc')!.gasPrice
+
+    // A transient blip must not downgrade an already-validated registry to
+    // 'error' - that would disable signing for no reason.
+    stubFetch(() => Promise.reject(new Error('offline')))
+    await store.refreshChains()
+    expect(store.chainStatus()).toBe('ready')
+    expect(store.chainsUsable()).toBe(true)
+    expect(chains.findChain('medibloc')!.gasPrice).toBe(before)
+  })
+
+  it('refuses to install an empty registry', async () => {
+    stubFetch(() => okResponse(CHAINS_JSON) as never)
+    const store = await import('./chainStore')
+    const chains = await import('./chains')
+    await store.chainsReady
+
+    // Every chain rejected would otherwise leave nothing to sign against.
+    stubFetch(() => okResponse({ chains: [] }) as never)
+    await store.refreshChains()
+    expect(chains.findChain('medibloc')).toBeDefined()
+    expect(store.chainsUsable()).toBe(true)
+  })
 })
