@@ -451,8 +451,14 @@ export const api = {
     call<{ announcement: Announcement | null }>('announcement_get.php'),
   settingsPublic: () =>
     call<{ uptime_alerts_enabled: boolean; watch_limit: number }>('settings_public.php'),
-  adminAnnouncementSet: (message: string, severity: string, expires_hours: number) =>
-    call('admin_announcement_set.php', { message, severity, expires_hours }),
+  adminAnnouncementSet: (a: {
+    message: string
+    body: string
+    cta_label: string
+    cta_path: string
+    severity: string
+    expires_hours: number
+  }) => call('admin_announcement_set.php', a),
   adminAnnouncementClear: () => call('admin_announcement_set.php', { clear: true }),
   adminChains: () =>
     call<{ chains: AdminChain[]; endpoints: AdminEndpoint[]; free_validators: AdminFreeValidator[] }>(
@@ -647,6 +653,13 @@ export interface AdminFreeValidator {
 }
 
 export interface Announcement {
+  /** Dismiss/snooze state is keyed by this - a new announcement is a new id. */
+  id: number
   message: string
+  /** Rich body (safe markdown subset), rendered by RichText. Empty = none. */
+  body: string
+  /** CTA button; both empty = no button. cta_path is an in-app route. */
+  cta_label: string
+  cta_path: string
   severity: 'info' | 'warning' | 'danger'
 }

@@ -130,10 +130,14 @@ CREATE TABLE wallet_alerts (
         REFERENCES watched_addresses (id) ON DELETE CASCADE
 ) ENGINE = InnoDB;
 
--- Admin-set site-wide banner. Latest active, non-expired row is shown.
+-- Admin-set site-wide announcement. Latest active, non-expired row is shown:
+-- info/warning as a dismissible popup modal, danger as an inline banner.
 CREATE TABLE announcements (
     id INT UNSIGNED NOT NULL AUTO_INCREMENT,
     message VARCHAR(300) NOT NULL,
+    body TEXT NULL COMMENT 'Rich text (safe markdown subset), rendered by the client',
+    cta_label VARCHAR(80) NOT NULL DEFAULT '' COMMENT 'CTA button text; empty = no button',
+    cta_path VARCHAR(200) NOT NULL DEFAULT '' COMMENT 'In-app route the CTA navigates to; must start with /',
     severity VARCHAR(10) NOT NULL DEFAULT 'info',
     is_active TINYINT(1) NOT NULL DEFAULT 1,
     expires_at DATETIME NULL,
@@ -458,11 +462,11 @@ CREATE TABLE device_tokens (
 ) ENGINE = InnoDB;
 
 -- This file is the FRESH-INSTALL snapshot and already contains every object
--- through migration 014, so a new database is stamped at 14 and no migration
+-- through migration 015, so a new database is stamped at 15 and no migration
 -- needs to be replayed against it.
 --
 -- NOTE for 012: login_attempts.kind is VARCHAR(20) below, which is what
 -- migration 012 exists to repair on databases where the table predated
 -- migration 004 and was created narrower. A fresh install from this file is
 -- already correct.
-INSERT INTO schema_version (version, applied_at) VALUES (14, NOW());
+INSERT INTO schema_version (version, applied_at) VALUES (15, NOW());

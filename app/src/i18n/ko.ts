@@ -47,6 +47,8 @@ export const ko: Record<string, string> = {
   'common.max': '최대',
   'common.showPassword': '비밀번호 표시',
   'common.hidePassword': '비밀번호 숨기기',
+  'announce.snooze': '내일 다시 알림',
+  'announce.dismiss': '다시 보지 않기',
   'picker.search': '검색...',
   'picker.searchIn': '{label} 검색',
   'picker.noMatches': '검색 결과가 없습니다.',

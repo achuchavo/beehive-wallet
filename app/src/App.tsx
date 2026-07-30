@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Routes, Route, NavLink, Navigate, Link, useLocation } from 'react-router-dom'
+import { Routes, Route, NavLink, Navigate, Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
   SendHorizontal,
@@ -11,7 +11,6 @@ import {
   ShieldCheck,
   BookOpen,
   Activity,
-  Info,
   TriangleAlert,
   OctagonAlert,
   LogOut,
@@ -37,6 +36,13 @@ import Admin from './pages/Admin'
 import { useT } from './i18n/I18nContext'
 import { LANGUAGES } from './i18n/i18n'
 import OptionPicker from './components/OptionPicker'
+import AnnouncementModal from './components/AnnouncementModal'
+import {
+  shouldShowAnnouncement,
+  markAnnouncementShown,
+  dismissAnnouncement,
+  snoozeAnnouncement,
+} from './announcementState'
 import BuildBadge from './components/BuildBadge'
 import { useChains } from './chainStore'
 import { onSettingsChanged } from './settingsSignal'
@@ -88,40 +94,44 @@ const PRIMARY_PATHS = ['/', '/send', '/staking', '/rewards']
 const DRAWER_FOCUSABLE =
   'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
-const BANNER_STYLE: Record<Announcement['severity'], string> = {
-  info: 'bg-blue-50 text-blue-800 border-blue-200',
-  warning: 'bg-amber-50 text-amber-800 border-amber-200',
-  danger: 'bg-red-50 text-red-800 border-red-200',
-}
-
-const BANNER_ICON: Record<Announcement['severity'], typeof Info> = {
-  info: Info,
-  warning: TriangleAlert,
-  danger: OctagonAlert,
-}
+// info/warning announcements are a dismissible popup (AnnouncementModal); the
+// inline banner survives only for severity=danger, because a system notice
+// ("signing is degraded", "do not send on chain X") must stay on screen - a
+// modal that can be snoozed for a day is the wrong shape for it.
 
 function App() {
   const auth = useAuth()
   const { t, lang, setLang } = useT()
   const location = useLocation()
+  const navigate = useNavigate()
   const isAdmin = auth.status === 'in' && auth.isAdmin
   // Reactive chain registry: re-renders when the DB config lands, and lets us
   // warn (and block signing) if it could not be loaded.
   const { status: chainStatus } = useChains()
-  const [banner, setBanner] = useState<Announcement | null>(null)
+  const [announcement, setAnnouncement] = useState<Announcement | null>(null)
+  const [announcementOpen, setAnnouncementOpen] = useState(false)
   const [uptimeEnabled, setUptimeEnabled] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const drawerRef = useRef<HTMLElement>(null)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
-    const loadBanner = () =>
+    const loadAnnouncement = () =>
       api
         .announcementGet()
-        .then((r) => setBanner(r.announcement))
+        .then((r) => {
+          setAnnouncement(r.announcement)
+          const a = r.announcement
+          // The popup opens at most once per session per announcement id;
+          // dismissed and snoozed ids stay closed. danger never uses the popup.
+          if (a && a.severity !== 'danger' && shouldShowAnnouncement(a.id)) {
+            markAnnouncementShown(a.id)
+            setAnnouncementOpen(true)
+          }
+        })
         .catch(() => {})
-    loadBanner()
-    const id = setInterval(loadBanner, 5 * 60 * 1000)
+    loadAnnouncement()
+    const id = setInterval(loadAnnouncement, 5 * 60 * 1000)
     return () => clearInterval(id)
   }, [])
 
@@ -213,7 +223,7 @@ function App() {
   const WIDE_ROUTES = ['/admin', '/staking', '/history', '/rewards', '/uptime']
   const wide = WIDE_ROUTES.includes(location.pathname)
   const primary = NAV.filter((n) => PRIMARY_PATHS.includes(n.to))
-  const BannerIcon = banner ? BANNER_ICON[banner.severity] : Info
+  const dangerBanner = announcement?.severity === 'danger' ? announcement : null
 
   const navLinkClass = ({ isActive }: { isActive: boolean }) =>
     `flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors ${
@@ -424,13 +434,30 @@ function App() {
       <main
         className={`mx-auto w-full flex-1 px-4 pb-24 pt-8 md:px-8 md:pb-10 ${wide ? 'max-w-5xl' : 'max-w-3xl'}`}
       >
-        {banner && (
-          <div
-            className={`mb-5 flex items-center gap-2.5 rounded-xl border px-4 py-3 text-sm ${BANNER_STYLE[banner.severity]}`}
-          >
-            <BannerIcon className="h-4 w-4 shrink-0" />
-            {banner.message}
+        {dangerBanner && (
+          <div className="mb-5 flex items-center gap-2.5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            <OctagonAlert className="h-4 w-4 shrink-0" />
+            {dangerBanner.message}
           </div>
+        )}
+        {announcementOpen && announcement && announcement.severity !== 'danger' && (
+          <AnnouncementModal
+            announcement={announcement}
+            onDismiss={() => {
+              dismissAnnouncement(announcement.id)
+              setAnnouncementOpen(false)
+            }}
+            onSnooze={() => {
+              snoozeAnnouncement(announcement.id)
+              setAnnouncementOpen(false)
+            }}
+            onCta={() => {
+              // Acting on the CTA is the strongest form of "message received".
+              dismissAnnouncement(announcement.id)
+              setAnnouncementOpen(false)
+              navigate(announcement.cta_path)
+            }}
+          />
         )}
         {/* Signing is blocked while this is showing (see wallet/tx.ts), so say
             so rather than letting a transaction fail with a cryptic error. */}

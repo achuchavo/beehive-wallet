@@ -47,6 +47,8 @@ export const en: Record<string, string> = {
   'common.max': 'Max',
   'common.showPassword': 'Show password',
   'common.hidePassword': 'Hide password',
+  'announce.snooze': 'Remind me tomorrow',
+  'announce.dismiss': "Don't show again",
   'picker.search': 'Search...',
   'picker.searchIn': 'Search {label}',
   'picker.noMatches': 'No matches.',

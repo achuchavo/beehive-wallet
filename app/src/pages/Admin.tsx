@@ -6,12 +6,14 @@ import {
   type UserAction,
   type AdminUptimeSub,
   type AdminFeature,
+  type Announcement,
   type PermLevel,
   ADMIN_FEATURES,
   PERM_NONE,
   PERM_READ,
   PERM_WRITE,
 } from '../api'
+import AnnouncementModal from '../components/AnnouncementModal'
 import { CHAINS, DEFAULT_CHAIN, formatAmount } from '../chains'
 import { useT } from '../i18n/I18nContext'
 import ChainManager from './ChainManager'
@@ -680,13 +682,20 @@ function RoleManager({
   )
 }
 
+const ANNOUNCE_FIELD =
+  'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none'
+
 function AnnouncementEditor({ onChanged }: { onChanged: () => void }) {
-  const [current, setCurrent] = useState<{ message: string; severity: string } | null>(null)
+  const [current, setCurrent] = useState<Announcement | null>(null)
   const [message, setMessage] = useState('')
+  const [body, setBody] = useState('')
+  const [ctaLabel, setCtaLabel] = useState('')
+  const [ctaPath, setCtaPath] = useState('')
   const [severity, setSeverity] = useState('info')
   const [hours, setHours] = useState('24')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [previewing, setPreviewing] = useState(false)
 
   const refresh = useCallback(
     () => api.announcementGet().then((r) => setCurrent(r.announcement)).catch(() => {}),
@@ -697,13 +706,34 @@ function AnnouncementEditor({ onChanged }: { onChanged: () => void }) {
     refresh()
   }, [refresh])
 
+  // The exact object the users' modal will receive, so Preview cannot drift
+  // from reality. id 0 is never a stored announcement.
+  const draft: Announcement = {
+    id: 0,
+    message: message.trim() || '(untitled)',
+    body: body.trim(),
+    cta_label: ctaLabel.trim(),
+    cta_path: ctaPath.trim(),
+    severity: severity as Announcement['severity'],
+  }
+
   async function publish(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true)
     setError('')
     try {
-      await api.adminAnnouncementSet(message.trim(), severity, Number(hours) || 0)
+      await api.adminAnnouncementSet({
+        message: message.trim(),
+        body: body.trim(),
+        cta_label: ctaLabel.trim(),
+        cta_path: ctaPath.trim(),
+        severity,
+        expires_hours: Number(hours) || 0,
+      })
       setMessage('')
+      setBody('')
+      setCtaLabel('')
+      setCtaPath('')
       await refresh()
       onChanged()
     } catch (err) {
@@ -725,68 +755,123 @@ function AnnouncementEditor({ onChanged }: { onChanged: () => void }) {
   }
 
   return (
-    <section className="space-y-2">
-      <h2 className="font-medium">Announcement banner</h2>
+    <section className="space-y-3">
+      <h2 className="font-medium">Announcement</h2>
+      <p className="text-sm text-slate-500">
+        Info and warning announcements open as a popup users can dismiss or snooze for a day;
+        danger stays as a permanent inline banner (no popup, no snooze).
+      </p>
       {current ? (
-        <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm">
-          <span>
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm">
+          <span className="min-w-0">
             <span className="mr-2 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">
               {current.severity}
             </span>
             {current.message}
+            {current.cta_label !== '' && (
+              <span className="ml-2 text-xs text-slate-500">
+                [{current.cta_label} → {current.cta_path}]
+              </span>
+            )}
           </span>
           <button
             onClick={clear}
             disabled={busy}
-            className="text-xs text-red-600 hover:underline disabled:opacity-50"
+            className="shrink-0 text-xs text-red-600 hover:underline disabled:opacity-50"
           >
             Take down
           </button>
         </div>
       ) : (
-        <p className="text-sm text-slate-500">No active banner.</p>
+        <p className="text-sm text-slate-500">No active announcement.</p>
       )}
-      <form onSubmit={publish} className="flex flex-col gap-2 sm:flex-row">
+      <form onSubmit={publish} className="space-y-2">
         <input
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          placeholder="Message shown to every user"
-          aria-label="Announcement message"
+          placeholder="Title (shown as the popup heading, or the banner text for danger)"
+          aria-label="Announcement title"
           required
           maxLength={300}
-          className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+          className={ANNOUNCE_FIELD}
         />
-        <OptionPicker
-          label="Severity"
-          value={severity}
-          onChange={setSeverity}
-          className="py-2"
-          options={[
-            { value: 'info', label: 'Info' },
-            { value: 'warning', label: 'Warning' },
-            { value: 'danger', label: 'Danger' },
-          ]}
+        <textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          placeholder={'Body (optional). Supports ## heading, **bold**, - lists, [label](/path) or [label](https://…). Blank line = new paragraph.'}
+          aria-label="Announcement body"
+          rows={6}
+          maxLength={4000}
+          className={`${ANNOUNCE_FIELD} font-mono text-xs leading-relaxed`}
         />
-        <OptionPicker
-          label="Expiry"
-          value={hours}
-          onChange={setHours}
-          className="py-2"
-          options={[
-            { value: '0', label: 'No expiry' },
-            { value: '6', label: '6 hours' },
-            { value: '24', label: '24 hours' },
-            { value: '72', label: '3 days' },
-          ]}
-        />
-        <button
-          disabled={busy}
-          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
-        >
-          Publish
-        </button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <input
+            value={ctaLabel}
+            onChange={(e) => setCtaLabel(e.target.value)}
+            placeholder="CTA button label (optional)"
+            aria-label="CTA button label"
+            maxLength={80}
+            className={ANNOUNCE_FIELD}
+          />
+          <input
+            value={ctaPath}
+            onChange={(e) => setCtaPath(e.target.value)}
+            placeholder="CTA path, e.g. /alarms"
+            aria-label="CTA path"
+            maxLength={200}
+            className={`${ANNOUNCE_FIELD} font-mono`}
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <OptionPicker
+            label="Severity"
+            value={severity}
+            onChange={setSeverity}
+            className="py-2"
+            options={[
+              { value: 'info', label: 'Info' },
+              { value: 'warning', label: 'Warning' },
+              { value: 'danger', label: 'Danger (inline banner)' },
+            ]}
+          />
+          <OptionPicker
+            label="Expiry"
+            value={hours}
+            onChange={setHours}
+            className="py-2"
+            options={[
+              { value: '0', label: 'No expiry' },
+              { value: '6', label: '6 hours' },
+              { value: '24', label: '24 hours' },
+              { value: '72', label: '3 days' },
+              { value: '168', label: '7 days' },
+            ]}
+          />
+          <button
+            type="button"
+            onClick={() => setPreviewing(true)}
+            disabled={severity === 'danger'}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:border-amber-500 disabled:opacity-50"
+          >
+            Preview
+          </button>
+          <button
+            disabled={busy}
+            className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
+          >
+            Publish
+          </button>
+        </div>
       </form>
       {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+      {previewing && (
+        <AnnouncementModal
+          announcement={draft}
+          onDismiss={() => setPreviewing(false)}
+          onSnooze={() => setPreviewing(false)}
+          onCta={() => setPreviewing(false)}
+        />
+      )}
     </section>
   )
 }
