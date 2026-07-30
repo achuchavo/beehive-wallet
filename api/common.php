@@ -13,6 +13,68 @@ error_reporting(E_ALL);
 // database - see api/tests/run.php.
 require_once __DIR__ . '/security_lib.php';
 
+// --- Native app CORS -------------------------------------------------------
+// The iOS/Android shells run this same API's frontend inside a WebView, but the
+// WebView's origin can never be this API's origin: Capacitor's local server
+// claims every path on whatever host it is given, so pointing it at the real
+// host would make /api/* resolve to bundled assets instead of the server.
+// The app therefore calls the API cross-origin from a fixed local origin.
+//
+// Scope is deliberately tiny:
+//   - Exactly two origins, matched literally. canonical_origin() is NOT used:
+//     it rejects non-HTTP schemes, and capacitor:// is one.
+//   - NO Access-Control-Allow-Credentials. Cookies must never travel to these
+//     origins; native authenticates with a bearer token instead (see
+//     device_token_resolve). Its absence is what guarantees that, and it also
+//     means an unauthenticated page sharing the https://localhost origin gains
+//     nothing - without a token there is no authority to borrow.
+const NATIVE_ORIGINS = ['https://localhost', 'capacitor://localhost'];
+
+function native_cors(): void
+{
+    // Unconditional: the response varies by Origin whether or not this one is
+    // allowed, and a cache that missed that could serve the app's CORS headers
+    // to a web visitor, or the reverse.
+    header('Vary: Origin');
+
+    $origin = (string) ($_SERVER['HTTP_ORIGIN'] ?? '');
+    if ($origin !== '' && in_array($origin, NATIVE_ORIGINS, true)) {
+        header('Access-Control-Allow-Origin: ' . $origin);
+        header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+        header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Beehive-Client');
+        header('Access-Control-Max-Age: 600');
+    }
+
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') {
+        // Preflight. Answered before session_start() so a preflight never mints
+        // a session, and with the same 204 regardless of whether the origin was
+        // allowed - a rejected origin simply received no Allow-* headers, and
+        // should learn nothing more than that from the status code.
+        http_response_code(204);
+        exit;
+    }
+}
+native_cors();
+
+/**
+ * Is this request the native shell asking to sign in or register?
+ *
+ * Needed only where there is no token yet, so "present a bearer token" cannot
+ * be the test. Two things must hold, and neither is forgeable by a hostile page:
+ *   - Origin is one of the native origins. A browser sets Origin itself.
+ *   - X-Beehive-Client: native. A custom header forces a CORS preflight, and
+ *     native_cors() grants one only to those same origins.
+ *
+ * It is not a claim that the caller is authentic - only that it is entitled to
+ * skip the cookie-CSRF gate, which protects an ambient credential this request
+ * does not carry. Authentication is still a password, still rate-limited.
+ */
+function is_native_client(): bool
+{
+    return in_array((string) ($_SERVER['HTTP_ORIGIN'] ?? ''), NATIVE_ORIGINS, true)
+        && strcasecmp((string) ($_SERVER['HTTP_X_BEEHIVE_CLIENT'] ?? ''), 'native') === 0;
+}
+
 // --- Session hardening -----------------------------------------------------
 // Cookie flags MUST be set before session_start().
 const SESSION_IDLE_SECONDS = 3600;             // sign out after 1h of inactivity
@@ -413,6 +475,33 @@ function require_same_origin(): void
     }
 }
 
+/**
+ * The CSRF gate for every endpoint, cookie or native.
+ *
+ * require_same_origin() exists to protect an AMBIENT credential: the browser
+ * attaches the session cookie to whatever a third-party page provokes, so the
+ * request's origin is the only evidence of intent. Two callers carry no ambient
+ * credential and are therefore exempt:
+ *
+ *   - A bearer token. Nothing can attach it on the user's behalf; there is no
+ *     cross-site request to defend against.
+ *   - The native shell signing in or registering, where no token exists yet
+ *     (see is_native_client() for why that claim cannot be forged).
+ *
+ * Exempting them does not weaken the cookie path. The session cookie is
+ * SameSite=Strict, so it is never sent cross-site whatever these functions say,
+ * and native_cors() never returns Access-Control-Allow-Credentials - so a
+ * credentialed cross-origin request cannot even complete its preflight. A
+ * request that takes an exemption here still has to authenticate.
+ */
+function require_trusted_caller(): void
+{
+    if (bearer_token_from_header() !== '' || is_native_client()) {
+        return;
+    }
+    require_same_origin();
+}
+
 // State-changing endpoints must be POST: a mutation must never be reachable by
 // a GET navigation (<img src>, link prefetch, browser history replay).
 function require_post(): void
@@ -429,24 +518,231 @@ function require_post(): void
     }
 }
 
-function require_user(PDO $db): int
+// --- Device tokens (native apps) -------------------------------------------
+// The wire format and its parsing live in security_lib.php so they can be
+// tested without a database; everything that needs one is here.
+//
+// Sliding lifetime: any use pushes expires_at forward, so an app opened once a
+// month stays signed in while one abandoned for a quarter has to authenticate
+// again. Same reasoning as REMEMBER_TTL - see remember_resume().
+const DEVICE_TOKEN_TTL = 90 * 86400;
+
+/**
+ * The bearer credential presented by this request, or ''.
+ *
+ * Authorization does not always survive the trip to PHP: some Apache/FastCGI
+ * configurations strip it, and it then reappears under a redirect-prefixed
+ * name. Both are checked, then the parsed header set, so a deployment quirk
+ * shows up as "not logged in" rather than as a silent auth bypass in either
+ * direction.
+ */
+function bearer_token_from_header(): string
 {
-    // Every authenticated endpoint (read or write) is same-origin only.
-    require_same_origin();
+    $raw = (string) ($_SERVER['HTTP_AUTHORIZATION'] ?? '');
+    if ($raw === '') {
+        $raw = (string) ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
+    }
+    if ($raw === '' && function_exists('apache_request_headers')) {
+        foreach (apache_request_headers() as $name => $value) {
+            if (strcasecmp((string) $name, 'Authorization') === 0) {
+                $raw = (string) $value;
+                break;
+            }
+        }
+    }
+    return bearer_from_authorization($raw);
+}
+
+/**
+ * Did this request authenticate with a bearer token rather than a cookie?
+ *
+ * Set once by resolve_user() and read by admin_context(), which refuses every
+ * privilege to a token. Kept as request state rather than threaded through call
+ * signatures so that a future admin gate cannot forget to ask.
+ */
+function auth_is_bearer(?bool $set = null): bool
+{
+    static $isBearer = false;
+    if ($set !== null) {
+        $isBearer = $set;
+    }
+    return $isBearer;
+}
+
+/**
+ * Mint a device token. Returns ['token' => ..., 'expires_at' => ...].
+ *
+ * The token is returned to the caller EXACTLY once, here: only its SHA-256 is
+ * stored, so a database leak yields nothing usable and there is no way to show
+ * it again later.
+ */
+function device_token_issue(
+    PDO $db,
+    int $userId,
+    string $platform,
+    string $deviceName = '',
+    string $appVersion = ''
+): array {
+    $selector = bin2hex(random_bytes(16));
+    $verifier = bin2hex(random_bytes(32));
+
+    $stmt = $db->prepare(
+        'INSERT INTO device_tokens
+            (user_id, selector, verifier_hash, platform, device_name, app_version,
+             expires_at, ip, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, NOW() + INTERVAL ' . DEVICE_TOKEN_TTL . ' SECOND, ?, NOW())'
+    );
+    $stmt->execute([
+        $userId,
+        $selector,
+        hash('sha256', $verifier),
+        $platform,
+        mb_substr($deviceName, 0, 64),
+        mb_substr($appVersion, 0, 32),
+        client_ip(),
+    ]);
+
+    // Opportunistic cleanup, as remember_issue() does.
+    if (random_int(1, 50) === 1) {
+        $db->exec('DELETE FROM device_tokens WHERE expires_at < NOW()');
+    }
+
+    return [
+        'token' => device_token_format($selector, $verifier),
+        'expires_at' => gmdate('c', time() + DEVICE_TOKEN_TTL),
+    ];
+}
+
+/**
+ * Resolve a presented token to a user id, or 0.
+ *
+ * Deliberately NOT rotating (unlike remember_resume): this token lives in the
+ * iOS Keychain / Android Keystore rather than a cookie jar, where rotation buys
+ * little - if that store is readable the device is already lost - while costing
+ * a real lockout path, since a dropped response would leave the app holding a
+ * verifier the server had already replaced. See migration 014.
+ *
+ * Every failure returns 0 without distinguishing why. An unknown selector, a
+ * wrong verifier, an expired row and a revoked one are all just "not logged in"
+ * to the caller.
+ */
+function device_token_resolve(PDO $db, string $raw): int
+{
+    $parts = device_token_parse($raw);
+    if ($parts === []) {
+        return 0;
+    }
+
+    // Validity is evaluated in SQL so it uses the database's clock, not PHP's -
+    // the two can disagree, and this comparison decides authentication.
+    $stmt = $db->prepare(
+        'SELECT t.id, t.user_id, t.verifier_hash,
+                (t.expires_at > NOW()) AS still_valid,
+                (t.revoked_at IS NULL) AS live,
+                u.is_disabled
+         FROM device_tokens t
+         JOIN users u ON u.id = t.user_id
+         WHERE t.selector = ?'
+    );
+    $stmt->execute([$parts['selector']]);
+    $row = $stmt->fetch();
+    if (!$row) {
+        return 0;
+    }
+
+    // Constant-time: a near-miss verifier must not be distinguishable by timing
+    // from a wildly wrong one.
+    if (!hash_equals((string) $row['verifier_hash'], hash('sha256', $parts['verifier']))) {
+        return 0;
+    }
+    if ((int) $row['live'] !== 1 || (int) $row['still_valid'] !== 1) {
+        return 0;
+    }
+    if ((int) $row['is_disabled'] === 1) {
+        return 0;
+    }
+
+    $db->prepare(
+        'UPDATE device_tokens
+            SET last_used_at = NOW(),
+                expires_at = NOW() + INTERVAL ' . DEVICE_TOKEN_TTL . ' SECOND,
+                ip = ?
+          WHERE id = ?'
+    )->execute([client_ip(), (int) $row['id']]);
+
+    return (int) $row['user_id'];
+}
+
+/** Revoke the token presented by this request, if any. */
+function device_token_revoke_current(PDO $db): void
+{
+    $parts = device_token_parse(bearer_token_from_header());
+    if ($parts === []) {
+        return;
+    }
+    // Marked rather than deleted, so a revoked token can be told apart from one
+    // that never existed when someone is investigating.
+    $db->prepare('UPDATE device_tokens SET revoked_at = NOW() WHERE selector = ? AND revoked_at IS NULL')
+        ->execute([$parts['selector']]);
+}
+
+/**
+ * Revoke every device token for a user.
+ *
+ * MUST be called anywhere remember_revoke_all() is - a password change or theft
+ * response that only burned the cookies would leave the phones signed in.
+ */
+function device_token_revoke_all(PDO $db, int $userId): void
+{
+    $db->prepare('UPDATE device_tokens SET revoked_at = NOW() WHERE user_id = ? AND revoked_at IS NULL')
+        ->execute([$userId]);
+}
+
+/**
+ * Identify the caller without erroring. Returns 0 when unauthenticated.
+ *
+ * Shared by require_user() and me.php so the two cannot drift apart on which
+ * credentials they accept.
+ *
+ * An Authorization header is EXCLUSIVE: when one is present it is the only
+ * credential considered, with no fallback to the session. Trying both would let
+ * a request carrying a rejected token quietly succeed on an ambient cookie,
+ * which is exactly the confusion that makes dual-auth systems fail.
+ */
+function resolve_user(PDO $db): int
+{
+    $bearer = bearer_token_from_header();
+    if ($bearer !== '') {
+        auth_is_bearer(true);
+        return device_token_resolve($db, $bearer);
+    }
+
     // Lazily re-establish a session from a "remember me" token. Done here (and
     // in me.php) rather than at bootstrap so the unauthenticated RPC/LCD
     // proxies never trigger a database lookup on every request.
     if (empty($_SESSION['user_id'])) {
         remember_resume($db);
     }
-    if (empty($_SESSION['user_id'])) {
+    return (int) ($_SESSION['user_id'] ?? 0);
+}
+
+function require_user(PDO $db): int
+{
+    // Cookie callers are same-origin only; token callers carry no ambient
+    // credential and are exempt. See require_trusted_caller().
+    require_trusted_caller();
+
+    $userId = resolve_user($db);
+    if ($userId === 0) {
         json_error('Not logged in', 401);
     }
-    $userId = (int) $_SESSION['user_id'];
+
     $stmt = $db->prepare('SELECT is_disabled FROM users WHERE id = ?');
     $stmt->execute([$userId]);
     $row = $stmt->fetch();
     if (!$row) {
+        // Only meaningful for the cookie path; device_token_resolve() already
+        // refuses a token whose user has gone.
         $_SESSION = [];
         session_destroy();
         json_error('Not logged in', 401);
@@ -527,9 +823,23 @@ function watch_limit(PDO $db): int
  * admin_overview.php gates its PII sections on it and the frontend reads it
  * from me.php. Its meaning is unchanged for a read-or-better grant, which is
  * exactly what those call sites were asking about.
+ *
+ * A BEARER-AUTHENTICATED REQUEST HOLDS NOTHING. Device tokens are not
+ * admin-capable, so a stolen phone token cannot reach the admin surface - and
+ * nobody administers this backend from a handset, so nothing is lost. The check
+ * lives here, rather than in require_admin()/require_permission()/
+ * require_super_admin(), because all three derive their answer from this
+ * function: a future gate that forgets to ask is impossible.
+ *
+ * It also makes me.php report is_admin=false to the app, so the mobile UI never
+ * offers a control the API would refuse.
  */
 function admin_context(PDO $db, int $userId): array
 {
+    if (auth_is_bearer()) {
+        return ['is_admin' => false, 'is_super_admin' => false, 'features' => [], 'levels' => []];
+    }
+
     $stmt = $db->prepare('SELECT is_admin, is_super_admin FROM users WHERE id = ?');
     $stmt->execute([$userId]);
     $row = $stmt->fetch();

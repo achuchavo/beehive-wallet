@@ -2,7 +2,7 @@
 require __DIR__ . '/common.php';
 require_post();
 
-require_same_origin();
+require_trusted_caller();
 $body = read_body();
 $email = strtolower(trim($body['email'] ?? ''));
 $password = (string) ($body['password'] ?? '');

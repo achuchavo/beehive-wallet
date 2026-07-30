@@ -8,6 +8,7 @@ import {
   fromBaseUnits as amountFromBaseUnits,
   formatBase,
 } from './wallet/amount'
+import { apiRoot } from './platform'
 
 export type StakingPolicy = 'all' | 'allowlist' | 'allowlist_paid'
 export const STAKING_POLICIES: StakingPolicy[] = ['all', 'allowlist', 'allowlist_paid']
@@ -44,15 +45,18 @@ export interface ChainInfo {
   feeCollector: string
 }
 
-const API_ORIGIN = `${window.location.origin}${import.meta.env.BASE_URL}api`
-
 // Per-chain proxy URLs. Path form is /<chainKey>/cosmos/... so callers just do
 // `${chain.lcd}/cosmos/...`. CosmJS needs an absolute RPC URL.
+//
+// Resolved per call rather than once at module load: apiRoot() points at the
+// app's own origin on the web and at an absolute origin on native (see
+// platform.ts), and these two functions are called while building chain configs
+// rather than on the hot path, so there is nothing to cache.
 export function proxyLcd(key: string): string {
-  return `${API_ORIGIN}/lcd_proxy.php/${key}`
+  return `${apiRoot()}/lcd_proxy.php/${key}`
 }
 export function proxyRpc(key: string): string {
-  return `${API_ORIGIN}/rpc_proxy.php?chain=${key}`
+  return `${apiRoot()}/rpc_proxy.php?chain=${key}`
 }
 
 // Bootstrap registry, replaced wholesale once the DB config loads.

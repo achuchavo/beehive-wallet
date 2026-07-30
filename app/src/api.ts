@@ -1,7 +1,14 @@
-// Thin client for the PHP API. Same-origin (/api proxied in dev), so the
-// PHP session cookie rides along automatically.
+// Thin client for the PHP API.
+//
+// On the web this is same-origin (/api proxied in dev), so the PHP session
+// cookie rides along automatically. On native it cannot be: the WebView origin
+// is never the API's origin, so calls go to an absolute origin, no cookies are
+// sent, and a bearer token from the Keychain/Keystore authenticates instead.
+// See platform.ts and auth/deviceToken.ts - callers here see no difference.
 
 import type { StakingPolicy } from './chains'
+import { apiRoot, isNative, nativePlatform } from './platform'
+import { clearDeviceToken, loadDeviceToken, saveDeviceToken } from './auth/deviceToken'
 
 export type AlarmType = 'sent' | 'received' | 'both' | 'unbond'
 export type AlertKind = 'sent' | 'received' | 'unbond'
@@ -127,7 +134,6 @@ export interface AdminUptimeSub {
   created_at: string
 }
 
-const API_BASE = `${import.meta.env.BASE_URL}api/`.replace('//', '/')
 
 /**
  * A failed API call that kept its payload.
@@ -158,11 +164,35 @@ export class ApiError extends Error {
 }
 
 async function call<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const headers: Record<string, string> = {}
+  if (body !== undefined) headers['Content-Type'] = 'application/json'
+
+  const native = isNative()
+  if (native) {
+    // Sent on EVERY native request, not just sign-in. It is how the API tells
+    // the app apart from a hostile page when no token has been issued yet (see
+    // api/common.php is_native_client), and sending it uniformly means a
+    // signed-out request to a protected endpoint answers "not logged in"
+    // instead of the misleading "cross-origin request blocked".
+    //
+    // The cost is a CORS preflight on requests that would otherwise be simple.
+    // That is only the unauthenticated reads - anything carrying Authorization
+    // is preflighted regardless - and the result is cached per endpoint, so it
+    // amounts to a handful of extra round trips every ten minutes.
+    headers['X-Beehive-Client'] = 'native'
+    const token = await loadDeviceToken()
+    if (token) headers.Authorization = `Bearer ${token}`
+  }
+
+  const res = await fetch(`${apiRoot()}/${path}`, {
     method: body === undefined ? 'GET' : 'POST',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
     body: body === undefined ? undefined : JSON.stringify(body),
-    credentials: 'same-origin',
+    // Native sends no cookies at all. The API deliberately never returns
+    // Access-Control-Allow-Credentials for the WebView origins, so a
+    // credentialed cross-origin request could not complete its preflight -
+    // 'omit' states that intent instead of relying on it failing.
+    credentials: native ? 'omit' : 'same-origin',
   })
   const data = await res.json()
   if (!res.ok || data.ok === false) {
@@ -239,10 +269,33 @@ export const api = {
   // A wallet address is not accepted at registration: proving control of one
   // requires signing a challenge bound to an account, which does not exist yet.
   // Link it after signing in via addressChallenge + accountSetAddress.
-  register: (email: string, password: string) =>
-    call('register.php', { email, password }),
-  login: (identifier: string, password: string, remember = false) =>
-    call('login.php', { identifier, password, remember }),
+  register: (email: string, password: string) => call('register.php', { email, password }),
+  /**
+   * Sign in.
+   *
+   * On native there is no usable cookie, so the server answers with a bearer
+   * token which is stored in the Keychain/Keystore here - callers do not have to
+   * know which platform they are on, or that a token exists at all.
+   *
+   * `remember` is ignored by the server for a native sign-in: the device token
+   * IS the durable credential.
+   */
+  login: async (identifier: string, password: string, remember = false) => {
+    const platform = nativePlatform()
+    if (!platform) {
+      return call('login.php', { identifier, password, remember })
+    }
+    const res = await call<{ token: string; expires_at: string }>('login.php', {
+      identifier,
+      password,
+      remember,
+      platform,
+      // Which build this device is running, for a future "Devices" screen.
+      app_version: __BUILD_COMMIT__.slice(0, 12),
+    })
+    await saveDeviceToken(res.token)
+    return res
+  },
   /** Step 1: ask the server for a single-use challenge to sign. */
   addressChallenge: (address: string, chain_key: string) =>
     call<{ nonce: string; expires_at: string; message: string }>('address_challenge.php', {
@@ -261,7 +314,21 @@ export const api = {
       main_address,
       ...(proof ?? {}),
     }),
-  logout: () => call('logout.php', {}),
+  /**
+   * Sign out, revoking the server-side credential.
+   *
+   * The local token is dropped even if the request fails: a device that cannot
+   * reach the server must still end up signed out locally, and a token the
+   * server keeps is bounded by its own expiry. Leaving it in the Keychain
+   * because the network was down would be the worse failure.
+   */
+  logout: async () => {
+    try {
+      return await call('logout.php', {})
+    } finally {
+      await clearDeviceToken()
+    }
+  },
   watchedList: () =>
     call<{
       addresses: WatchedAddress[]

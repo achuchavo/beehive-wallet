@@ -2,8 +2,13 @@
 require __DIR__ . '/common.php';
 require_post();
 
-require_same_origin();
+require_trusted_caller();
 $body = read_body();
+
+// The native shells cannot use the session cookie at all: their WebView origin
+// is never this API's origin, and the cookie is SameSite=Strict. They receive a
+// bearer token instead - see migration 014.
+$wantsToken = is_native_client();
 // Accept either an email or a wallet address as the identifier. The address
 // is only a username here - the password is still the credential.
 $identifier = trim($body['identifier'] ?? $body['email'] ?? '');
@@ -41,6 +46,36 @@ record_attempt($db, $ip, $email, 'login', true);
 // Clear this account's recent failures so a legit user isn't left near the cap.
 $db->prepare("DELETE FROM login_attempts WHERE identifier = ? AND kind = 'login' AND success = 0")
     ->execute([$email]);
+
+if ($wantsToken) {
+    $platform = strtolower(trim((string) ($body['platform'] ?? '')));
+    if (!device_platform_valid($platform)) {
+        json_error('Unknown device platform');
+    }
+
+    // No session and no cookies for a native sign-in: the token IS the durable
+    // credential, so `remember` is meaningless here and is ignored.
+    //
+    // The existing persistent tokens are deliberately NOT revoked. That rule
+    // exists so a fresh sign-in retires the previous cookie on the same browser;
+    // a phone signing in is a different device, and burning the user's browser
+    // session because they opened the app would be surprising and wrong. Each
+    // device's credential is revoked on its own logout.
+    $issued = device_token_issue(
+        $db,
+        (int) $user['id'],
+        $platform,
+        (string) ($body['device_name'] ?? ''),
+        (string) ($body['app_version'] ?? '')
+    );
+
+    // The only time this token is ever transmitted - only its hash is stored.
+    json_out([
+        'ok' => true,
+        'token' => $issued['token'],
+        'expires_at' => $issued['expires_at'],
+    ]);
+}
 
 session_login((int) $user['id'], $remember);
 

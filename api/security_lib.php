@@ -893,3 +893,88 @@ function outbound_url_denied_reason(string $url): string
     }
     return '';
 }
+
+// --- Device tokens (native apps) -------------------------------------------
+// Parsing and formatting only. Issuing, resolving and revoking need a database
+// and live in common.php; these halves are here so the format rules can be
+// tested without a session, a DB or a request - see api/tests/run.php.
+//
+// Why a bearer token exists at all: the native shell's WebView origin can never
+// be the API's own origin, so every call from the app is cross-origin and
+// neither cookie is sent (session is SameSite=Strict, remember is Lax). A header
+// credential is not ambient - no third-party page can attach one - so the token
+// path needs no same-origin gate, and the web's CSRF posture is left untouched.
+
+/**
+ * Token wire format: "bh1_<selector>.<verifier>".
+ *
+ * The prefix makes a leaked token recognisable at a glance (in a log, a bug
+ * report, a support screenshot) and leaves room to change the scheme later
+ * without ambiguity about which rules a given string was minted under.
+ */
+const DEVICE_TOKEN_PREFIX = 'bh1_';
+const DEVICE_TOKEN_SELECTOR_HEX = 32; // 16 random bytes
+const DEVICE_TOKEN_VERIFIER_HEX = 64; // 32 random bytes
+
+const DEVICE_PLATFORMS = ['ios', 'android'];
+
+function device_token_format(string $selector, string $verifier): string
+{
+    return DEVICE_TOKEN_PREFIX . $selector . '.' . $verifier;
+}
+
+/**
+ * Split a presented token into its two halves.
+ *
+ * Returns ['selector' => ..., 'verifier' => ...] or [] for anything that is not
+ * exactly the expected shape. Deliberately strict: the selector goes into a
+ * database lookup and the verifier into a hash comparison, and neither should
+ * ever be handed input this function was unsure about. Length and charset are
+ * checked here so callers never have to.
+ */
+function device_token_parse(string $raw): array
+{
+    if (!str_starts_with($raw, DEVICE_TOKEN_PREFIX)) {
+        return [];
+    }
+    $body = substr($raw, strlen(DEVICE_TOKEN_PREFIX));
+    // Exactly one separator. str_contains + explode(limit 2) would silently
+    // accept a verifier containing dots, which the charset check would then
+    // reject anyway - but failing here keeps the reason unambiguous.
+    if (substr_count($body, '.') !== 1) {
+        return [];
+    }
+    [$selector, $verifier] = explode('.', $body, 2);
+
+    if (!preg_match('/^[0-9a-f]{' . DEVICE_TOKEN_SELECTOR_HEX . '}$/', $selector)) {
+        return [];
+    }
+    if (!preg_match('/^[0-9a-f]{' . DEVICE_TOKEN_VERIFIER_HEX . '}$/', $verifier)) {
+        return [];
+    }
+    return ['selector' => $selector, 'verifier' => $verifier];
+}
+
+/**
+ * Pull the credential out of an Authorization header value.
+ *
+ * Returns '' when the header is absent, uses another scheme, or carries nothing
+ * after the scheme. The scheme is matched case-insensitively because RFC 7235
+ * defines it that way and clients vary ("Bearer" / "bearer").
+ */
+function bearer_from_authorization(string $header): string
+{
+    $header = trim($header);
+    if ($header === '') {
+        return '';
+    }
+    if (strlen($header) < 7 || strcasecmp(substr($header, 0, 7), 'Bearer ') !== 0) {
+        return '';
+    }
+    return trim(substr($header, 7));
+}
+
+function device_platform_valid(string $platform): bool
+{
+    return in_array($platform, DEVICE_PLATFORMS, true);
+}

@@ -429,6 +429,74 @@ $body = ['messages' => [
 check('tx: sums past int max exactly', msgsend_total_to($body, $COLLECT, 'awei')['total'], '18000000000000000000');
 
 // =============================================================================
+// Device tokens (native apps, migration 014)
+// =============================================================================
+// These two halves are what stands between a presented string and a database
+// lookup plus a hash comparison, so the shape rules are asserted tightly.
+
+$SEL = str_repeat('a', 32);
+$VER = str_repeat('b', 64);
+$TOKEN = 'bh1_' . $SEL . '.' . $VER;
+
+check('token: format', device_token_format($SEL, $VER), $TOKEN);
+check('token: round-trip selector', device_token_parse($TOKEN)['selector'], $SEL);
+check('token: round-trip verifier', device_token_parse($TOKEN)['verifier'], $VER);
+
+// A missing or wrong prefix means it was not minted by this scheme.
+check('token: no prefix rejected', device_token_parse($SEL . '.' . $VER), []);
+check('token: wrong prefix rejected', device_token_parse('bh2_' . $SEL . '.' . $VER), []);
+// A future scheme must not be silently accepted under today's rules.
+check('token: prefix alone rejected', device_token_parse('bh1_'), []);
+
+// Separator rules. Two dots could otherwise split into a short verifier that
+// still passed a laxer charset check.
+check('token: no separator rejected', device_token_parse('bh1_' . $SEL . $VER), []);
+check('token: two separators rejected', device_token_parse('bh1_' . $SEL . '.' . $VER . '.x'), []);
+check('token: empty halves rejected', device_token_parse('bh1_.'), []);
+
+// Length is exact, not minimum - a truncated verifier must not authenticate.
+check('token: short selector rejected', device_token_parse('bh1_' . str_repeat('a', 31) . '.' . $VER), []);
+check('token: long selector rejected', device_token_parse('bh1_' . str_repeat('a', 33) . '.' . $VER), []);
+check('token: short verifier rejected', device_token_parse($TOKEN . 'x'), []);
+check(
+    'token: truncated verifier rejected',
+    device_token_parse('bh1_' . $SEL . '.' . str_repeat('b', 63)),
+    []
+);
+
+// Charset is lowercase hex only. Uppercase would compare unequal after hashing
+// anyway, but rejecting it here keeps one canonical form.
+check('token: uppercase hex rejected', device_token_parse('bh1_' . strtoupper($SEL) . '.' . $VER), []);
+check('token: non-hex selector rejected', device_token_parse('bh1_' . str_repeat('z', 32) . '.' . $VER), []);
+check(
+    'token: non-hex verifier rejected',
+    device_token_parse('bh1_' . $SEL . '.' . str_repeat('z', 64)),
+    []
+);
+// SQL/relative-path style junk must not survive to a query.
+check('token: injection shape rejected', device_token_parse("bh1_' OR 1=1--.x"), []);
+
+// Authorization header parsing.
+check('bearer: extracted', bearer_from_authorization('Bearer ' . $TOKEN), $TOKEN);
+check('bearer: scheme is case-insensitive', bearer_from_authorization('bearer ' . $TOKEN), $TOKEN);
+check('bearer: surrounding whitespace tolerated', bearer_from_authorization("  Bearer   $TOKEN  "), $TOKEN);
+check('bearer: empty header', bearer_from_authorization(''), '');
+check('bearer: whitespace-only header', bearer_from_authorization('   '), '');
+check('bearer: scheme with no credential', bearer_from_authorization('Bearer '), '');
+check('bearer: scheme alone', bearer_from_authorization('Bearer'), '');
+// Another scheme is not ours to interpret.
+check('bearer: basic auth ignored', bearer_from_authorization('Basic dXNlcjpwdw=='), '');
+check('bearer: bare token without scheme ignored', bearer_from_authorization($TOKEN), '');
+// "Bearerish" must not match on a prefix comparison.
+check('bearer: lookalike scheme ignored', bearer_from_authorization('Bearerish ' . $TOKEN), '');
+
+check('platform: ios valid', device_platform_valid('ios'), true);
+check('platform: android valid', device_platform_valid('android'), true);
+check('platform: web rejected', device_platform_valid('web'), false);
+check('platform: case sensitive', device_platform_valid('iOS'), false);
+check('platform: empty rejected', device_platform_valid(''), false);
+
+// =============================================================================
 echo "\n";
 if ($failed > 0) {
     echo implode("\n", $failures) . "\n\n";

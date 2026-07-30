@@ -2,7 +2,7 @@
 // The reference (rather than importing defineConfig from 'vitest/config') adds
 // the `test` key to Vite's config type without making the build config import
 // the test runner.
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { execSync } from 'node:child_process'
@@ -37,12 +37,75 @@ const buildCommit =
     }
   })()
 
+/**
+ * Content-Security-Policy for the NATIVE build only, injected as a meta tag.
+ *
+ * The web app gets its CSP from an Apache header (app/public/.htaccess). A
+ * bundled WebView is not served by Apache, so without this the native app would
+ * ship with no policy at all.
+ *
+ * It is injected rather than written into index.html because the two policies
+ * genuinely differ: the web is same-origin, while native must reach the API
+ * across origins. A shared meta tag would be intersected with the Apache header
+ * on the web, which is fragile and easy to get subtly wrong.
+ *
+ * Mirrors the .htaccess policy otherwise - keep the two in step.
+ */
+function nativeCsp(): Plugin {
+  return {
+    name: 'beehive-native-csp',
+    transformIndexHtml(html) {
+      if (!process.env.VITE_NATIVE) return html
+
+      const apiOrigin = process.env.VITE_API_ORIGIN
+      if (!apiOrigin) throw new Error('VITE_API_ORIGIN must be set for native builds')
+
+      const csp = [
+        // 'self' is the WebView origin (https://localhost / capacitor://localhost).
+        "default-src 'self'",
+        "base-uri 'self'",
+        "object-src 'none'",
+        "frame-ancestors 'none'",
+        "form-action 'self'",
+        "script-src 'self'",
+        // React inline style attributes / Tailwind. Scripts stay strict.
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: https:",
+        "font-src 'self'",
+        // The API and the RPC/LCD proxies behind it, plus Keybase for validator
+        // avatars - the same two exceptions the web policy carries.
+        `connect-src 'self' ${apiOrigin} https://keybase.io`,
+        "worker-src 'self'",
+        "manifest-src 'self'",
+      ].join('; ')
+
+      return {
+        html,
+        tags: [
+          {
+            tag: 'meta',
+            attrs: { 'http-equiv': 'Content-Security-Policy', content: csp },
+            injectTo: 'head-prepend',
+          },
+        ],
+      }
+    },
+  }
+}
+
 export default defineConfig({
   base,
+  build: {
+    // The native shell builds into its own directory (see capacitor.config.ts).
+    // Keeping it out of `dist` means a Capacitor bundle - different base,
+    // different API wiring - can never be picked up by deploy.ps1 or by the
+    // release workflow's hash manifest, both of which read `dist`.
+    outDir: process.env.VITE_OUT_DIR || 'dist',
+  },
   define: {
     __BUILD_COMMIT__: JSON.stringify(buildCommit),
   },
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), nativeCsp()],
   server: {
     proxy: {
       // Route API calls to the live subdomain vhost. The /wallet path now 301s

@@ -7,7 +7,7 @@
 // always shows full detail.
 require __DIR__ . '/common.php';
 require_post();
-require_same_origin();
+require_trusted_caller();
 
 $db = get_db();
 $userId = require_user($db);

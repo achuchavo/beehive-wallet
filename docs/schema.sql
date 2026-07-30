@@ -419,12 +419,50 @@ CREATE TABLE watch_payments (
         REFERENCES watched_addresses (id) ON DELETE SET NULL
 ) ENGINE = InnoDB;
 
+-- ===========================================================================
+-- Added by migration 014 — device tokens for the native iOS/Android apps.
+--
+-- The native shell's WebView origin can never be the API's own origin, so every
+-- call from the app is cross-origin and neither cookie is sent (session is
+-- SameSite=Strict, "remember me" is Lax). Native clients therefore present a
+-- bearer token instead. A header credential is not ambient, so the same-origin
+-- gate that protects the cookie path is not needed on the token path - the web's
+-- CSRF posture is left exactly as it was.
+--
+-- Selector + verifier as in remember_tokens, but deliberately WITHOUT rotation:
+-- the token lives in the Keychain/Keystore rather than a cookie jar, where
+-- rotation buys little and risks locking a client out when a response is lost.
+-- These tokens are also not admin-capable (see admin_context()).
+-- ===========================================================================
+
+CREATE TABLE device_tokens (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    user_id INT UNSIGNED NOT NULL,
+    selector CHAR(32) NOT NULL,
+    verifier_hash CHAR(64) NOT NULL,
+    platform ENUM('ios', 'android') NOT NULL,
+    device_name VARCHAR(64) NOT NULL DEFAULT '',
+    app_version VARCHAR(32) NOT NULL DEFAULT '',
+    -- Sliding, pushed forward on each use.
+    expires_at DATETIME NOT NULL,
+    ip VARCHAR(45) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL,
+    last_used_at DATETIME NULL,
+    revoked_at DATETIME NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_selector (selector),
+    KEY idx_user (user_id),
+    KEY idx_expires (expires_at),
+    CONSTRAINT fk_device_token_user FOREIGN KEY (user_id)
+        REFERENCES users (id) ON DELETE CASCADE
+) ENGINE = InnoDB;
+
 -- This file is the FRESH-INSTALL snapshot and already contains every object
--- through migration 013, so a new database is stamped at 13 and no migration
+-- through migration 014, so a new database is stamped at 14 and no migration
 -- needs to be replayed against it.
 --
 -- NOTE for 012: login_attempts.kind is VARCHAR(20) below, which is what
 -- migration 012 exists to repair on databases where the table predated
 -- migration 004 and was created narrower. A fresh install from this file is
 -- already correct.
-INSERT INTO schema_version (version, applied_at) VALUES (13, NOW());
+INSERT INTO schema_version (version, applied_at) VALUES (14, NOW());
