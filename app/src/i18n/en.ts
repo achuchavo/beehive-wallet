@@ -159,7 +159,10 @@ export const en: Record<string, string> = {
   'alarms.noWatched': 'No watched addresses yet. Add one above.',
   'alarms.alarm': 'Alarm',
   'alarms.alerts': 'Alerts',
-  'alarms.new': '{count} new',
+  'alarms.accountSettings': 'Account & alerts',
+  'alarms.lapsed': 'Lapsed',
+  'alarms.alarmOff': 'Off',
+  'alarms.rowSettings': 'Settings for {label}',
   'alarms.markRead': 'Mark all read',
   'alarms.noAlerts':
     'No alerts yet. When a transaction leaves a watched address, it shows up here within about a minute.',

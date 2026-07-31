@@ -7,8 +7,10 @@ import {
   Undo2,
   ExternalLink,
   CircleCheck,
+  ChevronRight,
   Plus,
   Trash2,
+  UserCog,
   X,
   ShieldCheck,
   TriangleAlert,
@@ -29,6 +31,8 @@ import { useAuth } from '../auth/AuthContext'
 import { useT } from '../i18n/I18nContext'
 import PasswordInput from '../components/PasswordInput'
 import Modal from '../components/Modal'
+import BottomSheet from '../components/BottomSheet'
+import Tabs, { TabPanel } from '../components/Tabs'
 import CopyAddress from '../components/CopyAddress'
 import HelpTip from '../components/HelpTip'
 import OptionPicker from '../components/OptionPicker'
@@ -614,6 +618,12 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
   const [newType, setNewType] = useState<AlarmType>('both')
   const [busy, setBusy] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
+  // Watched list and alert feed are two jobs on one page; tabs give each its
+  // own screen instead of a single long scroll past the other.
+  const [tab, setTab] = useState<'watched' | 'alerts'>('watched')
+  // Account linking and push setup are configuration, visited rarely - they
+  // live in a modal behind one header button rather than above the content.
+  const [accountOpen, setAccountOpen] = useState(false)
 
   // Per-chain allowance, so the page can say what the next alert costs before
   // the user fills anything in - the fee should never be a surprise raised by a
@@ -852,10 +862,28 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
       )}
       <PageHeader title={t('alarms.title')} help={t('help.account')}>
         <span className="hidden text-sm text-slate-500 sm:inline">{email}</span>
+        <button
+          onClick={() => setAccountOpen(true)}
+          className="flex items-center gap-1.5 rounded-xl bg-white px-2.5 py-1.5 text-sm text-slate-600 ring-1 ring-slate-200 hover:text-amber-700"
+        >
+          <UserCog className="h-4 w-4" strokeWidth={1.8} />
+          <span className="hidden sm:inline">{t('alarms.accountSettings')}</span>
+        </button>
         <button onClick={logout} className="text-sm text-slate-500 hover:text-amber-700">
           {t('account.signOut')}
         </button>
       </PageHeader>
+
+      {/* Rarely-touched configuration, out of the page's spine: link an
+          address, set up push. The cards inside are unchanged. */}
+      {accountOpen && (
+        <Modal title={t('alarms.accountSettings')} onClose={() => setAccountOpen(false)}>
+          <div className="space-y-3">
+            <MainAddressCard />
+            <PushSettings />
+          </div>
+        </Modal>
+      )}
 
       {error && (
         <div role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -863,21 +891,31 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
         </div>
       )}
 
-      <MainAddressCard />
+      <Tabs
+        idPrefix="alarms"
+        label={t('alarms.title')}
+        activeId={tab}
+        onChange={(id) => setTab(id as 'watched' | 'alerts')}
+        items={[
+          { id: 'watched', label: t('alarms.watched') },
+          // The unread count rides on the tab label so it stays visible from
+          // the other tab - the badge that used to sit on the section heading.
+          { id: 'alerts', label: unread > 0 ? `${t('alarms.alerts')} (${unread})` : t('alarms.alerts') },
+        ]}
+      />
 
-      <PushSettings />
-
+      <TabPanel id="watched" activeId={tab} idPrefix="alarms">
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="flex items-center gap-1.5 px-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-            <Eye className="h-3.5 w-3.5" strokeWidth={1.8} /> {t('alarms.watched')}
+          <span className="flex items-center gap-1.5 px-1 text-xs text-slate-500">
+            <Eye className="h-3.5 w-3.5" strokeWidth={1.8} />
             {/* The cap used to be invisible until the server rejected a filled-in
                 form. Stating it up front is the whole point. */}
-            <span className="tabular-nums normal-case">
+            <span className="tabular-nums">
               {t('alarms.watchedCount', { count: addresses.length, limit: watchLimit })}
             </span>
             <HelpTip text={t('help.watchLimit', { limit: watchLimit })} />
-          </h2>
+          </span>
           <button
             type="button"
             onClick={() => setShowAddForm((o) => !o)}
@@ -1050,99 +1088,34 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
         ) : (
           <ul className="space-y-2">
             {addresses.map((w) => (
-              <li key={w.id} className="rounded-2xl bg-white p-4 ring-1 ring-slate-200/70">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
-                      {w.label || shortAddr(w.address)}
-                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-normal text-slate-500">
-                        {chainName(w.chain_key)}
-                      </span>
-                      {/* Only paid watches say anything: a "free" badge on every
-                          row would be noise on a page where free is normal. */}
-                      {w.tier === 'paid' && (
-                        <span className="flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-normal text-amber-800">
-                          {w.paid_until
-                            ? t('pay.paidUntil', { date: w.paid_until.slice(0, 10) })
-                            : t('pay.paidForever')}
-                          <HelpTip text={t('help.payCadence')} align="start" />
-                        </span>
-                      )}
-                    </div>
-                    <CopyAddress address={w.address} className="max-w-full text-xs text-slate-500" />
-                  </div>
-                  <button
-                    onClick={() => setRemovingWatch({ id: w.id, label: w.label || w.address })}
-                    aria-label={t('common.remove')}
-                    className="shrink-0 rounded-lg p-1 text-slate-500 hover:bg-red-50 hover:text-red-600"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-                {/* A paused alert has to say so where the alert lives. The
-                    address, its label and its history are all still here - only
-                    the watching stopped - so the prompt is a renewal, not a
-                    recovery. */}
-                {w.payment_state === 'lapsed' && (
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                    <span className="flex items-center gap-1.5">
-                      <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
-                      {t('pay.lapsedNote')}
-                      <HelpTip text={t('help.payLapsed')} align="start" />
-                    </span>
-                    <button
-                      onClick={() => startPayment(w.chain_key, undefined, w.id)}
-                      className="shrink-0 rounded-lg bg-amber-500 px-3 py-1 font-medium text-slate-900 hover:bg-amber-600"
-                    >
-                      {t('pay.renew')}
-                    </button>
-                  </div>
-                )}
-                <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-100 pt-3">
-                  <label className="flex items-center gap-1.5 text-xs text-slate-500">
-                    {t('alarms.alarmType')}
-                    <OptionPicker
-                      label={t('alarms.alarmType')}
-                      value={w.alarm_type}
-                      onChange={(v) => api.watchedSetType(w.id, v as AlarmType).then(refresh)}
-                      className="py-1 text-xs"
-                      options={ALARM_TYPES.map((ty) => ({ value: ty, label: t(TYPE_KEY[ty]) }))}
-                    />
-                  </label>
-                  <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <Toggle
-                      checked={w.alarm_enabled === 1}
-                      onChange={(v) => api.watchedToggle(w.id, v).then(refresh)}
-                      label={t('alarms.alarm')}
-                    />
-                    {t('alarms.alarm')}
-                  </div>
-                </div>
-              </li>
+              <WatchedRow
+                key={w.id}
+                w={w}
+                chainLabel={chainName(w.chain_key)}
+                shortLabel={w.label || shortAddr(w.address)}
+                onSetType={(v) => api.watchedSetType(w.id, v).then(refresh)}
+                onToggle={(v) => api.watchedToggle(w.id, v).then(refresh)}
+                onRemove={() => setRemovingWatch({ id: w.id, label: w.label || w.address })}
+                onRenew={() => startPayment(w.chain_key, undefined, w.id)}
+              />
             ))}
           </ul>
         )}
       </section>
+      </TabPanel>
 
+      <TabPanel id="alerts" activeId={tab} idPrefix="alarms">
       <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="px-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-            {t('alarms.alerts')}
-            {unread > 0 && (
-              <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold normal-case text-red-700">
-                {t('alarms.new', { count: unread })}
-              </span>
-            )}
-          </h2>
-          {unread > 0 && (
+        {unread > 0 && (
+          <div className="flex justify-end">
             <button
               onClick={() => api.alertsMarkRead().then(refresh)}
               className="text-sm text-amber-700 hover:underline"
             >
               {t('alarms.markRead')}
             </button>
-          )}
-        </div>
+          </div>
+        )}
         {alerts.length === 0 ? (
           <p className="text-sm text-slate-500">{t('alarms.noAlerts')}</p>
         ) : (
@@ -1183,6 +1156,148 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
           </ul>
         )}
       </section>
+      </TabPanel>
     </div>
+  )
+}
+
+/**
+ * One watched address: a quiet row - label, chain, ONE state chip, address -
+ * with everything operable (type, on/off, renewal, removal) behind a
+ * BottomSheet. The row used to carry eight controls; ten of them read as a
+ * settings wall rather than a list.
+ */
+function WatchedRow({
+  w,
+  chainLabel,
+  shortLabel,
+  onSetType,
+  onToggle,
+  onRemove,
+  onRenew,
+}: {
+  w: WatchedAddress
+  chainLabel: string
+  shortLabel: string
+  onSetType: (v: AlarmType) => void
+  onToggle: (v: boolean) => void
+  onRemove: () => void
+  onRenew: () => void
+}) {
+  const { t } = useT()
+  const [open, setOpen] = useState(false)
+  const lapsed = w.payment_state === 'lapsed'
+  const off = w.alarm_enabled !== 1
+
+  // One chip, worst news first: lapsed beats off beats paid-and-fine. "Free
+  // and on" is the normal state and says nothing.
+  const chip = lapsed ? (
+    <span className="flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-normal text-amber-800">
+      <TriangleAlert className="h-3 w-3" /> {t('alarms.lapsed')}
+    </span>
+  ) : off ? (
+    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-normal text-slate-500">
+      {t('alarms.alarmOff')}
+    </span>
+  ) : w.tier === 'paid' ? (
+    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-normal text-amber-800">
+      {w.paid_until ? t('pay.paidUntil', { date: w.paid_until.slice(0, 10) }) : t('pay.paidForever')}
+    </span>
+  ) : null
+
+  return (
+    <li className="rounded-2xl bg-white ring-1 ring-slate-200/70">
+      {/* The row is the button; the copyable address sits below it because a
+          button cannot contain a button (same split as the wallet rows). */}
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
+        aria-label={t('alarms.rowSettings', { label: shortLabel })}
+        className="flex w-full items-center gap-3 px-4 pb-1 pt-3 text-left"
+      >
+        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-sm font-medium">
+          {shortLabel}
+          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-normal text-slate-500">
+            {chainLabel}
+          </span>
+          {chip}
+        </span>
+        <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+      </button>
+      <div className="px-4 pb-3">
+        <CopyAddress address={w.address} className="max-w-full text-xs text-slate-500" />
+      </div>
+
+      {open && (
+        <BottomSheet
+          title={shortLabel}
+          subtitle={`${chainLabel} · ${w.address.slice(0, 14)}...${w.address.slice(-6)}`}
+          onClose={() => setOpen(false)}
+        >
+          <div className="space-y-4">
+            {/* A paused alert has to say so where it is managed. The address,
+                its label and its history are all still here - only the
+                watching stopped - so the prompt is a renewal, not a recovery. */}
+            {lapsed && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <span className="flex items-center gap-1.5">
+                  <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
+                  {t('pay.lapsedNote')}
+                  <HelpTip text={t('help.payLapsed')} align="start" />
+                </span>
+                <button
+                  onClick={() => {
+                    setOpen(false)
+                    onRenew()
+                  }}
+                  className="shrink-0 rounded-lg bg-amber-500 px-3 py-1 font-medium text-slate-900 hover:bg-amber-600"
+                >
+                  {t('pay.renew')}
+                </button>
+              </div>
+            )}
+            {w.tier === 'paid' && !lapsed && (
+              <p className="flex items-center gap-1.5 text-xs text-slate-500">
+                {w.paid_until
+                  ? t('pay.paidUntil', { date: w.paid_until.slice(0, 10) })
+                  : t('pay.paidForever')}
+                <HelpTip text={t('help.payCadence')} align="start" />
+              </p>
+            )}
+            <div className="flex items-center justify-between gap-2 text-sm text-slate-600">
+              <span className="flex items-center gap-1.5">
+                {t('alarms.alarmType')}
+                <HelpTip text={t('help.alarmType')} />
+              </span>
+              <OptionPicker
+                label={t('alarms.alarmType')}
+                value={w.alarm_type}
+                onChange={(v) => onSetType(v as AlarmType)}
+                className="py-1.5"
+                options={ALARM_TYPES.map((ty) => ({ value: ty, label: t(TYPE_KEY[ty]) }))}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-2 text-sm text-slate-600">
+              <span>{t('alarms.alarm')}</span>
+              <Toggle
+                checked={w.alarm_enabled === 1}
+                onChange={onToggle}
+                label={t('alarms.alarm')}
+              />
+            </div>
+            <button
+              onClick={() => {
+                setOpen(false)
+                onRemove()
+              }}
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-red-200 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+            >
+              <Trash2 className="h-4 w-4" /> {t('common.remove')}
+            </button>
+          </div>
+        </BottomSheet>
+      )}
+    </li>
   )
 }

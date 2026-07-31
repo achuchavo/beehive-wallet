@@ -155,7 +155,10 @@ export const ko: Record<string, string> = {
   'alarms.noWatched': '감시 중인 주소가 없습니다. 위에서 추가하세요.',
   'alarms.alarm': '알림',
   'alarms.alerts': '알림 내역',
-  'alarms.new': '새 알림 {count}개',
+  'alarms.accountSettings': '계정·알림 설정',
+  'alarms.lapsed': '만료됨',
+  'alarms.alarmOff': '꺼짐',
+  'alarms.rowSettings': '{label} 설정',
   'alarms.markRead': '모두 읽음 표시',
   'alarms.noAlerts':
     '아직 알림이 없습니다. 감시 중인 주소에서 거래가 발생하면 약 1분 이내에 여기에 표시됩니다.',
