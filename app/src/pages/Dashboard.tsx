@@ -9,7 +9,6 @@ import {
   Import,
   Bell,
   Gift,
-  Landmark,
   ChevronDown,
   ChevronRight,
   ShieldCheck,
@@ -31,6 +30,7 @@ import HelpTip from '../components/HelpTip'
 import LoadingOverlay from '../components/LoadingOverlay'
 import OptionPicker from '../components/OptionPicker'
 import PageHeader from '../components/PageHeader'
+import Tabs, { TabPanel } from '../components/Tabs'
 import CountUp from '../components/CountUp'
 import DeltaFloat from '../components/DeltaFloat'
 import { maskAmount } from '../privacyMode'
@@ -94,13 +94,11 @@ export default function Dashboard() {
   const [currency, setCurrencyState] = useState(getCurrency())
   // Price per chain key - different chains have different coingecko ids.
   const [prices, setPrices] = useState<Record<string, number | null>>({})
-  // '' = show every chain.
-  const [chainFilter, setChainFilter] = useState('')
-  // Per-chain override of the default expand state. Absent = use the default,
-  // which is "first chain open, the rest folded" - with several networks the
-  // page was otherwise a very long scroll before the second total came into
-  // view. Filtering to one chain always shows it in full.
-  const [openChains, setOpenChains] = useState<Record<string, boolean>>({})
+  // Which chain's tab is selected. '' (or a key that no longer exists) falls
+  // back to the first wallet chain. This replaced three competing mechanisms -
+  // a header filter, default-folded groups and per-card fold buttons - that
+  // all answered the same question: one chain on screen at a time.
+  const [activeChainKey, setActiveChainKey] = useState('')
   // Average claimed per month, per chain. Derived from claim history, which is
   // a separate (and slower) set of tx queries - kept out of the balance load so
   // it can never delay the numbers people actually come here for.
@@ -153,8 +151,6 @@ export default function Dashboard() {
     const from: Record<string, string> = {}
     const fromAvailable: Record<string, string> = {}
     const fromStaked: Record<string, string> = {}
-    const fromRewards: Record<string, string> = {}
-    const fromCommission: Record<string, string> = {}
     const changed: Record<string, string> = {}
     const keys = Array.from(new Set(fresh.map((r) => r.chain.key)))
 
@@ -165,11 +161,7 @@ export default function Dashboard() {
 
       // Count up from the previous figures regardless of the address-set check:
       // animating between two values is cosmetic and cannot misreport anything.
-      // Rewards and commission are animated too - they accrue every block, so
-      // they are what visibly moves on a normal return.
       from[key] = sumBase(prevRows.map((r) => addBase(r.available, r.staked)))
-      fromRewards[key] = sumBase(prevRows.map((r) => r.rewards))
-      fromCommission[key] = sumBase(prevRows.map((r) => r.commission))
       fromAvailable[key] = sumBase(prevRows.map((r) => r.available))
       fromStaked[key] = sumBase(prevRows.map((r) => r.staked))
 
@@ -189,12 +181,7 @@ export default function Dashboard() {
     }
 
     setCountFrom(from)
-    setCountFromStat({
-      available: fromAvailable,
-      staked: fromStaked,
-      rewards: fromRewards,
-      commission: fromCommission,
-    })
+    setCountFromStat({ available: fromAvailable, staked: fromStaked })
     setDeltas(changed)
 
     // Persist only chains where EVERY wallet loaded cleanly. A chain with a
@@ -384,13 +371,19 @@ export default function Dashboard() {
   // from the numbers the user last saw.
   const modalUp = isColdStart && !rows && (loading || !chainsSettled)
 
-  const visibleRows = (displayRows ?? []).filter((r) => !chainFilter || r.chain.key === chainFilter)
+  // The selected tab's chain, falling back to the first when the stored key is
+  // stale (a wallet was removed) or nothing was picked yet.
+  const activeChain = walletChains.some((c) => c.key === activeChainKey)
+    ? activeChainKey
+    : (walletChains[0]?.key ?? '')
+
+  const visibleRows = (displayRows ?? []).filter((r) => r.chain.key === activeChain)
 
   // Totals are computed per chain and summed with exact BigInt arithmetic.
   // Base-unit balances routinely exceed Number.MAX_SAFE_INTEGER, and two chains
   // are different assets - neither may be added together as plain numbers.
   const groups = walletChains
-    .filter((c) => !chainFilter || c.key === chainFilter)
+    .filter((c) => c.key === activeChain)
     .map((c) => {
       const inChain = visibleRows.filter((r) => r.chain.key === c.key)
       const of = (fn: (p: WalletPortfolio) => string) => sumBase(inChain.map((r) => fn(r.portfolio)))
@@ -451,18 +444,19 @@ export default function Dashboard() {
             hint: c.symbol,
           }))}
         />
-        {walletChains.length > 1 && (
-          <OptionPicker
-            label={t('dash.chainFilter')}
-            value={chainFilter}
-            onChange={setChainFilter}
-            options={[
-              { value: '', label: t('dash.allChains') },
-              ...walletChains.map((c) => ({ value: c.key, label: c.chainName })),
-            ]}
-          />
-        )}
       </PageHeader>
+
+      {/* One chain on screen at a time. The tab strip is the only chain
+          selector - no header filter, no per-card folding. */}
+      {walletChains.length > 1 && (
+        <Tabs
+          idPrefix="dash-chain"
+          label={t('dash.chainFilter')}
+          activeId={activeChain}
+          onChange={setActiveChainKey}
+          items={walletChains.map((c) => ({ id: c.key, label: c.chainName }))}
+        />
+      )}
 
       {/* Never let cached figures pass as live. This says, in words, that what
           is on screen is the last known state and is being refreshed.
@@ -506,15 +500,9 @@ export default function Dashboard() {
         <LoadingOverlay title={t('dash.loadingWallets')} subtitle={t('dash.loadingWalletsHint')} />
       )}
 
-      {groups.map((g, gi) => {
-        // Collapsing only earns its keep when several chains are stacked. With
-        // one group there is nothing to scroll past, so the control would be
-        // pure friction.
-        const collapsible = groups.length > 1
-        const open = !collapsible || (openChains[g.chain.key] ?? gi === 0)
-        const panelId = `chain-panel-${g.chain.key}`
-        return (
-        <div key={g.chain.key} className="space-y-4">
+      {groups.map((g) => {
+        const content = (
+        <div className="space-y-4">
           {/* Hero card. Tinted with the brand amber so the headline figure
               reads as the primary surface rather than one more white card;
               the income card below uses green, so the two are distinguishable
@@ -579,43 +567,25 @@ export default function Dashboard() {
               </div>
             )}
 
-            {open && (
-              <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-amber-200/70 pt-4 text-sm sm:grid-cols-4">
-                <Stat icon={Wallet} label={t('dash.available')} help={t('help.available')} base={g.available} from={countFromStat.available?.[g.chain.key]} chain={g.chain} />
-                <Stat icon={Coins} label={t('dash.staked')} help={t('help.staked')} base={g.staked} from={countFromStat.staked?.[g.chain.key]} chain={g.chain} />
-                {isPositiveBase(g.unbonding) && (
-                  <Stat
-                    icon={Undo2}
-                    label={t('dash.unbonding')}
-                    help={t('help.unbonding')}
-                    base={g.unbonding}
-                    chain={g.chain}
-                  />
-                )}
-                <Stat icon={Gift} label={t('dash.rewards')} help={t('help.rewards')} base={g.rewards} from={countFromStat.rewards?.[g.chain.key]} chain={g.chain} />
-                {g.anyValidator && (
-                  <Stat icon={Landmark} label={t('dash.commission')} help={t('help.commission')} base={g.commission} from={countFromStat.commission?.[g.chain.key]} chain={g.chain} />
-                )}
-              </div>
-            )}
-
-            {/* The headline total stays visible either way - folding hides the
-                breakdown, never the figure the card exists to show. */}
-            {collapsible && (
-              <button
-                type="button"
-                onClick={() => setOpenChains((s) => ({ ...s, [g.chain.key]: !open }))}
-                aria-expanded={open}
-                aria-controls={panelId}
-                className="mt-3 flex w-full items-center justify-center gap-1 rounded-xl bg-white/60 py-1.5 text-xs font-medium text-amber-900 hover:bg-white"
-              >
-                {t(open ? 'dash.foldChain' : 'dash.unfoldChain', { chain: g.chain.chainName })}
-                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
-              </button>
-            )}
+            {/* What the total is MADE OF. Rewards and commission are not here:
+                they are income, and the green card below owns income - stating
+                them twice was the clutter the audit called out. */}
+            <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-amber-200/70 pt-4 text-sm sm:grid-cols-3">
+              <Stat icon={Wallet} label={t('dash.available')} help={t('help.available')} base={g.available} from={countFromStat.available?.[g.chain.key]} chain={g.chain} />
+              <Stat icon={Coins} label={t('dash.staked')} help={t('help.staked')} base={g.staked} from={countFromStat.staked?.[g.chain.key]} chain={g.chain} />
+              {isPositiveBase(g.unbonding) && (
+                <Stat
+                  icon={Undo2}
+                  label={t('dash.unbonding')}
+                  help={t('help.unbonding')}
+                  base={g.unbonding}
+                  chain={g.chain}
+                />
+              )}
+            </div>
           </div>
 
-          <div id={panelId} hidden={!open} className="space-y-4">
+          <div className="space-y-4">
           {/* Average monthly income - a headline metric, deliberately loud.
               Shown whenever this chain is actually earning (staked or accrued
               rewards), so someone who has staked but never claimed sees WHY it
@@ -671,22 +641,23 @@ export default function Dashboard() {
                 </div>
                 <ChevronRight className="h-5 w-5 shrink-0 text-green-700 transition-transform group-hover:translate-x-0.5" />
               </div>
-            </Link>
-          )}
 
-          {isPositiveBase(g.claimable) && (
-            <Link
-              to={`/rewards?chain=${g.chain.key}`}
-              className="flex items-center justify-between rounded-xl bg-green-50/80 px-4 py-3 text-sm text-green-800 hover:bg-green-100"
-            >
-              <span className="flex items-center gap-2">
-                <Gift className="h-4 w-4" strokeWidth={1.8} />{' '}
-                {t('dash.claimable', {
-                  amount: maskAmount(formatAmountShort(g.claimable, g.chain), hidden),
-                  denom: g.chain.displayDenom,
-                })}
-              </span>
-              <span className="font-medium">{t('dash.claim')}</span>
+              {/* Claimable now, as this card's own footer: income and the act
+                  of collecting it are one thought, one surface, one link. */}
+              {isPositiveBase(g.claimable) && (
+                <div className="mt-3 flex items-center justify-between border-t border-green-200/70 pt-2.5 text-sm text-green-800">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <Gift className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+                    <span className="truncate">
+                      {t('dash.claimable', {
+                        amount: maskAmount(formatAmountShort(g.claimable, g.chain), hidden),
+                        denom: g.chain.displayDenom,
+                      })}
+                    </span>
+                  </span>
+                  <span className="shrink-0 font-medium">{t('dash.claim')}</span>
+                </div>
+              )}
             </Link>
           )}
 
@@ -714,6 +685,15 @@ export default function Dashboard() {
           </section>
           </div>
         </div>
+        )
+        // With several chains the group lives inside a proper tabpanel wired
+        // to the tab strip; with one chain there are no tabs to wire to.
+        return walletChains.length > 1 ? (
+          <TabPanel key={g.chain.key} id={g.chain.key} activeId={activeChain} idPrefix="dash-chain">
+            {content}
+          </TabPanel>
+        ) : (
+          <div key={g.chain.key}>{content}</div>
         )
       })}
 

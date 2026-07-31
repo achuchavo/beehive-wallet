@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Gift, Landmark, ExternalLink, ShieldCheck, Plus, Import, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Gift, ExternalLink, ShieldCheck, Plus, Import, TrendingUp, ChevronLeft, ChevronRight } from 'lucide-react'
 import { DEFAULT_CHAIN, resolveChain, findChain, formatAmount, type ChainInfo } from '../chains'
 import { sumBase, addBase, isPositiveBase } from '../wallet/amount'
 import { useWallet } from '../wallet/WalletContext'
@@ -23,6 +23,7 @@ import LoadingOverlay from '../components/LoadingOverlay'
 import OptionPicker from '../components/OptionPicker'
 import PageHeader from '../components/PageHeader'
 import Collapsible from '../components/Collapsible'
+import BottomSheet from '../components/BottomSheet'
 import { maskAmount, usePrivacyMode } from '../privacyMode'
 import { useChains } from '../chainStore'
 import { useT } from '../i18n/I18nContext'
@@ -68,6 +69,9 @@ export default function Rewards() {
   const [historyPage, setHistoryPage] = useState(0)
   const [batch, setBatch] = useState<BatchPlan[] | null>(null)
   const [batchBusy, setBatchBusy] = useState(false)
+  // Chain key whose claim sheet is open, or null. The password form lives in a
+  // BottomSheet so the page itself never grows a form mid-list.
+  const [claimSheet, setClaimSheet] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     if (wallets.length === 0) return
@@ -257,51 +261,86 @@ export default function Rewards() {
       )}
       {error && <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
-      {/* One pair of totals per network. Never a single combined figure: two
-          chains are two assets, and a sum of their base units means nothing. */}
-      {groups.map((g) => (
+      {/* ONE claimable figure per network - rewards and commission summed into
+          the number the user actually collects, with the split stated quietly
+          underneath only when commission exists. Never a combined figure across
+          chains: two chains are two assets, and a sum of their base units means
+          nothing. The only amber action on this page is the claim button here;
+          per-wallet actions are behind their rows. */}
+      {groups.map((g) => {
+        const total = addBase(g.rewards, g.commission)
+        return (
         <div key={g.chain.key} className="space-y-2">
           {walletChains.length > 1 && (
             <div className="text-xs font-medium text-slate-500">{g.chain.chainName}</div>
           )}
-          <div className="grid grid-cols-2 gap-3">
-            <Card>
-              <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                <Gift className="h-3.5 w-3.5" strokeWidth={1.8} /> {t('rewards.claimableRewards')}
-                <HelpTip text={t('help.rewards')} />
-              </div>
-              <div className="mt-0.5 text-3xl font-semibold tabular-nums">
-                {maskAmount(formatAmount(g.rewards, g.chain), hidden)}
-              </div>
-              <div className="text-xs text-slate-500">
-                {g.chain.displayDenom} · {t('rewards.acrossWallets', { count: g.rows.length })}
-              </div>
-            </Card>
-            <Card>
-              <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                <Landmark className="h-3.5 w-3.5" strokeWidth={1.8} /> {t('rewards.claimableCommission')}
-                <HelpTip text={t('help.commission')} />
-              </div>
-              <div className="mt-0.5 text-3xl font-semibold tabular-nums">
-                {maskAmount(formatAmount(g.commission, g.chain), hidden)}
-              </div>
-              <div className="text-xs text-slate-500">
-                {g.chain.displayDenom} · {t('rewards.validatorWallets')}
-              </div>
-            </Card>
-          </div>
+          <Card>
+            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+              <Gift className="h-3.5 w-3.5" strokeWidth={1.8} /> {t('rewards.claimableTotal')}
+              <HelpTip text={t('help.rewards')} />
+            </div>
+            <div className="mt-0.5 text-3xl font-semibold tabular-nums">
+              {maskAmount(formatAmount(total, g.chain), hidden)}{' '}
+              <span className="text-base font-medium text-slate-500">{g.chain.displayDenom}</span>
+            </div>
+            <div className="flex items-center gap-1 text-xs text-slate-500">
+              {isPositiveBase(g.commission) ? (
+                <>
+                  <span className="tabular-nums">
+                    {maskAmount(formatAmount(g.rewards, g.chain), hidden)} {t('rewards.rewardsWord')}
+                    {' · '}
+                    {maskAmount(formatAmount(g.commission, g.chain), hidden)}{' '}
+                    {t('rewards.commissionWord')}
+                  </span>
+                  <HelpTip text={t('help.commission')} />
+                </>
+              ) : (
+                t('rewards.acrossWallets', { count: g.rows.length })
+              )}
+            </div>
+            {g.claimable.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setClaimSheet(g.chain.key)}
+                className="mt-3 w-full rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-medium text-slate-900 hover:bg-amber-600 sm:w-auto sm:px-6"
+              >
+                {g.claimable.length > 1 ? t('rewards.claimAll') : t('rewards.claim')}
+              </button>
+            )}
+          </Card>
 
-          {g.claimable.length > 1 && (
-            <ClaimForm
-              label={t('rewards.claimAllLabel', { count: g.claimable.length })}
-              submitLabel={t('rewards.claimAll')}
-              onSubmit={(pw) => claimAll(pw, g.claimable)}
-              onError={setError}
-              hint={t('rewards.claimAllHint')}
-            />
+          {claimSheet === g.chain.key && (
+            <BottomSheet
+              title={g.claimable.length > 1 ? t('rewards.claimAll') : t('rewards.claim')}
+              subtitle={g.chain.chainName}
+              onClose={() => setClaimSheet(null)}
+            >
+              <ClaimForm
+                label={
+                  g.claimable.length > 1
+                    ? t('rewards.claimAllLabel', { count: g.claimable.length })
+                    : g.claimable[0].earnings.isValidator &&
+                        isPositiveBase(g.claimable[0].earnings.commission)
+                      ? t('rewards.claimForWithCommission', { name: g.claimable[0].name })
+                      : t('rewards.claimFor', { name: g.claimable[0].name })
+                }
+                submitLabel={
+                  g.claimable.length > 1 ? t('rewards.claimAll') : t('rewards.signAndClaim')
+                }
+                onSubmit={async (pw) => {
+                  await claimAll(pw, g.claimable)
+                  // Only reached on success - a throw keeps the sheet (and its
+                  // inline error) on screen. The batch review takes over.
+                  setClaimSheet(null)
+                }}
+                onError={setError}
+                hint={g.claimable.length > 1 ? t('rewards.claimAllHint') : undefined}
+              />
+            </BottomSheet>
           )}
         </div>
-      ))}
+        )
+      })}
 
       {/* Unlike the dashboard there is no cached snapshot here, so an in-app
           arrival has nothing to read either way - the modal is the honest state
@@ -440,7 +479,8 @@ function WalletCard({
   const { getSigner } = useWallet()
   const hidden = usePrivacyMode()
   const { prepare, modal } = useTxReview()
-  const [action, setAction] = useState<'none' | 'claim' | 'restake'>('none')
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [action, setAction] = useState<'claim' | 'restake'>('claim')
   const { id: walletId, earnings, name, chain } = row
   const hasCommission = earnings.isValidator && isPositiveBase(earnings.commission)
   const hasRewards = isPositiveBase(earnings.rewards)
@@ -468,7 +508,7 @@ function WalletCard({
       memo,
       confirmLabel: t('review.confirmClaim'),
       onDone: (hash) => {
-        setAction('none')
+        setSheetOpen(false)
         onNotice(t('rewards.claimedFor', { name, hash: hash.slice(0, 12) }))
         onReload()
       },
@@ -497,7 +537,7 @@ function WalletCard({
       memo,
       confirmLabel: t('review.confirmRestake'),
       onDone: (hash) => {
-        setAction('none')
+        setSheetOpen(false)
         onNotice(t('rewards.restakedFor', { name, hash: hash.slice(0, 12) }))
         onReload()
       },
@@ -514,10 +554,19 @@ function WalletCard({
     })
   }
 
+  // Quiet row, actions behind it. The row itself is the button (no nested
+  // interactive elements), and everything it opens lives in a BottomSheet so
+  // the list never reflows - the pattern Staking's delegate flow already uses.
   return (
-    <Card>
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
+    <Card padded={false}>
+      <button
+        type="button"
+        onClick={() => setSheetOpen(true)}
+        disabled={!hasSomething}
+        aria-haspopup={hasSomething ? 'dialog' : undefined}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left disabled:cursor-default"
+      >
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 text-sm font-medium">
             {name}
             {earnings.isValidator && (
@@ -527,70 +576,75 @@ function WalletCard({
             )}
           </div>
           <div className="truncate font-mono text-xs text-slate-500">{earnings.address}</div>
-          <div className="mt-1 text-xs tabular-nums">
-            <span className="text-green-700">
-              {maskAmount(formatAmount(earnings.rewards, chain), hidden)} {chain.displayDenom}{' '}
-              {t('rewards.rewardsWord')}
+        </div>
+        <span className="shrink-0 text-right tabular-nums">
+          <span className="block text-sm font-semibold text-green-700">
+            {maskAmount(formatAmount(earnings.rewards, chain), hidden)}{' '}
+            <span className="text-xs font-medium text-green-700/70">{chain.displayDenom}</span>
+          </span>
+          {hasCommission && (
+            <span className="block text-xs text-amber-700">
+              +{maskAmount(formatAmount(earnings.commission, chain), hidden)}{' '}
+              {t('rewards.commissionWord')}
             </span>
-            {earnings.isValidator && (
-              <span className="ml-2 text-amber-700">
-                {maskAmount(formatAmount(earnings.commission, chain), hidden)} {chain.displayDenom}{' '}
-                {t('rewards.commissionWord')}
-              </span>
+          )}
+        </span>
+        {hasSomething && <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />}
+      </button>
+
+      {sheetOpen && (
+        <BottomSheet
+          title={name}
+          subtitle={`${chain.chainName} · ${earnings.address.slice(0, 14)}...${earnings.address.slice(-6)}`}
+          onClose={() => setSheetOpen(false)}
+        >
+          <div className="space-y-3">
+            {/* Claim vs restake, only when both are possible (restake needs
+                rewards - commission cannot be restaked). */}
+            {hasRewards && (
+              <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
+                {(['claim', 'restake'] as const).map((a) => (
+                  <button
+                    key={a}
+                    type="button"
+                    onClick={() => setAction(a)}
+                    aria-pressed={action === a}
+                    className={`rounded-lg py-1.5 text-sm font-medium transition-colors ${
+                      action === a
+                        ? 'bg-white text-amber-700 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    {t(a === 'claim' ? 'rewards.claim' : 'rewards.restake')}
+                  </button>
+                ))}
+              </div>
             )}
+            {action === 'restake' && hasRewards && (
+              <p className="text-xs text-slate-500">{t('help.restake')}</p>
+            )}
+            <ClaimForm
+              label={
+                action === 'restake' && hasRewards
+                  ? t('rewards.restakeLabel', {
+                      amount: maskAmount(formatAmount(earnings.rewards, chain), hidden),
+                      denom: chain.displayDenom,
+                      name,
+                    })
+                  : hasCommission
+                    ? t('rewards.claimForWithCommission', { name })
+                    : t('rewards.claimFor', { name })
+              }
+              submitLabel={
+                action === 'restake' && hasRewards
+                  ? t('rewards.signAndRestake')
+                  : t('rewards.signAndClaim')
+              }
+              onSubmit={action === 'restake' && hasRewards ? submitRestake : submitClaim}
+              onError={onError}
+            />
           </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {hasRewards && (
-            <>
-              <HelpTip text={t('help.restake')} align="end" className="text-slate-500" />
-              <button
-                onClick={() => setAction(action === 'restake' ? 'none' : 'restake')}
-                className="rounded-xl px-3 py-1.5 text-sm text-slate-600 ring-1 ring-slate-200 hover:text-amber-700"
-              >
-                {t('rewards.restake')}
-              </button>
-            </>
-          )}
-          {hasSomething && (
-            <button
-              onClick={() => setAction(action === 'claim' ? 'none' : 'claim')}
-              className="rounded-xl bg-amber-500 px-3.5 py-1.5 text-sm font-medium text-slate-900 hover:bg-amber-600"
-            >
-              {t('rewards.claim')}
-            </button>
-          )}
-        </div>
-      </div>
-      {action === 'claim' && (
-        <div className="mt-3">
-          <ClaimForm
-            label={
-              earnings.isValidator && isPositiveBase(earnings.commission)
-                ? t('rewards.claimForWithCommission', { name })
-                : t('rewards.claimFor', { name })
-            }
-            submitLabel={t('rewards.signAndClaim')}
-            onSubmit={submitClaim}
-            onError={onError}
-          />
-        </div>
-      )}
-      {action === 'restake' && (
-        <div className="mt-3">
-          {/* The prose hint is gone: the "?" beside the Restake button says the
-              same thing, and this form is already three lines of instruction. */}
-          <ClaimForm
-            label={t('rewards.restakeLabel', {
-              amount: maskAmount(formatAmount(earnings.rewards, chain), hidden),
-              denom: chain.displayDenom,
-              name,
-            })}
-            submitLabel={t('rewards.signAndRestake')}
-            onSubmit={submitRestake}
-            onError={onError}
-          />
-        </div>
+        </BottomSheet>
       )}
       {modal}
     </Card>
@@ -613,18 +667,24 @@ function ClaimForm({
   const { t } = useT()
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
+  // Shown inside the form as well as reported upward: this form now lives in
+  // a BottomSheet, and the page-level error banner is behind its overlay.
+  const [localError, setLocalError] = useState('')
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true)
     onError('')
+    setLocalError('')
     try {
       // onSubmit derives the signer and opens the review; the plaintext
       // password is not needed afterwards, so it is cleared below. Cancelling
       // the review therefore requires deliberately re-entering it.
       await onSubmit(password)
     } catch (err) {
-      onError(err instanceof Error ? err.message : t('rewards.errClaim'))
+      const msg = err instanceof Error ? err.message : t('rewards.errClaim')
+      setLocalError(msg)
+      onError(msg)
     } finally {
       setPassword('')
       setBusy(false)
@@ -673,6 +733,11 @@ function ClaimForm({
           {busy ? t('rewards.signing') : submitLabel}
         </button>
       </div>
+      {localError && (
+        <div role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+          {localError}
+        </div>
+      )}
       {hint && <p className="text-xs text-slate-500">{hint}</p>}
     </form>
   )
