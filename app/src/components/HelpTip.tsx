@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { HelpCircle } from 'lucide-react'
 import { useT } from '../i18n/I18nContext'
 
@@ -86,8 +86,33 @@ export default function HelpTip({
     }
   }, [open])
 
-  const pin =
-    align === 'start' ? 'left-0' : align === 'end' ? 'right-0' : 'left-1/2 -translate-x-1/2'
+  // Viewport clamping. The align prop is only the STARTING position; a tip can
+  // still be rendered near an edge (a picker at the end of a row, a label on a
+  // narrow phone), and a fixed 15rem panel then runs off screen. Measured once
+  // per open: shifted horizontally back inside the viewport, and flipped below
+  // the "?" when there is no room above it.
+  const panelRef = useRef<HTMLSpanElement>(null)
+  const [shift, setShift] = useState(0)
+  const [below, setBelow] = useState(false)
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setShift(0)
+      setBelow(false)
+      return
+    }
+    const rect = panelRef.current?.getBoundingClientRect()
+    if (!rect || rect.width === 0) return // jsdom / not laid out yet
+    const margin = 8
+    let dx = 0
+    if (rect.left < margin) dx = margin - rect.left
+    else if (rect.right > window.innerWidth - margin) dx = window.innerWidth - margin - rect.right
+    if (dx !== 0) setShift(dx)
+    if (rect.top < margin) setBelow(true)
+  }, [open])
+
+  const pin = align === 'start' ? 'left-0' : align === 'end' ? 'right-0' : 'left-1/2'
+  const baseX = align === 'center' ? `calc(-50% + ${shift}px)` : `${shift}px`
 
   return (
     <span
@@ -142,9 +167,13 @@ export default function HelpTip({
           by aria-describedby even while invisible. */}
       {open && (
         <span
+          ref={panelRef}
           id={panelId}
           role="note"
-          className={`absolute bottom-full z-30 mb-1.5 w-60 rounded-xl bg-slate-800 px-3 py-2 text-left text-xs font-normal leading-relaxed text-white shadow-lg ${pin}`}
+          style={{ transform: `translateX(${baseX})` }}
+          className={`absolute z-30 w-60 rounded-xl bg-slate-800 px-3 py-2 text-left text-xs font-normal leading-relaxed text-white shadow-lg ${pin} ${
+            below ? 'top-full mt-1.5' : 'bottom-full mb-1.5'
+          }`}
         >
           {text}
         </span>

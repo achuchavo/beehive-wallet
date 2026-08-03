@@ -16,8 +16,10 @@ import {
   Undo2,
   Eye,
   EyeOff,
+  UserCircle,
 } from 'lucide-react'
 import { DEFAULT_CHAIN, findChain, formatAmountShort, type ChainInfo } from '../chains'
+import { useAuth } from '../auth/AuthContext'
 import { useChains } from '../chainStore'
 import { useColdStart } from '../coldStart'
 import { usePrivacyMode, setPrivacyMode } from '../privacyMode'
@@ -69,6 +71,7 @@ interface Row {
 export default function Dashboard() {
   const { t } = useT()
   const { wallets } = useWallet()
+  const auth = useAuth()
   // Subscribing keeps this component re-rendering as the registry resolves.
   // 'error' counts as settled: we then fall back to the bootstrap chain rather
   // than spinning forever, and App already shows the load-failure banner.
@@ -310,10 +313,37 @@ export default function Dashboard() {
     }
   }, [wallets, chainsSettled])
 
+  // Whether the notification account is signed in, visible on the page people
+  // actually land on - the sidebar says so on desktop, but on a phone that
+  // lives behind the drawer. A green dot = signed in; the link goes where
+  // signing in (and the alerts) happen. Shown on the empty state too: a
+  // signed-in user with no wallets is exactly the watch-any-address case.
+  const accountChip = auth.status !== 'loading' && (
+    <Link
+      to="/alarms"
+      title={
+        auth.status === 'in'
+          ? t('dash.signedInAs', { email: auth.email ?? '' })
+          : t('dash.notSignedIn')
+      }
+      className="relative rounded-xl bg-white px-2.5 py-1.5 text-slate-600 ring-1 ring-slate-200 hover:text-amber-700"
+    >
+      <UserCircle className="h-4 w-4" strokeWidth={1.8} />
+      {auth.status === 'in' && (
+        <span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-green-500 ring-2 ring-white" />
+      )}
+      <span className="sr-only">
+        {auth.status === 'in'
+          ? t('dash.signedInAs', { email: auth.email ?? '' })
+          : t('dash.notSignedIn')}
+      </span>
+    </Link>
+  )
+
   if (wallets.length === 0) {
     return (
       <div className="space-y-6">
-        <PageHeader title={t('dash.title')} />
+        <PageHeader title={t('dash.title')}>{accountChip}</PageHeader>
         <EmptyState
           icon={Wallet}
           title={t('dash.welcome')}
@@ -420,6 +450,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <PageHeader title={t('dash.title')}>
+        {accountChip}
         {/* Display-only, and labelled as such in the help: the figures are
             still in the page and anyone with the device can switch this back.
             It is for shoulder-surfing and screen sharing, not secrecy. */}

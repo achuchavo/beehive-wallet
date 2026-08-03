@@ -393,5 +393,78 @@ class PaidAlertGating(unittest.TestCase):
         self.assertEqual(db.rollbacks, 1)
 
 
+class UptimeStabilization(unittest.TestCase):
+    """Recovered must mean STABILIZED, not merely one poll under the threshold.
+
+    The missed-blocks counter is a sliding window that drains block by block,
+    so a validator hovering at the threshold crosses it in both directions all
+    night. is_stable() is the hysteresis line; evaluate_uptime holds the down
+    state between the two lines and says nothing.
+    """
+
+    def setUp(self):
+        self._push = watcher.send_push
+        self.pushes = []
+        watcher.send_push = lambda *a, **k: self.pushes.append(a)
+
+    def tearDown(self):
+        watcher.send_push = self._push
+
+    @staticmethod
+    def sub(down_state):
+        return {
+            "id": 1,
+            "user_id": 7,
+            "validator_address": "panaceavaloper1xxxxxxxxxxxxxxxx",
+            "moniker": "Test",
+            "last_down_state": down_state,
+            "last_alert_at": None,
+            "last_missed": 0,
+            "snooze_until": None,
+            "frequency_minutes": 60,
+            "miss_threshold": 100,
+        }
+
+    def _run(self, down_state, down, missed, stable):
+        cur = FakeCursor()
+        with contextlib.redirect_stdout(io.StringIO()):
+            watcher.evaluate_uptime(cur, FakeDb(), self.sub(down_state), down, missed, stable)
+        return cur.executed
+
+    def test_is_stable_uses_the_hysteresis_line_not_the_threshold(self):
+        self.assertFalse(watcher.is_stable(99, 100, jailed=False, tombstoned=False))
+        self.assertFalse(watcher.is_stable(51, 100, jailed=False, tombstoned=False))
+        self.assertTrue(watcher.is_stable(50, 100, jailed=False, tombstoned=False))
+        self.assertTrue(watcher.is_stable(0, 100, jailed=False, tombstoned=False))
+
+    def test_is_stable_never_true_while_jailed_or_tombstoned(self):
+        self.assertFalse(watcher.is_stable(0, 100, jailed=True, tombstoned=False))
+        self.assertFalse(watcher.is_stable(0, 100, jailed=False, tombstoned=True))
+
+    def test_hovering_under_threshold_holds_the_down_state_silently(self):
+        executed = self._run(down_state=1, down=False, missed=80, stable=False)
+        joined = " ".join(executed)
+        self.assertNotIn("recovered", joined)
+        self.assertNotIn("last_down_state = 0", joined)
+        self.assertEqual(self.pushes, [])
+
+    def test_recovered_fires_once_drained_past_the_line(self):
+        executed = self._run(down_state=1, down=False, missed=10, stable=True)
+        joined = " ".join(executed)
+        self.assertIn("'recovered'", joined)
+        self.assertIn("last_down_state = 0", joined)
+        self.assertEqual(len(self.pushes), 1)
+
+    def test_no_recovered_when_it_was_never_down(self):
+        executed = self._run(down_state=0, down=False, missed=10, stable=True)
+        self.assertNotIn("recovered", " ".join(executed))
+        self.assertEqual(self.pushes, [])
+
+    def test_down_alert_unaffected_by_stability(self):
+        executed = self._run(down_state=0, down=True, missed=120, stable=False)
+        self.assertIn("'down'", " ".join(executed))
+        self.assertEqual(len(self.pushes), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

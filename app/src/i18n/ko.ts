@@ -22,6 +22,8 @@ export const ko: Record<string, string> = {
   'dash.chainFilter': '네트워크',
   'dash.currency': '통화',
   'dash.privacyToggle': '잔액 숨기기',
+  'dash.signedInAs': '{email} 로그인됨',
+  'dash.notSignedIn': '로그인되지 않음 — 거래 알림을 설정하세요',
   'dash.privacyHint': '화면에서 잔액을 숨깁니다. 표시 전용이며 암호화가 아니고, 이 기기를 쓰는 사람은 누구나 되돌릴 수 있습니다.',
   'dash.partialFailure': '이 네트워크의 지갑 {count}개를 불러오지 못했습니다. 아래 합계는 불완전합니다.',
   'dash.balanceUnavailable': '잔액을 불러올 수 없음',

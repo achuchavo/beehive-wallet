@@ -22,6 +22,8 @@ export const en: Record<string, string> = {
   'dash.chainFilter': 'Network',
   'dash.currency': 'Currency',
   'dash.privacyToggle': 'Hide balances',
+  'dash.signedInAs': 'Signed in as {email}',
+  'dash.notSignedIn': 'Not signed in — set up transaction alerts',
   'dash.privacyHint': 'Hides balances on screen. Display only - it does not encrypt anything and anyone using this device can switch it back.',
   'dash.partialFailure': '{count} wallet(s) on this network could not be loaded. Totals below are incomplete.',
   'dash.balanceUnavailable': 'Balance unavailable',

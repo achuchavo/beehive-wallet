@@ -604,7 +604,23 @@ def uptime_push_body(sub: dict, kind: str, missed: int) -> str:
     return f"{name} is missing blocks ({missed})."
 
 
-def evaluate_uptime(cursor, db, sub: dict, down: bool, missed: int) -> None:
+# Recovery hysteresis. "Down" starts at miss_threshold, but "recovered" is NOT
+# simply being back under it: the missed-blocks counter is a sliding window
+# that drains one block at a time, so a validator hovering at the threshold
+# would otherwise flap - a down alert, a recovered alert, another down alert,
+# every few polls, all night. Recovered fires only once the counter has
+# drained to this fraction of the threshold (and the validator is neither
+# jailed nor tombstoned), which is what "stabilized" means here. Between the
+# two lines the subscription holds its previous state, silently.
+RECOVERY_FRACTION = 0.5
+
+
+def is_stable(missed: int, threshold: int, jailed: bool, tombstoned: bool) -> bool:
+    """Recovered-for-real: window drained past the hysteresis line, not jailed."""
+    return not jailed and not tombstoned and missed <= int(threshold * RECOVERY_FRACTION)
+
+
+def evaluate_uptime(cursor, db, sub: dict, down: bool, missed: int, stable: bool = True) -> None:
     now = datetime.now()
     was_down = int(sub["last_down_state"]) == 1
     snoozed = sub["snooze_until"] is not None and sub["snooze_until"] > now
@@ -632,6 +648,14 @@ def evaluate_uptime(cursor, db, sub: dict, down: bool, missed: int) -> None:
                 "UPDATE uptime_subscriptions SET last_down_state = 1, last_missed = %s WHERE id = %s",
                 (missed, sub["id"]),
             )
+    elif was_down and not stable:
+        # Under the down threshold but the window has not drained past the
+        # hysteresis line yet: hold the down state, say nothing. See
+        # RECOVERY_FRACTION - this is what stops threshold-hovering flapping.
+        cursor.execute(
+            "UPDATE uptime_subscriptions SET last_missed = %s WHERE id = %s",
+            (missed, sub["id"]),
+        )
     else:
         if was_down:
             cursor.execute(
@@ -687,8 +711,10 @@ def process_uptime(cursor, db, chains: list) -> None:
         if info is None:
             continue
         missed = info["missed"]
-        down = missed >= int(sub["miss_threshold"]) or vinfo["jailed"] or info["tombstoned"]
-        evaluate_uptime(cursor, db, sub, down, missed)
+        threshold = int(sub["miss_threshold"])
+        down = missed >= threshold or vinfo["jailed"] or info["tombstoned"]
+        stable = is_stable(missed, threshold, vinfo["jailed"], info["tombstoned"])
+        evaluate_uptime(cursor, db, sub, down, missed, stable)
 
 
 def paid_alerts_available(cursor) -> bool:
