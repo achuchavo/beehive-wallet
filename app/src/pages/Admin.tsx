@@ -111,15 +111,29 @@ export default function Admin() {
   const can = (feature: AdminFeature) => levelOf(feature) >= PERM_READ
   const canWrite = (feature: AdminFeature) => levelOf(feature) >= PERM_WRITE
 
+  // Deleting a user goes through the same accessible ConfirmDelete dialog as
+  // every other destructive action - window.confirm was the one holdout, and
+  // the LEAST destructive actions were the ones with the better dialog.
+  const [deletingUser, setDeletingUser] = useState<{ id: number; email: string } | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+
   async function userAction(id: number, action: UserAction) {
-    if (action === 'delete' && !window.confirm('Delete this user and all their data?')) {
-      return
-    }
     try {
       await api.adminUserUpdate(id, action)
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Action failed')
+    }
+  }
+
+  async function confirmDeleteUser() {
+    if (!deletingUser) return
+    setDeleteBusy(true)
+    try {
+      await userAction(deletingUser.id, 'delete')
+      setDeletingUser(null)
+    } finally {
+      setDeleteBusy(false)
     }
   }
 
@@ -175,6 +189,17 @@ export default function Admin() {
 
       {error && (
         <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+      )}
+
+      {deletingUser && (
+        <ConfirmDelete
+          title="Delete this user?"
+          name={deletingUser.email}
+          impact="Their account, watched addresses, alert history and uptime subscriptions are all deleted permanently. This cannot be undone."
+          busy={deleteBusy}
+          onConfirm={confirmDeleteUser}
+          onCancel={() => setDeletingUser(null)}
+        />
       )}
 
       <TabPanel id={activeTab} activeId={activeTab} idPrefix="admin">
@@ -344,7 +369,7 @@ export default function Admin() {
                         {u.is_disabled === 1 ? 'Enable' : 'Disable'}
                       </button>
                       <button
-                        onClick={() => userAction(u.id, 'delete')}
+                        onClick={() => setDeletingUser({ id: u.id, email: u.email })}
                         className="text-red-600 hover:underline"
                       >
                         Delete
@@ -1080,6 +1105,9 @@ function UptimeManager({
   // is already depending on, silently.
   const [revoking, setRevoking] = useState<{ id: number; name: string; email: string } | null>(null)
   const [revokeBusy, setRevokeBusy] = useState(false)
+  // The subscription id being decided in the dialog, and the period picked.
+  const [deciding, setDeciding] = useState<number | null>(null)
+  const [duration, setDuration] = useState('30')
 
   const load = useCallback(() => {
     api
@@ -1191,57 +1219,24 @@ function UptimeManager({
                       (s.authorized_until ? ` · until ${s.authorized_until.slice(0, 10)}` : ' · no expiry')}
                   </span>
                 </div>
-                {/* Actions for EVERY status, not just pending. A decision made
-                    once was previously permanent from this screen: an approved
-                    subscription had no control at all, so withdrawing it meant
-                    editing the database by hand. */}
-                <div className="flex flex-wrap items-center gap-1.5">
+                {/* ONE control per row. Five equally-weighted buttons per
+                    application meant a list of N was 5N controls with nothing
+                    obviously primary; the choice of duration and the deny path
+                    now live in a dialog for the one row being decided. */}
+                <div className="flex flex-wrap items-center gap-2">
                   <button
-                    onClick={() => decide(s.id, 'approve', 30)}
-                    className={`rounded-lg px-2.5 py-1 text-xs font-medium ${
-                      s.status === 'approved'
-                        ? 'border border-slate-300 hover:border-amber-500'
-                        : 'bg-amber-500 text-slate-900 hover:bg-amber-600'
+                    onClick={() => {
+                      setDuration('30')
+                      setDeciding(s.id)
+                    }}
+                    className={`rounded-lg px-3 py-1 text-xs font-medium ${
+                      s.status === 'pending'
+                        ? 'bg-amber-500 text-slate-900 hover:bg-amber-600'
+                        : 'border border-slate-300 hover:border-amber-500'
                     }`}
                   >
-                    {/* On an approved one this renews the clock rather than
-                        granting anything, so it says so. */}
-                    {s.status === 'approved' ? t('admin.uptimeExtend30') : t('admin.uptimeApprove30')}
+                    {s.status === 'approved' ? t('admin.uptimeRenew') : t('admin.uptimeDecide')}
                   </button>
-                  <button
-                    onClick={() => decide(s.id, 'approve', 90)}
-                    className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs hover:border-amber-500"
-                  >
-                    {t('admin.uptime90')}
-                  </button>
-                  <button
-                    onClick={() => decide(s.id, 'approve', 0)}
-                    className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs hover:border-amber-500"
-                  >
-                    {t('admin.uptimeIndefinite')}
-                  </button>
-
-                  {s.status === 'approved' ? (
-                    // Confirmed, because this stops monitoring someone is
-                    // relying on and there is no notification telling them.
-                    <button
-                      onClick={() =>
-                        setRevoking({ id: s.id, name: s.moniker || s.validator_address, email: s.email })
-                      }
-                      className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs text-red-600 hover:border-red-400"
-                    >
-                      {t('admin.uptimeRevoke')}
-                    </button>
-                  ) : (
-                    s.status !== 'denied' && (
-                      <button
-                        onClick={() => decide(s.id, 'deny', 0)}
-                        className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs text-red-600 hover:border-red-400"
-                      >
-                        {t('admin.uptimeDeny')}
-                      </button>
-                    )
-                  )}
                   {s.status === 'denied' && (
                     <span className="text-xs text-slate-400">{t('admin.uptimeDeniedNote')}</span>
                   )}
@@ -1251,6 +1246,78 @@ function UptimeManager({
           </ul>
         )}
       </section>
+
+      {(() => {
+        const s = subs.find((x) => x.id === deciding)
+        if (!s) return null
+        return (
+          <Modal title={s.moniker || s.validator_address} onClose={() => setDeciding(null)}>
+            <div className="space-y-4">
+              <div className="truncate text-xs text-slate-500">
+                {s.email} · <span className="font-mono">{s.validator_address.slice(0, 24)}...</span>
+              </div>
+              <div className="flex items-center justify-between gap-2 text-sm text-slate-600">
+                <span>{t('admin.uptimeDuration')}</span>
+                <OptionPicker
+                  label={t('admin.uptimeDuration')}
+                  value={duration}
+                  onChange={setDuration}
+                  className="py-1.5"
+                  options={[
+                    { value: '30', label: t('admin.uptime30') },
+                    { value: '90', label: t('admin.uptime90') },
+                    { value: '0', label: t('admin.uptimeIndefinite') },
+                  ]}
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={async () => {
+                    await decide(s.id, 'approve', Number(duration))
+                    setDeciding(null)
+                  }}
+                  className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600"
+                >
+                  {/* On an approved one this renews the clock rather than
+                      granting anything, so it says so. */}
+                  {s.status === 'approved' ? t('admin.uptimeRenew') : t('admin.uptimeApprove')}
+                </button>
+                {s.status === 'approved' ? (
+                  // Confirmed, because this stops monitoring someone is
+                  // relying on and there is no notification telling them.
+                  <button
+                    onClick={() => {
+                      setDeciding(null)
+                      setRevoking({ id: s.id, name: s.moniker || s.validator_address, email: s.email })
+                    }}
+                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-red-600 hover:border-red-400"
+                  >
+                    {t('admin.uptimeRevoke')}
+                  </button>
+                ) : (
+                  s.status !== 'denied' && (
+                    <button
+                      onClick={async () => {
+                        await decide(s.id, 'deny', 0)
+                        setDeciding(null)
+                      }}
+                      className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-red-600 hover:border-red-400"
+                    >
+                      {t('admin.uptimeDeny')}
+                    </button>
+                  )
+                )}
+                <button
+                  onClick={() => setDeciding(null)}
+                  className="rounded-lg px-3 py-2 text-sm text-slate-500 hover:text-slate-700"
+                >
+                  {t('common.cancel')}
+                </button>
+              </div>
+            </div>
+          </Modal>
+        )
+      })()}
     </div>
   )
 }

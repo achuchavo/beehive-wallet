@@ -15,6 +15,7 @@ import { fetchTxSearch } from '../wallet/txsearch'
 import { isValidAccountAddress } from '../wallet/address'
 import { maskAmount, usePrivacyMode } from '../privacyMode'
 import Card from '../components/Card'
+import Collapsible from '../components/Collapsible'
 import CopyAddress from '../components/CopyAddress'
 import LoadingOverlay from '../components/LoadingOverlay'
 import Modal from '../components/Modal'
@@ -287,7 +288,11 @@ export default function History() {
     <div className="space-y-6">
       <PageHeader
         title={t('history.title')}
-        subtitle={loadedAddress ? shortAddr(loadedAddress) : undefined}
+        // The denom rides here once, instead of being printed under all ten
+        // rows - it cannot vary within a loaded statement.
+        subtitle={
+          loadedAddress ? `${shortAddr(loadedAddress)} · ${displayChain.displayDenom}` : undefined
+        }
         help={t('help.history')}
       />
 
@@ -314,32 +319,35 @@ export default function History() {
         </div>
       )}
 
-      {/* Looking up someone else's address is the secondary use of this page, so
-          it sits below the user's own wallets and stays visually quiet. */}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault()
-          load(address.trim())
-        }}
-        className="flex gap-2"
-      >
-        <input
-          name="beehive-history-address"
-          value={address}
-          onChange={(e) => setAddress(e.target.value.trim())}
-          placeholder={`${displayChain.bech32Prefix}1...`}
-          aria-label={t('history.addressLabel')}
-          required
-          autoComplete="off"
-          className="w-full rounded-xl bg-white px-3.5 py-2.5 font-mono text-sm text-slate-700 ring-1 ring-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
-        />
-        <button
-          disabled={loading}
-          className="shrink-0 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-600 ring-1 ring-slate-200 hover:text-amber-700 disabled:opacity-50"
+      {/* Looking up someone else's address is the secondary use of this page -
+          its own comment always said so - so the form folds away instead of
+          occupying a full row above the statement on every visit. */}
+      <Collapsible title={t('history.addressLabel')}>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            load(address.trim())
+          }}
+          className="flex gap-2"
         >
-          {loading ? t('common.loading') : t('history.load')}
-        </button>
-      </form>
+          <input
+            name="beehive-history-address"
+            value={address}
+            onChange={(e) => setAddress(e.target.value.trim())}
+            placeholder={`${displayChain.bech32Prefix}1...`}
+            aria-label={t('history.addressLabel')}
+            required
+            autoComplete="off"
+            className="w-full rounded-xl bg-white px-3.5 py-2.5 font-mono text-sm text-slate-700 ring-1 ring-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+          />
+          <button
+            disabled={loading}
+            className="shrink-0 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-600 ring-1 ring-slate-200 hover:text-amber-700 disabled:opacity-50"
+          >
+            {loading ? t('common.loading') : t('history.load')}
+          </button>
+        </form>
+      </Collapsible>
 
       {/* history.querying is a full sentence written for an inline line of
           text; as a modal heading it reads as a wall. Short title, explanation
@@ -415,9 +423,6 @@ export default function History() {
                                 }`}
                               >
                                 {amountText(r)}
-                              </span>
-                              <span className="block text-xs text-slate-400">
-                                {displayChain.displayDenom}
                               </span>
                             </span>
                           )}

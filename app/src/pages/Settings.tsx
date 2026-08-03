@@ -380,16 +380,14 @@ function PasswordFields({
           name="beehive-new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          // The min-length lives in the placeholder alone - it used to be
+          // repeated in a hint line directly underneath, saying nothing new.
           placeholder={t('settings.newPassword')}
           minLength={10}
           required
           autoComplete="new-password"
-          aria-describedby="wallet-password-hint"
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
         />
-        <p id="wallet-password-hint" className="mt-1 text-xs text-slate-500">
-          {t('settings.newPassword')}
-        </p>
       </div>
       <div>
         <label htmlFor="wallet-password-confirm" className="mb-1 block text-xs font-medium text-slate-600">
@@ -400,7 +398,6 @@ function PasswordFields({
           name="beehive-confirm-password"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
-          placeholder={t('settings.repeatPassword')}
           required
           autoComplete="new-password"
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"

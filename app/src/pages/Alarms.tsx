@@ -32,6 +32,7 @@ import { useT } from '../i18n/I18nContext'
 import PasswordInput from '../components/PasswordInput'
 import Modal from '../components/Modal'
 import BottomSheet from '../components/BottomSheet'
+import Collapsible from '../components/Collapsible'
 import Tabs, { TabPanel } from '../components/Tabs'
 import CopyAddress from '../components/CopyAddress'
 import HelpTip from '../components/HelpTip'
@@ -295,19 +296,21 @@ function AuthForm() {
       <h1 className="text-xl font-semibold">{t('alarms.title')}</h1>
       <p className="text-sm text-slate-500">{t('alarms.signInDesc')}</p>
 
-      {/* The account model, stated where the decision is made.
-          The email is an UNVERIFIED username: nothing is ever sent to it, so
-          it proves nothing and cannot be used for recovery. Saying so here
-          prevents the reasonable-but-wrong assumption that signing up protects
-          or backs up a wallet. */}
+      {/* The account model, stated where the decision is made. The one fact
+          with real consequences - no password reset, ever - stays visible;
+          the fuller explanation (unverified email, no wallet access) folds,
+          because four paragraphs above a sign-in form went unread anyway. */}
       <div className="space-y-1.5 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-        <p className="flex items-start gap-1.5 font-medium text-slate-700">
+        <p className="flex items-start gap-1.5 text-amber-800">
           <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" />
-          {t('alarms.accountModelTitle')}
+          {t('alarms.accountModelNoReset')}
         </p>
-        <p>{t('alarms.accountModelUsername')}</p>
-        <p>{t('alarms.accountModelNoWallets')}</p>
-        <p className="text-amber-800">{t('alarms.accountModelNoReset')}</p>
+        <Collapsible title={t('alarms.accountModelTitle')}>
+          <div className="space-y-1.5">
+            <p>{t('alarms.accountModelUsername')}</p>
+            <p>{t('alarms.accountModelNoWallets')}</p>
+          </div>
+        </Collapsible>
       </div>
       <form onSubmit={submit} className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
         {/* Persistent labels, not placeholders: a placeholder disappears the
@@ -361,16 +364,12 @@ function AuthForm() {
             minLength={10}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            // The min-length requirement lives in the placeholder alone; the
+            // hint line underneath repeated the identical string.
             placeholder={mode === 'register' ? t('alarms.passwordHint') : t('alarms.password')}
             autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
-            aria-describedby={mode === 'register' ? 'auth-password-hint' : undefined}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
           />
-          {mode === 'register' && (
-            <p id="auth-password-hint" className="mt-1 text-xs text-slate-500">
-              {t('alarms.passwordHint')}
-            </p>
-          )}
         </div>
         {mode === 'register' && (
           <div>
