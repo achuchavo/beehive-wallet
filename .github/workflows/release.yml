@@ -72,8 +72,13 @@ jobs:
           # Checked anyway: the cost of being wrong is publishing a production
           # database password or the VAPID signing key to a release asset, and a
           # failed build is infinitely cheaper than a leaked credential.
+          #
+          # The .example templates are NOT in this list: they are tracked on
+          # purpose (placeholders only, and the packaging step excludes them),
+          # and listing api/db_config.php.example here made every tag build
+          # refuse a clean checkout.
           bad=0
-          for f in api/db_config.php api/db_config.php.example \
+          for f in api/db_config.php \
                    watcher/db_config.json watcher/vapid_private.pem; do
             if [ -e "$f" ]; then echo "REFUSING: $f is present in the checkout"; bad=1; fi
           done
