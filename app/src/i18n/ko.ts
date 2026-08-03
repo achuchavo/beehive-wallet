@@ -206,6 +206,8 @@ export const ko: Record<string, string> = {
   'history.addressLabel': '조회할 지갑 주소',
   'send.amount': '금액',
   'send.memoOptional': '메모 (선택)',
+  'send.advanced': '고급 설정',
+  'send.advancedSub': '메모 · 전송 속도',
   'send.signPassword': '서명할 지갑 비밀번호',
   'send.speed': '전송 속도',
   'send.speedLow': '낮음',

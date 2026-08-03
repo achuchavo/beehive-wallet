@@ -211,6 +211,8 @@ export const en: Record<string, string> = {
   'history.addressLabel': 'Wallet address to look up',
   'send.amount': 'Amount',
   'send.memoOptional': 'Memo (optional)',
+  'send.advanced': 'Advanced',
+  'send.advancedSub': 'memo · transaction speed',
   'send.signPassword': 'Wallet password to sign',
   'send.speed': 'Transaction speed',
   'send.speedLow': 'Low',

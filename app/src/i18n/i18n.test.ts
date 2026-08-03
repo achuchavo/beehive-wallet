@@ -1,3 +1,6 @@
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { en } from './en'
 import { ko } from './ko'
@@ -29,6 +32,31 @@ describe('dictionary parity', () => {
       (k) => (en[k] ?? '').trim() === '' || (ko[k] ?? '').trim() === '',
     )
     expect(empty).toEqual([])
+  })
+
+  // Parity cannot catch a key deleted from BOTH files while a page still calls
+  // t() with it - translate() then renders the raw key on screen and nothing
+  // fails. That happened once (rewards.claimableRewards, removed in a refactor
+  // but still used by Staking), which is why this walks the real source.
+  it('every t(\'...\') literal used in src exists in the dictionary', () => {
+    const srcRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
+    const used = new Map<string, string>()
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const p = join(dir, name)
+        if (statSync(p).isDirectory()) walk(p)
+        else if (/\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name)) {
+          for (const m of readFileSync(p, 'utf8').matchAll(/\bt\(\s*'([a-zA-Z0-9_.]+)'/g)) {
+            if (!used.has(m[1])) used.set(m[1], name)
+          }
+        }
+      }
+    }
+    walk(srcRoot)
+    const missing = [...used.entries()]
+      .filter(([key]) => !(key in en))
+      .map(([key, file]) => `${key} (${file})`)
+    expect(missing).toEqual([])
   })
 })
 

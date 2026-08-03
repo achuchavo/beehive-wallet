@@ -10,7 +10,6 @@ import {
   formatAmount,
   feeReserve,
   scaledGasPrice,
-  gasPriceInDisplay,
 } from '../chains'
 import { assertAccountAddress } from '../wallet/address'
 import { addBase } from '../wallet/amount'
@@ -25,6 +24,7 @@ import PageHeader from '../components/PageHeader'
 import Tabs, { TabPanel } from '../components/Tabs'
 import TxReview, { type ReviewRow } from '../components/TxReview'
 import WalletSwitcher from '../components/WalletSwitcher'
+import Collapsible from '../components/Collapsible'
 import TxUnresolved from '../components/TxUnresolved'
 import { maskAmount, usePrivacyMode } from '../privacyMode'
 
@@ -436,52 +436,55 @@ function SendForm() {
         )}
       </div>
 
-      <label className="block">
-        <span className="mb-1 flex items-center gap-1 text-xs font-medium text-slate-600">
-          {t('send.memoOptional')}
-          <HelpTip text={t('help.memo')} align="start" />
-        </span>
-        <input
-          name="beehive-memo"
-          value={memo}
-          onChange={(e) => setMemo(e.target.value)}
-          maxLength={256}
-          autoComplete="off"
-          className={FIELD_CLASS}
-        />
-      </label>
+      {/* Optional and technical, so folded by default: most sends carry no
+          memo and go at the default speed, and these two controls sat between
+          the amount and the password on every visit. The review dialog still
+          states the chosen speed, and the memo survives fold state. */}
+      <Collapsible title={t('send.advanced')} subtitle={t('send.advancedSub')}>
+        <div className="space-y-4">
+          <label className="block">
+            <span className="mb-1 flex items-center gap-1 text-xs font-medium text-slate-600">
+              {t('send.memoOptional')}
+              <HelpTip text={t('help.memo')} align="start" />
+            </span>
+            <input
+              name="beehive-memo"
+              value={memo}
+              onChange={(e) => setMemo(e.target.value)}
+              maxLength={256}
+              autoComplete="off"
+              className={FIELD_CLASS}
+            />
+          </label>
 
-      {/* Transaction speed: a gas-price multiplier. Higher = faster inclusion.
-          The prose hint that used to sit under this is now the "?" - it says
-          the same thing, on demand, without a paragraph on every visit. */}
-      <div>
-        <div className="mb-1.5 flex items-baseline justify-between">
-          <span className="flex items-center gap-1 text-xs font-medium text-slate-600">
-            {t('send.speed')}
-            <HelpTip text={t('help.speed')} align="start" />
-          </span>
-          <span className="text-xs text-slate-500">
-            {scaledGasPrice(chain, speedMult)} · {gasPriceInDisplay(chain, speedMult)} {chain.displayDenom}
-          </span>
+          {/* Transaction speed: a gas-price multiplier. Higher = faster
+              inclusion. The raw gas price that used to sit beside the label is
+              gone - the review dialog is where the exact figures belong. */}
+          <div>
+            <span className="mb-1.5 flex items-center gap-1 text-xs font-medium text-slate-600">
+              {t('send.speed')}
+              <HelpTip text={t('help.speed')} align="start" />
+            </span>
+            <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
+              {SPEED_OPTIONS.map((s) => (
+                <button
+                  key={s.key}
+                  type="button"
+                  onClick={() => setSpeed(s.key)}
+                  aria-pressed={speed === s.key}
+                  className={`rounded-lg py-1.5 text-xs font-medium transition-colors ${
+                    speed === s.key
+                      ? 'bg-white text-amber-700 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {t(s.label)}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
-        <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
-          {SPEED_OPTIONS.map((s) => (
-            <button
-              key={s.key}
-              type="button"
-              onClick={() => setSpeed(s.key)}
-              aria-pressed={speed === s.key}
-              className={`rounded-lg py-1.5 text-xs font-medium transition-colors ${
-                speed === s.key
-                  ? 'bg-white text-amber-700 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {t(s.label)}
-            </button>
-          ))}
-        </div>
-      </div>
+      </Collapsible>
 
       {/* htmlFor rather than a wrapping <label>: PasswordInput contains its own
           show/hide button, and a label containing a button forwards clicks in

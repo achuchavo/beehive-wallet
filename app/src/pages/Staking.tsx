@@ -170,6 +170,8 @@ export default function Staking() {
   const [notice, setNotice] = useState('')
   const [query, setQuery] = useState('')
   const [view, setView] = useState<'active' | 'jailed'>('active')
+  // The claim password form lives in a BottomSheet, like delegate/undelegate.
+  const [claimOpen, setClaimOpen] = useState(false)
   const { prepare, modal } = useTxReview()
 
   const load = useCallback(async () => {
@@ -317,24 +319,47 @@ export default function Staking() {
         </Card>
         <Card>
           <div className="flex items-center gap-1.5 text-xs text-slate-500">
-            <Gift className="h-3.5 w-3.5" strokeWidth={1.8} /> {t('rewards.claimableRewards')}
+            <Gift className="h-3.5 w-3.5" strokeWidth={1.8} /> {t('rewards.claimableTotal')}
             <HelpTip text={t('help.rewards')} />
           </div>
           <div className="mt-0.5 text-2xl font-semibold tabular-nums">
             {data ? maskAmount(formatAmount(data.totalReward, chain), hidden) : '...'}{' '}
             <span className="text-xs font-medium text-slate-500">{chain.displayDenom}</span>
           </div>
+          {/* Quiet, and on the figure it acts on. The password form used to sit
+              inline between the heroes and the search bar, an amber submit
+              competing with the Stake buttons below. */}
+          {data && isPositiveBase(data.totalReward) && (
+            <button
+              type="button"
+              onClick={() => setClaimOpen(true)}
+              className="mt-2 rounded-lg px-3 py-1.5 text-sm font-medium text-amber-700 ring-1 ring-amber-300 hover:bg-amber-50"
+            >
+              {t('rewards.claim')}
+            </button>
+          )}
         </Card>
       </div>
 
-      {data && isPositiveBase(data.totalReward) && (
-        <ActionForm
-          chain={chain}
-          label={t('staking.claimAll', { count: rewardValidators.length })}
-          submitLabel={t('rewards.claim')}
-          onSubmit={claimAll}
-          onError={setError}
-        />
+      {claimOpen && data && (
+        <BottomSheet
+          title={t('rewards.claim')}
+          subtitle={`${active.name} · ${chain.chainName}`}
+          onClose={() => setClaimOpen(false)}
+        >
+          <ActionForm
+            chain={chain}
+            label={t('staking.claimAll', { count: rewardValidators.length })}
+            submitLabel={t('rewards.claim')}
+            onSubmit={async (pw) => {
+              await claimAll(pw)
+              // Only on success - the review dialog has taken over. A throw
+              // keeps the sheet (and its inline error) up.
+              setClaimOpen(false)
+            }}
+            onError={setError}
+          />
+        </BottomSheet>
       )}
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -724,9 +749,11 @@ function ActionForm({
   const [amount, setAmount] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
+  const [localError, setLocalError] = useState('')
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
+    setLocalError('')
     setBusy(true)
     onError('')
     try {
@@ -736,7 +763,11 @@ function ActionForm({
       // requires deliberately re-entering it.
       await onSubmit(password, amount)
     } catch (err) {
-      onError(err instanceof Error ? err.message : t('staking.errTx'))
+      const msg = err instanceof Error ? err.message : t('staking.errTx')
+      // Shown inside the form as well as reported upward: this form renders in
+      // BottomSheets, and the page-level error banner is behind their overlay.
+      setLocalError(msg)
+      onError(msg)
     } finally {
       setPassword('')
       setBusy(false)
@@ -807,6 +838,11 @@ function ActionForm({
       >
         {busy ? t('rewards.signing') : submitLabel}
       </button>
+      {localError && (
+        <div role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+          {localError}
+        </div>
+      )}
     </form>
   )
 }

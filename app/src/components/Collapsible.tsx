@@ -21,6 +21,9 @@ export default function Collapsible({
   return (
     <section>
       <button
+        // Explicit type: inside a <form> a bare <button> is a submit button,
+        // and folding a section open must never submit the form around it.
+        type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-controls={panelId}
