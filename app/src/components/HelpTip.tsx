@@ -34,11 +34,20 @@ export default function HelpTip({
   const { t } = useT()
   const [open, setOpen] = useState(false)
   // Pinned by a click/tap: stays until dismissed rather than following the
-  // pointer.
+  // pointer. Mirrored in a ref because the close timer's callback would
+  // otherwise read the pinned value from when it was SCHEDULED - on a touch
+  // tap, pointerleave fires before click, so a timer armed by that leave used
+  // to close the tip ~120ms after the tap had pinned it open.
   const [pinned, setPinned] = useState(false)
+  const pinnedRef = useRef(false)
   const panelId = useId()
   const wrapRef = useRef<HTMLSpanElement>(null)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function setPinnedBoth(v: boolean) {
+    pinnedRef.current = v
+    setPinned(v)
+  }
 
   function cancelClose() {
     if (closeTimer.current) {
@@ -53,9 +62,12 @@ export default function HelpTip({
   }
 
   function scheduleClose() {
-    if (pinned) return
+    if (pinnedRef.current) return
     cancelClose()
-    closeTimer.current = setTimeout(() => setOpen(false), 120)
+    closeTimer.current = setTimeout(() => {
+      // Re-checked at fire time, not capture time - see pinnedRef above.
+      if (!pinnedRef.current) setOpen(false)
+    }, 120)
   }
 
   // A timer that outlives the component would call setState on an unmounted one.
@@ -68,13 +80,13 @@ export default function HelpTip({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
-        setPinned(false)
+        setPinnedBoth(false)
         setOpen(false)
       }
     }
     const onPointer = (e: PointerEvent) => {
       if (!wrapRef.current?.contains(e.target as Node)) {
-        setPinned(false)
+        setPinnedBoth(false)
         setOpen(false)
       }
     }
@@ -136,10 +148,13 @@ export default function HelpTip({
           // Tap on touch (where there is no hover) opens; click on a desktop
           // pins what hover already opened, and a second click releases it.
           if (pinned) {
-            setPinned(false)
+            setPinnedBoth(false)
             setOpen(false)
           } else {
-            setPinned(true)
+            // A tap's pointerleave has already armed the close timer by the
+            // time click fires - pinning must disarm it or the tip vanishes.
+            cancelClose()
+            setPinnedBoth(true)
             setOpen(true)
           }
         }}

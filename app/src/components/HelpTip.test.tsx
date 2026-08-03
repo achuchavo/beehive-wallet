@@ -121,6 +121,22 @@ describe('HelpTip', () => {
     expect(panel()).not.toBeNull()
   })
 
+  it('survives a real TAP, where pointerleave fires BEFORE click', async () => {
+    // The touch sequence is pointerover -> pointerout -> click: the leave arms
+    // the 120ms close timer, and the click then pins. The stale timer used to
+    // close the tip right after the tap opened it - the "shows the hint and
+    // disappears immediately" bug.
+    const { button, wrap } = render()
+
+    hoverIn(wrap)
+    hoverOut(wrap)
+    act(() => button.click())
+    expect(panel()).not.toBeNull()
+
+    await settle()
+    expect(panel()).not.toBeNull()
+  })
+
   it('a second click releases the pin', async () => {
     const { button } = render()
     act(() => button.click())
