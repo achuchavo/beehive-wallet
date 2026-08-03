@@ -14,6 +14,7 @@ import {
   PERM_WRITE,
 } from '../api'
 import AnnouncementModal from '../components/AnnouncementModal'
+import Modal from '../components/Modal'
 import { CHAINS, DEFAULT_CHAIN, formatAmount } from '../chains'
 import { useT } from '../i18n/I18nContext'
 import ChainManager from './ChainManager'
@@ -544,15 +545,27 @@ function RoleManager({
                 <span className="shrink-0 text-xs text-slate-400">{blocked}</span>
               ) : (
                 <button
-                  onClick={() => (editing === u.id ? setEditing(null) : startEdit(u))}
+                  onClick={() => startEdit(u)}
                   className="shrink-0 text-xs text-amber-700 hover:underline"
                 >
-                  {editing === u.id ? t('common.cancel') : t('admin.editAccess')}
+                  {t('admin.editAccess')}
                 </button>
               )}
             </div>
-            {editing === u.id && (
-              <div className="mt-3 space-y-3 rounded-lg bg-slate-50 p-3">
+          </div>
+        )
+        })}
+      </div>
+
+      {/* The editor is a dialog, not an inline expansion: a 10-row matrix
+          opening inside the list pushed every user below it off screen - the
+          exact reflow the validator list already solved with a sheet. */}
+      {(() => {
+        const u = users.find((x) => x.id === editing)
+        if (!u) return null
+        return (
+          <Modal wide title={u.email} onClose={() => setEditing(null)}>
+              <div className="space-y-4">
                 {/* THE per-feature matrix, always visible.
                     It used to render only when the target was already a
                     non-super admin, which meant the main control of this screen
@@ -665,19 +678,26 @@ function RoleManager({
                       : t('admin.willBeAdmin', { count: grantedCount })}
                 </p>
 
-                <button
-                  onClick={() => save(u.id)}
-                  disabled={busy}
-                  className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
-                >
-                  {busy ? t('alarms.working') : t('admin.saveAccess')}
-                </button>
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    onClick={() => save(u.id)}
+                    disabled={busy}
+                    className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600 disabled:opacity-50"
+                  >
+                    {busy ? t('alarms.working') : t('admin.saveAccess')}
+                  </button>
+                  <button
+                    onClick={() => setEditing(null)}
+                    disabled={busy}
+                    className="rounded-lg px-3 py-2 text-sm text-slate-500 hover:text-slate-700 disabled:opacity-50"
+                  >
+                    {t('common.cancel')}
+                  </button>
+                </div>
               </div>
-            )}
-          </div>
+          </Modal>
         )
-        })}
-      </div>
+      })()}
     </section>
   )
 }
