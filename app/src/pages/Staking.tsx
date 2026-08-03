@@ -554,20 +554,6 @@ function ValidatorRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 text-sm font-medium">
             <span className="truncate">{validator.moniker}</span>
-            {/* A star and a shield read as "vetted" or "secure". We have made
-                no security assessment of any validator - the only thing this
-                marks is our own fee waiver, so it says exactly that in words
-                and carries no trust iconography. */}
-            {free && (
-              <span className="flex shrink-0 items-center gap-1 rounded-md bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
-                {t('staking.noBeehiveFee')}
-                {/* Was a title attribute, which never appears on touch. The
-                    caveat - that this is our fee waiver and not a security
-                    review - is the whole point of the badge, so it has to be
-                    reachable on a phone too. */}
-                <HelpTip text={t('staking.noFeeExplain')} />
-              </span>
-            )}
             {validator.jailed && (
               <span className="shrink-0 rounded bg-red-100 px-1.5 text-[11px] font-medium text-red-700">
                 {t('staking.statusJailed')}
