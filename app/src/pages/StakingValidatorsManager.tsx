@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Landmark, TriangleAlert, Search, Trash2 } from 'lucide-react'
+import { TriangleAlert, Search, Trash2 } from 'lucide-react'
 import { api, PERM_WRITE, type AdminStakingChain, type PermLevel } from '../api'
 import { findChain, type StakingPolicy } from '../chains'
 import { refreshChains } from '../chainStore'
@@ -274,13 +274,11 @@ export default function StakingValidatorsManager({
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="flex items-center gap-2 font-medium">
-          <Landmark className="h-4 w-4 text-amber-600" /> {t('admin.stakingTitle')}
-          <HelpTip text={t('help.adminStakingScope')} />
-        </h2>
-        <p className="text-sm text-slate-500">{t('admin.stakingIntro')}</p>
-      </div>
+      {/* No heading: the tab this renders under already names the feature. */}
+      <p className="flex items-center gap-1.5 text-sm text-slate-500">
+        {t('admin.stakingIntro')}
+        <HelpTip text={t('help.adminStakingScope')} align="start" />
+      </p>
 
       {!canWrite && (
         <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Eye, ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { api, type AdminUserWatch, type AdminWatchAccount } from '../api'
 import { CHAINS } from '../chains'
 import { formatBase } from '../wallet/amount'
@@ -69,13 +69,11 @@ export default function UserWatchesManager({ onError }: { onError: (msg: string)
 
   return (
     <div className="space-y-3">
-      <div>
-        <h2 className="flex items-center gap-2 font-medium">
-          <Eye className="h-4 w-4 text-slate-500" /> {t('admin.watchesTitle')}
-          <HelpTip text={t('help.adminUserWatches')} />
-        </h2>
-        <p className="text-sm text-slate-500">{t('admin.watchesIntro')}</p>
-      </div>
+      {/* No heading: the tab this renders under already names the feature. */}
+      <p className="flex items-center gap-1.5 text-sm text-slate-500">
+        {t('admin.watchesIntro')}
+        <HelpTip text={t('help.adminUserWatches')} align="start" />
+      </p>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat label={t('admin.watchesFilterAll')} value={totals.total} />

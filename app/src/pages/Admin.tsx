@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ShieldCheck } from 'lucide-react'
 import {
   api,
   type AdminOverview,
@@ -15,6 +14,8 @@ import {
 } from '../api'
 import AnnouncementModal from '../components/AnnouncementModal'
 import Modal from '../components/Modal'
+import PageHeader from '../components/PageHeader'
+import Tabs, { TabPanel } from '../components/Tabs'
 import { CHAINS, DEFAULT_CHAIN, formatAmount } from '../chains'
 import { useT } from '../i18n/I18nContext'
 import ChainManager from './ChainManager'
@@ -160,27 +161,24 @@ export default function Admin() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Admin</h1>
+      <PageHeader title="Admin" />
 
-      <div className="flex flex-wrap gap-1 border-b border-slate-200">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm ${
-              activeTab === t.id
-                ? 'border-amber-500 font-medium text-amber-700'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {/* The app's own Tabs, not a hand-rolled strip: arrow keys, roving
+          tabindex, aria-selected and the panel wiring come with it. */}
+      <Tabs
+        idPrefix="admin"
+        label="Admin"
+        activeId={activeTab}
+        onChange={(id) => setTab(id as Tab)}
+        items={tabs.map((t) => ({ id: t.id, label: t.label }))}
+      />
 
       {error && (
         <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}
+
+      <TabPanel id={activeTab} activeId={activeTab} idPrefix="admin">
+      <div className="space-y-4">
 
       {activeTab === 'overview' && (
         <div className="space-y-4">
@@ -288,7 +286,6 @@ export default function Admin() {
 
       {activeTab === 'users' && can('users') && (
       <section className="space-y-2">
-        <h2 className="font-medium">Users</h2>
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
           <table className="w-full text-sm">
             <thead>
@@ -364,6 +361,8 @@ export default function Admin() {
         </p>
       </section>
       )}
+      </div>
+      </TabPanel>
     </div>
   )
 }
@@ -510,11 +509,11 @@ function RoleManager({
 
   return (
     <section className="space-y-2">
-      <h2 className="flex items-center gap-2 font-medium">
-        <ShieldCheck className="h-4 w-4 text-purple-500" /> {t('admin.accessTitle')}
-        <HelpTip text={t('help.adminLevels')} />
-      </h2>
-      <p className="text-sm text-slate-500">{t('admin.accessIntro')}</p>
+      {/* No heading: the tab this renders under already says Access. */}
+      <p className="flex items-center gap-1.5 text-sm text-slate-500">
+        {t('admin.accessIntro')}
+        <HelpTip text={t('help.adminLevels')} align="start" />
+      </p>
       {!canWrite && (
         <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
           {t('admin.readOnlyNote')}
@@ -802,7 +801,6 @@ function AnnouncementEditor({ onChanged }: { onChanged: () => void }) {
 
   return (
     <section className="space-y-3">
-      <h2 className="font-medium">Announcement</h2>
       <p className="text-sm text-slate-500">
         Info and warning announcements open as a popup users can dismiss or snooze for a day;
         danger stays as a permanent inline banner (no popup, no snooze).

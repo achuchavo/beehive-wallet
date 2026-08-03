@@ -11,6 +11,7 @@ import HelpTip from '../components/HelpTip'
 import OptionPicker from '../components/OptionPicker'
 import PageHeader from '../components/PageHeader'
 import RemoveWalletDialog from '../components/RemoveWalletDialog'
+import Modal from '../components/Modal'
 import Checkbox from '../components/Checkbox'
 import SecretShield from '../components/SecretShield'
 import {
@@ -239,14 +240,10 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
                   </div>
                   <span className="flex shrink-0 items-center gap-1">
                     <button
-                      onClick={() => (revealFor === w.id ? closeReveal() : setRevealFor(w.id))}
+                      onClick={() => setRevealFor(w.id)}
                       className="text-xs text-amber-700 hover:underline"
                     >
-                      {revealFor === w.id
-                        ? t('common.close')
-                        : w.kind === 'privkey'
-                          ? t('settings.showKey')
-                          : t('settings.showSeed')}
+                      {w.kind === 'privkey' ? t('settings.showKey') : t('settings.showSeed')}
                     </button>
                     {/* What this actually reveals, before it is on screen. */}
                     <HelpTip text={t('help.seedPhrase')} className="text-slate-400" />
@@ -258,50 +255,6 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
                     {t('common.remove')}
                   </button>
                 </div>
-                {revealFor === w.id && (
-                  <div className="space-y-2 rounded-lg bg-slate-50 p-3">
-                    {secret ? (
-                      <>
-                        <div className="flex items-center justify-between">
-                          <p className="flex items-center gap-1.5 text-xs font-medium text-red-600">
-                            <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
-                            {t('settings.neverShare')}
-                          </p>
-                          <div className="flex items-center gap-2">
-                            <CopyButton text={secret} label={w.kind === 'privkey' ? t('settings.copyKey') : t('settings.copySeed')} />
-                            <button onClick={() => setSecret('')} className="text-xs text-slate-500 hover:text-amber-700">
-                              {t('common.close')}
-                            </button>
-                          </div>
-                        </div>
-                        <SecretShield>
-                          <p className="break-all rounded bg-white p-2 font-mono text-sm">{secret}</p>
-                        </SecretShield>
-                        <p className="text-xs text-slate-500">{t('settings.autoHide')}</p>
-                        <p className="text-xs text-amber-700">{t('settings.clipboardWarn')}</p>
-                      </>
-                    ) : (
-                      <div className="flex gap-2">
-                        <PasswordInput
-                          name="beehive-reveal-password"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          placeholder={t('settings.walletPassword')}
-                          aria-label={t('settings.walletPassword')}
-                          autoComplete="new-password"
-                          className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
-                        />
-                        <button
-                          onClick={() => reveal(w.id)}
-                          className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600"
-                        >
-                          {t('settings.reveal')}
-                        </button>
-                      </div>
-                    )}
-                    {error && <p className="text-xs text-red-600">{error}</p>}
-                  </div>
-                )}
               </li>
             ))}
           </ul>
@@ -321,6 +274,73 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
           <Import className="h-4 w-4" strokeWidth={1.8} /> {t('settings.import')}
         </button>
       </div>
+
+      {/* The reveal is a dialog, not an inline expansion: injecting a password
+          field, the secret and its warnings into the middle of the wallet list
+          shifted every row below it during the most attention-critical moment
+          in the app. The Modal is focus-trapped; X/Escape clear everything. */}
+      {(() => {
+        const w = wallets.find((x) => x.id === revealFor)
+        if (!w) return null
+        return (
+          <Modal
+            title={w.kind === 'privkey' ? t('settings.showKey') : t('settings.showSeed')}
+            onClose={closeReveal}
+          >
+            <div className="space-y-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium">{w.name}</div>
+                <div className="truncate font-mono text-xs text-slate-500">{w.address}</div>
+              </div>
+              {secret ? (
+                <div className="space-y-2 rounded-lg bg-slate-50 p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="flex items-center gap-1.5 text-xs font-medium text-red-600">
+                      <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
+                      {t('settings.neverShare')}
+                    </p>
+                    <CopyButton
+                      text={secret}
+                      label={w.kind === 'privkey' ? t('settings.copyKey') : t('settings.copySeed')}
+                    />
+                  </div>
+                  <SecretShield>
+                    <p className="break-all rounded bg-white p-2 font-mono text-sm">{secret}</p>
+                  </SecretShield>
+                  <p className="text-xs text-slate-500">{t('settings.autoHide')}</p>
+                  <p className="text-xs text-amber-700">{t('settings.clipboardWarn')}</p>
+                </div>
+              ) : (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    reveal(w.id)
+                  }}
+                  className="flex gap-2"
+                >
+                  <PasswordInput
+                    name="beehive-reveal-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={t('settings.walletPassword')}
+                    aria-label={t('settings.walletPassword')}
+                    autoComplete="new-password"
+                    className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none"
+                  />
+                  <button className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600">
+                    {t('settings.reveal')}
+                  </button>
+                </form>
+              )}
+              {error && (
+                <p role="alert" className="text-xs text-red-600">
+                  {error}
+                </p>
+              )}
+            </div>
+          </Modal>
+        )
+      })()}
 
       {removing && (
         <RemoveWalletDialog

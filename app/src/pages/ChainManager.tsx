@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Server, Plus, Trash2, Settings2 } from 'lucide-react'
+import { Plus, Trash2, Settings2 } from 'lucide-react'
 import { api, type AdminChain, type AdminEndpoint, type AdminFreeValidator } from '../api'
 // Editing a chain changes what the rest of the app signs against, so the live
 // registry has to be told - it is loaded once per tab otherwise.
@@ -80,10 +80,8 @@ export default function ChainManager({ onError }: { onError: (m: string) => void
 
   return (
     <section className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="flex items-center gap-2 font-medium">
-          <Server className="h-4 w-4 text-slate-500" /> Chains
-        </h2>
+      {/* No heading: the tab this renders under already says Chains. */}
+      <div className="flex justify-end">
         <button
           onClick={() => {
             setManaging({ ...BLANK })

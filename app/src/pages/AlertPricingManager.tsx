@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Coins, TriangleAlert, CircleCheck } from 'lucide-react'
+import { TriangleAlert, CircleCheck } from 'lucide-react'
 import {
   api,
   PERM_WRITE,
@@ -75,15 +75,11 @@ export default function AlertPricingManager({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <h2 className="flex items-center gap-2 font-medium">
-            <Coins className="h-4 w-4 text-amber-600" /> {t('admin.pricingTitle')}
-            <HelpTip text={t('help.paidAlerts')} />
-          </h2>
-          <p className="text-sm text-slate-500">{t('admin.pricingIntro')}</p>
-        </div>
-      </div>
+      {/* No heading: the tab this renders under already names the feature. */}
+      <p className="flex items-center gap-1.5 text-sm text-slate-500">
+        {t('admin.pricingIntro')}
+        <HelpTip text={t('help.paidAlerts')} align="start" />
+      </p>
 
       {!canWrite && (
         <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">

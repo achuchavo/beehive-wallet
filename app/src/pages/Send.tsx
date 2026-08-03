@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { SendHorizontal, Copy, Check, CircleCheck, Plus, Import } from 'lucide-react'
+import { SendHorizontal, CircleCheck, Plus, Import } from 'lucide-react'
 import type { OfflineDirectSigner, EncodeObject } from '@cosmjs/proto-signing'
 import QRCode from 'qrcode'
 import PasswordInput from '../components/PasswordInput'
@@ -95,8 +95,8 @@ function Receive() {
   const { t } = useT()
   // The wallet's OWN chain, so the warning names the network funds must arrive on.
   const chain = active ? findChain(active.chainKey) : undefined
+
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     if (active && canvasRef.current) {
@@ -106,37 +106,27 @@ function Receive() {
 
   if (!active) return null
 
-  async function copy() {
-    await navigator.clipboard.writeText(active!.address)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
-
   return (
     <Card className="space-y-3">
       <div className="text-sm font-medium">{active.name}</div>
-      {/* Network first and unmissable. Sending an asset on the wrong chain to a
-          correct-looking address is one of the few ways to lose funds outright
-          with no recovery, so the chain, its id and the asset are stated before
-          the address rather than implied by it. */}
+      {/* Network first and unmissable - sending on the wrong chain loses funds
+          with no recovery. ONE line carries the instruction; the chain id and
+          the longer caveat sit behind the "?" instead of naming the chain
+          three times on every visit. */}
       {chain && (
-        <div className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200/80">
-          <div className="font-medium">
-            {t('send.receiveNetwork', { chain: chain.chainName, denom: chain.displayDenom })}
-          </div>
-          <div className="font-mono text-[11px] text-amber-800">{chain.chainId}</div>
-          <p className="mt-1">{t('send.receiveWarning', { chain: chain.chainName })}</p>
+        <div className="flex items-center gap-1 rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900 ring-1 ring-amber-200/80">
+          {t('send.receiveNetwork', { chain: chain.chainName, denom: chain.displayDenom })}
+          <HelpTip
+            text={`${chain.chainId} — ${t('send.receiveWarning', { chain: chain.chainName })}`}
+            align="start"
+          />
         </div>
       )}
       <canvas ref={canvasRef} className="rounded-xl" />
-      <div className="break-all font-mono text-sm text-slate-600">{active.address}</div>
-      <button
-        onClick={copy}
-        className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm text-slate-600 ring-1 ring-slate-200 hover:text-amber-700"
-      >
-        {copied ? <Check className="h-3.5 w-3.5 text-green-700" /> : <Copy className="h-3.5 w-3.5" />}
-        {copied ? t('send.copied') : t('send.copyAddress')}
-      </button>
+      <CopyAddress
+        address={active.address}
+        className="max-w-full break-all text-sm text-slate-600"
+      />
     </Card>
   )
 }
