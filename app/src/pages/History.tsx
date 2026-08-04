@@ -20,6 +20,7 @@ import CopyAddress from '../components/CopyAddress'
 import LoadingOverlay from '../components/LoadingOverlay'
 import Modal from '../components/Modal'
 import PageHeader from '../components/PageHeader'
+import PrivacyToggle from '../components/PrivacyToggle'
 import { useT } from '../i18n/I18nContext'
 
 type Translate = (key: string, vars?: Record<string, string | number>) => string
@@ -294,7 +295,9 @@ export default function History() {
           loadedAddress ? `${shortAddr(loadedAddress)} · ${displayChain.displayDenom}` : undefined
         }
         help={t('help.history')}
-      />
+      >
+        <PrivacyToggle />
+      </PageHeader>
 
       {chips.length > 0 && (
         <div className="flex flex-wrap gap-2">

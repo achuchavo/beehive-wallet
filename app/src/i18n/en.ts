@@ -514,7 +514,6 @@ export const en: Record<string, string> = {
   'help.memo': 'A short public note stored on the blockchain with this transaction. Anyone can read it. Some exchanges require one.',
   'help.walletPassword': 'The password that encrypts this wallet on this device. It signs the transaction locally - it is never sent anywhere.',
   'help.seedPhrase': 'The 24 words that ARE your wallet. Anyone who has them controls your funds, and they are the only way to restore it. Write them on paper.',
-  'help.privacyMode': 'Hides amounts on screen for shoulder-surfing and screen sharing. Display only - it encrypts nothing, and anyone using this device can switch it back.',
   'help.currency': 'The currency used for the approximate fiat values. Prices are indicative and come from a public price feed.',
   'help.snapshot': 'The figures you last saw, stored on this device so the page is not empty while it reloads from the blockchain.',
   'help.account': 'A Beehive account is only for notifications. It cannot see, recover or control your wallets - those live on this device, encrypted with your wallet password.',

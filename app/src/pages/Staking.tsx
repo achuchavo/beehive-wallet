@@ -22,6 +22,7 @@ import PageHeader from '../components/PageHeader'
 import PercentButtons from '../components/PercentButtons'
 import CopyAddress from '../components/CopyAddress'
 import WalletSwitcher from '../components/WalletSwitcher'
+import PrivacyToggle from '../components/PrivacyToggle'
 import BottomSheet from '../components/BottomSheet'
 import { maskAmount, usePrivacyMode } from '../privacyMode'
 import { useT } from '../i18n/I18nContext'
@@ -275,7 +276,9 @@ export default function Staking() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title={t('staking.title')} />
+      <PageHeader title={t('staking.title')}>
+        <PrivacyToggle />
+      </PageHeader>
 
       <div className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200/70">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
@@ -460,6 +463,10 @@ function ValidatorRow({
 }) {
   const { t } = useT()
   const { active, getSigner } = useWallet()
+  // The user's own stake and pending reward on this row are personal amounts
+  // and must honour privacy mode; the validator's voting power is public
+  // chain data and stays visible.
+  const hidden = usePrivacyMode()
   const [action, setAction] = useState<'none' | 'delegate' | 'undelegate'>('none')
   // Shown when a validator this app does not offer is tapped anyway.
   const [blockedInfo, setBlockedInfo] = useState(false)
@@ -584,10 +591,12 @@ function ValidatorRow({
               <>
                 <span>·</span>
                 <span className="font-medium text-slate-700">
-                  {t('staking.you', { amount: formatAmount(staked, chain) })}
+                  {t('staking.you', { amount: maskAmount(formatAmount(staked, chain), hidden) })}
                 </span>
                 {reward && Number(reward) > 0 && (
-                  <span className="text-green-700">+{formatAmount(reward, chain)}</span>
+                  <span className="text-green-700">
+                    +{maskAmount(formatAmount(reward, chain), hidden)}
+                  </span>
                 )}
               </>
             )}

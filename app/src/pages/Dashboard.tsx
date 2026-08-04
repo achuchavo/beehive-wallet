@@ -14,15 +14,13 @@ import {
   ShieldCheck,
   TrendingUp,
   Undo2,
-  Eye,
-  EyeOff,
   UserCircle,
 } from 'lucide-react'
 import { DEFAULT_CHAIN, findChain, formatAmountShort, type ChainInfo } from '../chains'
 import { useAuth } from '../auth/AuthContext'
 import { useChains } from '../chainStore'
 import { useColdStart } from '../coldStart'
-import { usePrivacyMode, setPrivacyMode } from '../privacyMode'
+import { usePrivacyMode } from '../privacyMode'
 import { addBase, sumBase, isPositiveBase } from '../wallet/amount'
 import { useWallet } from '../wallet/WalletContext'
 import Card from '../components/Card'
@@ -33,6 +31,7 @@ import LoadingOverlay from '../components/LoadingOverlay'
 import OptionPicker from '../components/OptionPicker'
 import PageHeader from '../components/PageHeader'
 import Tabs, { TabPanel } from '../components/Tabs'
+import PrivacyToggle from '../components/PrivacyToggle'
 import CountUp from '../components/CountUp'
 import DeltaFloat from '../components/DeltaFloat'
 import { maskAmount } from '../privacyMode'
@@ -451,20 +450,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       <PageHeader title={t('dash.title')}>
         {accountChip}
-        {/* Display-only, and labelled as such in the help: the figures are
-            still in the page and anyone with the device can switch this back.
-            It is for shoulder-surfing and screen sharing, not secrecy. */}
-        <button
-          type="button"
-          onClick={() => setPrivacyMode(!hidden)}
-          aria-pressed={hidden}
-          title={t('dash.privacyHint')}
-          className="rounded-xl bg-white px-2.5 py-1.5 text-slate-600 ring-1 ring-slate-200 hover:text-amber-700"
-        >
-          {hidden ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          <span className="sr-only">{t('dash.privacyToggle')}</span>
-        </button>
-        <HelpTip text={t('help.privacyMode')} className="text-slate-500" />
+        <PrivacyToggle />
         <OptionPicker
           label={t('dash.currency')}
           value={currency}

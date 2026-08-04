@@ -25,6 +25,7 @@ import Tabs, { TabPanel } from '../components/Tabs'
 import TxReview, { type ReviewRow } from '../components/TxReview'
 import WalletSwitcher from '../components/WalletSwitcher'
 import Collapsible from '../components/Collapsible'
+import PrivacyToggle from '../components/PrivacyToggle'
 import TxUnresolved from '../components/TxUnresolved'
 import { maskAmount, usePrivacyMode } from '../privacyMode'
 
@@ -66,7 +67,9 @@ export default function Send() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t('send.title')} />
+      <PageHeader title={t('send.title')}>
+        <PrivacyToggle />
+      </PageHeader>
       {/* Real tab semantics rather than two styled buttons: this is the app's
           own Tabs component, so arrow keys, aria-selected and the panel wiring
           come with it. */}

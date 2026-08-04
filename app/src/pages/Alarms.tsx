@@ -33,6 +33,7 @@ import PasswordInput from '../components/PasswordInput'
 import Modal from '../components/Modal'
 import BottomSheet from '../components/BottomSheet'
 import Collapsible from '../components/Collapsible'
+import PrivacyToggle from '../components/PrivacyToggle'
 import Tabs, { TabPanel } from '../components/Tabs'
 import CopyAddress from '../components/CopyAddress'
 import HelpTip from '../components/HelpTip'
@@ -860,6 +861,7 @@ function AlarmPanel({ email, onLoggedOut }: { email: string; onLoggedOut: () => 
         />
       )}
       <PageHeader title={t('alarms.title')} help={t('help.account')}>
+        <PrivacyToggle />
         <span className="hidden text-sm text-slate-500 sm:inline">{email}</span>
         <button
           onClick={() => setAccountOpen(true)}

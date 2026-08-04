@@ -24,6 +24,7 @@ import OptionPicker from '../components/OptionPicker'
 import PageHeader from '../components/PageHeader'
 import Collapsible from '../components/Collapsible'
 import BottomSheet from '../components/BottomSheet'
+import PrivacyToggle from '../components/PrivacyToggle'
 import { maskAmount, usePrivacyMode } from '../privacyMode'
 import { useChains } from '../chainStore'
 import { useT } from '../i18n/I18nContext'
@@ -243,6 +244,7 @@ export default function Rewards() {
   return (
     <div className="space-y-6">
       <PageHeader title={t('rewards.title')}>
+        <PrivacyToggle />
         {walletChains.length > 1 && (
           <OptionPicker
             label={t('dash.chainFilter')}

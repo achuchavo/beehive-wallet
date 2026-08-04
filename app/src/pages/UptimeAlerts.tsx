@@ -131,14 +131,18 @@ function UptimePanel() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t('uptime.title')} subtitle={t('uptime.intro')}>
+      {/* The title owns its row - a button beside it squeezed it into
+          wrapping. The intro sits behind the "?" instead of a subtitle, and
+          the one primary action gets the line below. */}
+      <PageHeader title={t('uptime.title')} help={t('uptime.intro')} />
+      <div>
         <button
           onClick={() => setApplyOpen(true)}
           className="flex items-center gap-1.5 whitespace-nowrap rounded-xl bg-amber-500 px-3.5 py-2 text-sm font-medium text-slate-900 hover:bg-amber-600"
         >
           <Plus className="h-4 w-4" strokeWidth={1.8} /> {t('uptime.applyTitle')}
         </button>
-      </PageHeader>
+      </div>
 
       {notice && <div className="rounded-xl bg-green-50 px-4 py-3 text-sm text-green-800">{notice}</div>}
       {error && <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
