@@ -1,17 +1,20 @@
 // Generates app/public/og-image.png (1200x630) — the social-share card used by
 // the Open Graph / Twitter meta tags in index.html. Re-run after changing the
 // brand mark or copy:  node scripts/generate-og.mjs
+//
+// The mark is the REAL logo (brand/beehive-logo.png, extracted from the
+// official beehive.ico), composited at its native 256px - no vector original
+// exists. The card matches the product's actual white/amber identity; the
+// purple gradient it replaces shared nothing with the interface, and a share
+// card that does not match the site it opens reads as a phishing clone.
 import sharp from 'sharp'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const out = resolve(here, '../public/og-image.png')
-
-// The beehive-cell mark from public/favicon.svg (viewBox 0 0 48 46), drawn solid
-// white so it reads as a crisp silhouette on the purple background.
-const MARK =
-  'M25.946 44.938c-.664.845-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.287c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.497 0-3.578-1.842-3.578H1.237c-.92 0-1.456-1.04-.92-1.788L10.013.474c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.579 1.842 3.579h11.377c.943 0 1.473 1.088.89 1.83L25.947 44.94z'
+const logo = readFileSync(resolve(here, '../brand/beehive-logo.png'))
 
 // A flat-top hexagon path centred at (0,0), radius r — for the faint honeycomb.
 function hex(r) {
@@ -26,46 +29,46 @@ const font = "'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
 const svg = `<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#7c3aed"/>
-      <stop offset="1" stop-color="#4c1d95"/>
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#fef3c7"/>
     </linearGradient>
-    <radialGradient id="glow" cx="18%" cy="34%" r="70%">
-      <stop offset="0" stop-color="#b28bff" stop-opacity="0.55"/>
-      <stop offset="1" stop-color="#b28bff" stop-opacity="0"/>
-    </radialGradient>
   </defs>
 
   <rect width="1200" height="630" fill="url(#bg)"/>
-  <rect width="1200" height="630" fill="url(#glow)"/>
 
-  <!-- faint honeycomb, top-right -->
-  <g fill="none" stroke="#ffffff" stroke-opacity="0.09" stroke-width="3">
+  <!-- faint honeycomb, top-right, in the brand amber -->
+  <g fill="none" stroke="#f59e0b" stroke-opacity="0.16" stroke-width="3">
     <path d="${HEX}" transform="translate(1120,70)"/>
     <path d="${HEX}" transform="translate(1043,205)"/>
     <path d="${HEX}" transform="translate(1197,205)"/>
     <path d="${HEX}" transform="translate(1120,340)"/>
   </g>
 
-  <!-- brand mark -->
-  <circle cx="212" cy="315" r="128" fill="#ffffff" fill-opacity="0.10"/>
-  <svg x="133" y="228" width="158" height="174" viewBox="0 0 48 46">
-    <path fill="#ffffff" d="${MARK}"/>
-  </svg>
+  <!-- The real mark is composited into this tile by sharp. The tile is
+       deliberately a white rounded square (the logo's own background is
+       solid white), so against the amber wash it reads as an app icon
+       rather than as an accidental white box. -->
+  <rect x="110" y="157" width="316" height="316" rx="48" fill="#ffffff" stroke="#f59e0b" stroke-opacity="0.35" stroke-width="2"/>
 
   <!-- Copy. Deliberately carries no domain and no platform wording: this card
        has to stay correct across the dev host, the eventual official domain,
        and the iOS/Android store listings, so it names no URL and says "device"
        rather than "browser". -->
-  <text x="368" y="272" font-family="${font}" font-size="88" font-weight="700" fill="#ffffff">Beehive Wallet</text>
-  <text x="370" y="342" font-family="${font}" font-size="37" fill="#ffffff" fill-opacity="0.92">Non-custodial Cosmos wallet with</text>
-  <text x="370" y="388" font-family="${font}" font-size="37" fill="#ffffff" fill-opacity="0.92">outgoing-transaction alarms</text>
+  <text x="460" y="272" font-family="${font}" font-size="84" font-weight="700" fill="#1e293b">Beehive Wallet</text>
+  <text x="462" y="342" font-family="${font}" font-size="37" fill="#475569">Non-custodial Cosmos wallet with</text>
+  <text x="462" y="388" font-family="${font}" font-size="37" fill="#475569">outgoing-transaction alarms</text>
 
-  <g transform="translate(370,428)">
-    <rect width="500" height="58" rx="29" fill="#ffffff" fill-opacity="0.15"/>
-    <circle cx="35" cy="29" r="7" fill="#facc15"/>
-    <text x="60" y="38" font-family="${font}" font-size="27" font-weight="600" fill="#ffffff">Your keys never leave your device</text>
+  <g transform="translate(462,428)">
+    <rect width="510" height="58" rx="29" fill="#f59e0b" fill-opacity="0.16"/>
+    <circle cx="35" cy="29" r="7" fill="#f59e0b"/>
+    <text x="60" y="38" font-family="${font}" font-size="27" font-weight="600" fill="#92400e">Your keys never leave your device</text>
   </g>
 </svg>`
 
-await sharp(Buffer.from(svg)).png().toFile(out)
+const bg = await sharp(Buffer.from(svg)).png().toBuffer()
+// Native 256px, vertically centred in the left block - never upscaled.
+await sharp(bg)
+  .composite([{ input: logo, left: 140, top: 187 }])
+  .png()
+  .toFile(out)
 console.log('wrote', out)
