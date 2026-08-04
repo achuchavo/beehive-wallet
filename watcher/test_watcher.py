@@ -394,12 +394,14 @@ class PaidAlertGating(unittest.TestCase):
 
 
 class UptimeRecentWindow(unittest.TestCase):
-    """Uptime health is judged by RECENT signing, never by the raw counter.
+    """Uptime health is judged over the recent ~100 blocks, never by the raw
+    counter.
 
-    missed_blocks_counter is a sliding window over thousands of blocks, so an
-    old outage keeps it above the threshold for hours after the validator is
-    signing again. classify_uptime() uses the delta between polls; recovery is
-    a quiet streak (stable_since) lasting STABLE_WINDOW_MINUTES.
+    missed_blocks_counter covers thousands of blocks, so an old outage keeps
+    it high for hours (stale-backlog re-alerts), and its per-poll delta
+    alerts on every single fresh miss (flap). The tumbling window counts
+    misses against a baseline (window_start_missed) taken when the window
+    opened (stable_since); miss_threshold means missed-within-the-window.
     """
 
     def setUp(self):
@@ -410,94 +412,106 @@ class UptimeRecentWindow(unittest.TestCase):
     def tearDown(self):
         watcher.send_push = self._push
 
-    # --- classify_uptime: the per-poll verdict -----------------------------
+    # --- window_verdict: the pure verdict ----------------------------------
 
-    def test_new_misses_over_threshold_is_down(self):
-        down, signing = watcher.classify_uptime(120, 90, 100, jailed=False, tombstoned=False)
-        self.assertTrue(down)
-        self.assertFalse(signing)
+    def test_threshold_reached_mid_window_is_down_immediately(self):
+        self.assertEqual(watcher.window_verdict(50, 3.0, 50), "down")
 
-    def test_stale_backlog_with_no_new_misses_is_NOT_down(self):
-        # The bug this exists for: counter stuck way over the threshold from an
-        # old outage, but nothing new missed since the last poll.
-        down, signing = watcher.classify_uptime(500, 500, 100, jailed=False, tombstoned=False)
-        self.assertFalse(down)
-        self.assertTrue(signing)
+    def test_closed_window_with_a_trickle_is_clean(self):
+        # threshold//5 = 10: the odd dropped block is normal operation.
+        self.assertEqual(watcher.window_verdict(8, 11.0, 50), "clean")
 
-    def test_a_few_new_misses_under_threshold_is_not_down(self):
-        down, signing = watcher.classify_uptime(5, 0, 100, jailed=False, tombstoned=False)
-        self.assertFalse(down)
-        self.assertFalse(signing)  # not down, but not provably clean either
+    def test_closed_window_with_moderate_misses_is_dirty(self):
+        self.assertEqual(watcher.window_verdict(20, 11.0, 50), "dirty")
 
-    def test_jailed_is_down_regardless_of_counter(self):
-        down, signing = watcher.classify_uptime(0, 0, 100, jailed=True, tombstoned=False)
-        self.assertTrue(down)
-        self.assertFalse(signing)
+    def test_open_window_below_threshold_is_pending(self):
+        self.assertEqual(watcher.window_verdict(20, 5.0, 50), "pending")
 
-    def test_draining_counter_counts_as_signing(self):
-        down, signing = watcher.classify_uptime(480, 500, 100, jailed=False, tombstoned=False)
-        self.assertFalse(down)
-        self.assertTrue(signing)
-
-    # --- evaluate_uptime: the streak state machine -------------------------
+    # --- evaluate_uptime: the window state machine -------------------------
 
     @staticmethod
-    def sub(down_state, stable_since=None):
+    def sub(down_state, window_age_minutes=None, baseline=None):
+        started = (
+            watcher.datetime.now() - watcher.timedelta(minutes=window_age_minutes)
+            if window_age_minutes is not None
+            else None
+        )
         return {
             "id": 1,
             "user_id": 7,
-            "validator_address": "panaceavaloper1xxxxxxxxxxxxxxxx",
+            "validator_address": "chihuahuavaloper1xxxxxxxxxxxxxxxx",
             "moniker": "Test",
             "last_down_state": down_state,
             "last_alert_at": None,
-            "last_missed": 0,
+            "last_missed": baseline or 0,
             "snooze_until": None,
             "frequency_minutes": 60,
-            "miss_threshold": 100,
-            "stable_since": stable_since,
+            "miss_threshold": 50,
+            "stable_since": started,
+            "window_start_missed": baseline,
         }
 
-    def _run(self, sub, down, missed, signing_now):
+    def _run(self, sub, missed, hard_down=False):
         cur = FakeCursor()
         with contextlib.redirect_stdout(io.StringIO()):
-            watcher.evaluate_uptime(cur, FakeDb(), sub, down, missed, signing_now)
+            watcher.evaluate_uptime(cur, FakeDb(), sub, missed, hard_down)
         return " ".join(cur.executed)
 
-    def test_down_alerts_and_resets_any_streak(self):
-        sql = self._run(self.sub(0), down=True, missed=120, signing_now=False)
-        self.assertIn("'down'", sql)
-        self.assertIn("stable_since = NULL", sql)
-        self.assertEqual(len(self.pushes), 1)
-
-    def test_first_quiet_poll_starts_the_streak_silently(self):
-        sql = self._run(self.sub(1), down=False, missed=500, signing_now=True)
+    def test_first_sight_anchors_a_window_silently(self):
+        sql = self._run(self.sub(0), missed=126)
         self.assertIn("stable_since = NOW()", sql)
+        self.assertNotIn("'down'", sql)
         self.assertNotIn("recovered", sql)
         self.assertEqual(self.pushes, [])
 
-    def test_young_streak_stays_silent(self):
-        recent = watcher.datetime.now() - watcher.timedelta(minutes=2)
-        sql = self._run(self.sub(1, stable_since=recent), down=False, missed=500, signing_now=True)
-        self.assertNotIn("recovered", sql)
-        self.assertNotIn("last_down_state = 0", sql)
-        self.assertEqual(self.pushes, [])
-
-    def test_streak_older_than_the_window_recovers(self):
-        old = watcher.datetime.now() - watcher.timedelta(minutes=watcher.STABLE_WINDOW_MINUTES + 1)
-        sql = self._run(self.sub(1, stable_since=old), down=False, missed=500, signing_now=True)
+    def test_stale_backlog_with_clean_window_recovers(self):
+        # THE original bug: counter stuck at 126 from an old outage, node
+        # signing again. A closed clean window = recovered, whatever the
+        # ancient counter says.
+        sql = self._run(self.sub(1, window_age_minutes=11, baseline=126), missed=127)
         self.assertIn("'recovered'", sql)
         self.assertIn("last_down_state = 0", sql)
         self.assertEqual(len(self.pushes), 1)
 
-    def test_not_signing_while_down_resets_the_streak(self):
-        old = watcher.datetime.now() - watcher.timedelta(minutes=30)
-        sql = self._run(self.sub(1, stable_since=old), down=False, missed=500, signing_now=False)
-        self.assertIn("stable_since = NULL", sql)
-        self.assertNotIn("recovered", sql)
+    def test_single_fresh_miss_over_stale_backlog_stays_quiet(self):
+        # The 016 flap: one newly missed block while the backlog exceeded the
+        # threshold used to alert down. Within a window it is just recent=1.
+        sql = self._run(self.sub(0, window_age_minutes=2, baseline=126), missed=127)
+        self.assertNotIn("'down'", sql)
         self.assertEqual(self.pushes, [])
 
-    def test_never_down_never_recovers(self):
-        sql = self._run(self.sub(0), down=False, missed=10, signing_now=True)
+    def test_real_outage_reaches_threshold_mid_window_and_alerts(self):
+        sql = self._run(self.sub(0, window_age_minutes=4, baseline=126), missed=180)
+        self.assertIn("'down'", sql)
+        self.assertIn("last_down_state = 1", sql)
+        self.assertEqual(len(self.pushes), 1)
+
+    def test_down_alert_reports_recent_misses_not_the_backlog(self):
+        self._run(self.sub(0, window_age_minutes=4, baseline=126), missed=180)
+        # push body says "missing blocks (54)" - the window's count, not 180.
+        self.assertIn("(54)", self.pushes[0][4])
+
+    def test_dirty_window_holds_state_and_says_nothing(self):
+        sql = self._run(self.sub(1, window_age_minutes=11, baseline=100), missed=120)
+        self.assertNotIn("'down'", sql)
+        self.assertNotIn("recovered", sql)
+        self.assertNotIn("last_down_state = 0", sql)
+        self.assertEqual(self.pushes, [])
+
+    def test_pending_window_only_updates_the_counter(self):
+        sql = self._run(self.sub(1, window_age_minutes=3, baseline=126), missed=127)
+        self.assertNotIn("'down'", sql)
+        self.assertNotIn("recovered", sql)
+        self.assertNotIn("stable_since = NOW()", sql)
+        self.assertEqual(self.pushes, [])
+
+    def test_jailed_is_down_no_matter_what_the_window_says(self):
+        sql = self._run(self.sub(0, window_age_minutes=1, baseline=0), missed=0, hard_down=True)
+        self.assertIn("'down'", sql)
+        self.assertEqual(len(self.pushes), 1)
+
+    def test_clean_window_when_never_down_recovers_nothing(self):
+        sql = self._run(self.sub(0, window_age_minutes=11, baseline=126), missed=127)
         self.assertNotIn("recovered", sql)
         self.assertEqual(self.pushes, [])
 
