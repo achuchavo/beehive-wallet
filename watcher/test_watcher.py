@@ -393,13 +393,13 @@ class PaidAlertGating(unittest.TestCase):
         self.assertEqual(db.rollbacks, 1)
 
 
-class UptimeStabilization(unittest.TestCase):
-    """Recovered must mean STABILIZED, not merely one poll under the threshold.
+class UptimeRecentWindow(unittest.TestCase):
+    """Uptime health is judged by RECENT signing, never by the raw counter.
 
-    The missed-blocks counter is a sliding window that drains block by block,
-    so a validator hovering at the threshold crosses it in both directions all
-    night. is_stable() is the hysteresis line; evaluate_uptime holds the down
-    state between the two lines and says nothing.
+    missed_blocks_counter is a sliding window over thousands of blocks, so an
+    old outage keeps it above the threshold for hours after the validator is
+    signing again. classify_uptime() uses the delta between polls; recovery is
+    a quiet streak (stable_since) lasting STABLE_WINDOW_MINUTES.
     """
 
     def setUp(self):
@@ -410,8 +410,39 @@ class UptimeStabilization(unittest.TestCase):
     def tearDown(self):
         watcher.send_push = self._push
 
+    # --- classify_uptime: the per-poll verdict -----------------------------
+
+    def test_new_misses_over_threshold_is_down(self):
+        down, signing = watcher.classify_uptime(120, 90, 100, jailed=False, tombstoned=False)
+        self.assertTrue(down)
+        self.assertFalse(signing)
+
+    def test_stale_backlog_with_no_new_misses_is_NOT_down(self):
+        # The bug this exists for: counter stuck way over the threshold from an
+        # old outage, but nothing new missed since the last poll.
+        down, signing = watcher.classify_uptime(500, 500, 100, jailed=False, tombstoned=False)
+        self.assertFalse(down)
+        self.assertTrue(signing)
+
+    def test_a_few_new_misses_under_threshold_is_not_down(self):
+        down, signing = watcher.classify_uptime(5, 0, 100, jailed=False, tombstoned=False)
+        self.assertFalse(down)
+        self.assertFalse(signing)  # not down, but not provably clean either
+
+    def test_jailed_is_down_regardless_of_counter(self):
+        down, signing = watcher.classify_uptime(0, 0, 100, jailed=True, tombstoned=False)
+        self.assertTrue(down)
+        self.assertFalse(signing)
+
+    def test_draining_counter_counts_as_signing(self):
+        down, signing = watcher.classify_uptime(480, 500, 100, jailed=False, tombstoned=False)
+        self.assertFalse(down)
+        self.assertTrue(signing)
+
+    # --- evaluate_uptime: the streak state machine -------------------------
+
     @staticmethod
-    def sub(down_state):
+    def sub(down_state, stable_since=None):
         return {
             "id": 1,
             "user_id": 7,
@@ -423,47 +454,52 @@ class UptimeStabilization(unittest.TestCase):
             "snooze_until": None,
             "frequency_minutes": 60,
             "miss_threshold": 100,
+            "stable_since": stable_since,
         }
 
-    def _run(self, down_state, down, missed, stable):
+    def _run(self, sub, down, missed, signing_now):
         cur = FakeCursor()
         with contextlib.redirect_stdout(io.StringIO()):
-            watcher.evaluate_uptime(cur, FakeDb(), self.sub(down_state), down, missed, stable)
-        return cur.executed
+            watcher.evaluate_uptime(cur, FakeDb(), sub, down, missed, signing_now)
+        return " ".join(cur.executed)
 
-    def test_is_stable_uses_the_hysteresis_line_not_the_threshold(self):
-        self.assertFalse(watcher.is_stable(99, 100, jailed=False, tombstoned=False))
-        self.assertFalse(watcher.is_stable(51, 100, jailed=False, tombstoned=False))
-        self.assertTrue(watcher.is_stable(50, 100, jailed=False, tombstoned=False))
-        self.assertTrue(watcher.is_stable(0, 100, jailed=False, tombstoned=False))
-
-    def test_is_stable_never_true_while_jailed_or_tombstoned(self):
-        self.assertFalse(watcher.is_stable(0, 100, jailed=True, tombstoned=False))
-        self.assertFalse(watcher.is_stable(0, 100, jailed=False, tombstoned=True))
-
-    def test_hovering_under_threshold_holds_the_down_state_silently(self):
-        executed = self._run(down_state=1, down=False, missed=80, stable=False)
-        joined = " ".join(executed)
-        self.assertNotIn("recovered", joined)
-        self.assertNotIn("last_down_state = 0", joined)
-        self.assertEqual(self.pushes, [])
-
-    def test_recovered_fires_once_drained_past_the_line(self):
-        executed = self._run(down_state=1, down=False, missed=10, stable=True)
-        joined = " ".join(executed)
-        self.assertIn("'recovered'", joined)
-        self.assertIn("last_down_state = 0", joined)
+    def test_down_alerts_and_resets_any_streak(self):
+        sql = self._run(self.sub(0), down=True, missed=120, signing_now=False)
+        self.assertIn("'down'", sql)
+        self.assertIn("stable_since = NULL", sql)
         self.assertEqual(len(self.pushes), 1)
 
-    def test_no_recovered_when_it_was_never_down(self):
-        executed = self._run(down_state=0, down=False, missed=10, stable=True)
-        self.assertNotIn("recovered", " ".join(executed))
+    def test_first_quiet_poll_starts_the_streak_silently(self):
+        sql = self._run(self.sub(1), down=False, missed=500, signing_now=True)
+        self.assertIn("stable_since = NOW()", sql)
+        self.assertNotIn("recovered", sql)
         self.assertEqual(self.pushes, [])
 
-    def test_down_alert_unaffected_by_stability(self):
-        executed = self._run(down_state=0, down=True, missed=120, stable=False)
-        self.assertIn("'down'", " ".join(executed))
+    def test_young_streak_stays_silent(self):
+        recent = watcher.datetime.now() - watcher.timedelta(minutes=2)
+        sql = self._run(self.sub(1, stable_since=recent), down=False, missed=500, signing_now=True)
+        self.assertNotIn("recovered", sql)
+        self.assertNotIn("last_down_state = 0", sql)
+        self.assertEqual(self.pushes, [])
+
+    def test_streak_older_than_the_window_recovers(self):
+        old = watcher.datetime.now() - watcher.timedelta(minutes=watcher.STABLE_WINDOW_MINUTES + 1)
+        sql = self._run(self.sub(1, stable_since=old), down=False, missed=500, signing_now=True)
+        self.assertIn("'recovered'", sql)
+        self.assertIn("last_down_state = 0", sql)
         self.assertEqual(len(self.pushes), 1)
+
+    def test_not_signing_while_down_resets_the_streak(self):
+        old = watcher.datetime.now() - watcher.timedelta(minutes=30)
+        sql = self._run(self.sub(1, stable_since=old), down=False, missed=500, signing_now=False)
+        self.assertIn("stable_since = NULL", sql)
+        self.assertNotIn("recovered", sql)
+        self.assertEqual(self.pushes, [])
+
+    def test_never_down_never_recovers(self):
+        sql = self._run(self.sub(0), down=False, missed=10, signing_now=True)
+        self.assertNotIn("recovered", sql)
+        self.assertEqual(self.pushes, [])
 
 
 if __name__ == "__main__":

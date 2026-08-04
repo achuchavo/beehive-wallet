@@ -604,23 +604,39 @@ def uptime_push_body(sub: dict, kind: str, missed: int) -> str:
     return f"{name} is missing blocks ({missed})."
 
 
-# Recovery hysteresis. "Down" starts at miss_threshold, but "recovered" is NOT
-# simply being back under it: the missed-blocks counter is a sliding window
-# that drains one block at a time, so a validator hovering at the threshold
-# would otherwise flap - a down alert, a recovered alert, another down alert,
-# every few polls, all night. Recovered fires only once the counter has
-# drained to this fraction of the threshold (and the validator is neither
-# jailed nor tombstoned), which is what "stabilized" means here. Between the
-# two lines the subscription holds its previous state, silently.
-RECOVERY_FRACTION = 0.5
+# Health is judged by RECENT signing, never by the raw counter.
+#
+# missed_blocks_counter is a sliding window over the chain's whole
+# signed_blocks_window (thousands of blocks), so after an outage it stays
+# above any sensible threshold for many HOURS while the validator is already
+# signing perfectly - re-alerting "down" on that stale history, and holding
+# the recovery alert hostage to a drain that has not even started.
+#
+# The counter's DELTA between polls is what actually says "now":
+#   delta > 0   blocks were missed since the last poll - actively down
+#   delta <= 0  everything since the last poll was signed
+# (A totally dead validator whose counter has saturated also shows delta 0,
+# but the chain jails it long before that point, and jailed is checked
+# separately.)
+#
+# Recovery is the quiet streak: no new misses, and not jailed/tombstoned, for
+# STABLE_WINDOW_MINUTES - roughly 100 blocks at Cosmos block times. The
+# streak's start lives in uptime_subscriptions.stable_since (migration 016);
+# any new miss resets it.
+STABLE_WINDOW_MINUTES = 10
 
 
-def is_stable(missed: int, threshold: int, jailed: bool, tombstoned: bool) -> bool:
-    """Recovered-for-real: window drained past the hysteresis line, not jailed."""
-    return not jailed and not tombstoned and missed <= int(threshold * RECOVERY_FRACTION)
+def classify_uptime(
+    missed: int, last_missed: int, threshold: int, jailed: bool, tombstoned: bool
+) -> tuple:
+    """(down, signing_now) for one poll. Pure - see the block comment above."""
+    actively_missing = missed > last_missed
+    down = jailed or tombstoned or (actively_missing and missed >= threshold)
+    signing_now = not jailed and not tombstoned and missed <= last_missed
+    return down, signing_now
 
 
-def evaluate_uptime(cursor, db, sub: dict, down: bool, missed: int, stable: bool = True) -> None:
+def evaluate_uptime(cursor, db, sub: dict, down: bool, missed: int, signing_now: bool) -> None:
     now = datetime.now()
     was_down = int(sub["last_down_state"]) == 1
     snoozed = sub["snooze_until"] is not None and sub["snooze_until"] > now
@@ -637,7 +653,7 @@ def evaluate_uptime(cursor, db, sub: dict, down: bool, missed: int, stable: bool
             )
             cursor.execute(
                 "UPDATE uptime_subscriptions SET last_alert_at = NOW(), last_down_state = 1, "
-                "last_missed = %s WHERE id = %s",
+                "last_missed = %s, stable_since = NULL WHERE id = %s",
                 (missed, sub["id"]),
             )
             log("SUCCESS", f"Uptime alert (down): sub={sub['id']} {sub['validator_address']} missed={missed}")
@@ -645,30 +661,52 @@ def evaluate_uptime(cursor, db, sub: dict, down: bool, missed: int, stable: bool
                       uptime_push_body(sub, "down", missed), UPTIME_URL)
         else:
             cursor.execute(
-                "UPDATE uptime_subscriptions SET last_down_state = 1, last_missed = %s WHERE id = %s",
+                "UPDATE uptime_subscriptions SET last_down_state = 1, last_missed = %s, "
+                "stable_since = NULL WHERE id = %s",
                 (missed, sub["id"]),
             )
-    elif was_down and not stable:
-        # Under the down threshold but the window has not drained past the
-        # hysteresis line yet: hold the down state, say nothing. See
-        # RECOVERY_FRACTION - this is what stops threshold-hovering flapping.
-        cursor.execute(
-            "UPDATE uptime_subscriptions SET last_missed = %s WHERE id = %s",
-            (missed, sub["id"]),
-        )
-    else:
-        if was_down:
+    elif was_down:
+        if not signing_now:
+            # Neither actively missing nor provably signing (e.g. still jailed
+            # with a flat counter). Hold the down state, no streak.
+            cursor.execute(
+                "UPDATE uptime_subscriptions SET last_missed = %s, stable_since = NULL "
+                "WHERE id = %s",
+                (missed, sub["id"]),
+            )
+        elif sub.get("stable_since") is None:
+            # First quiet poll: start the streak, say nothing yet.
+            cursor.execute(
+                "UPDATE uptime_subscriptions SET last_missed = %s, stable_since = NOW() "
+                "WHERE id = %s",
+                (missed, sub["id"]),
+            )
+        elif (now - sub["stable_since"]) >= timedelta(minutes=STABLE_WINDOW_MINUTES):
+            # Quiet for ~100 blocks: that is a recovery, whatever the raw
+            # counter still says about ancient history.
             cursor.execute(
                 "INSERT INTO uptime_alerts (subscription_id, kind, missed_blocks, detected_at, is_read) "
                 "VALUES (%s, 'recovered', %s, NOW(), 0)",
                 (sub["id"], missed),
             )
+            cursor.execute(
+                "UPDATE uptime_subscriptions SET last_down_state = 0, last_alert_at = NULL, "
+                "last_missed = %s, stable_since = NULL WHERE id = %s",
+                (missed, sub["id"]),
+            )
             log("SUCCESS", f"Uptime alert (recovered): sub={sub['id']} {sub['validator_address']}")
             send_push(cursor, db, int(sub["user_id"]), "Validator uptime",
                       uptime_push_body(sub, "recovered", missed), UPTIME_URL)
+        else:
+            # Streak in progress but not old enough yet.
+            cursor.execute(
+                "UPDATE uptime_subscriptions SET last_missed = %s WHERE id = %s",
+                (missed, sub["id"]),
+            )
+    else:
         cursor.execute(
             "UPDATE uptime_subscriptions SET last_down_state = 0, last_alert_at = NULL, "
-            "last_missed = %s WHERE id = %s",
+            "last_missed = %s, stable_since = NULL WHERE id = %s",
             (missed, sub["id"]),
         )
     db.commit()
@@ -711,10 +749,14 @@ def process_uptime(cursor, db, chains: list) -> None:
         if info is None:
             continue
         missed = info["missed"]
-        threshold = int(sub["miss_threshold"])
-        down = missed >= threshold or vinfo["jailed"] or info["tombstoned"]
-        stable = is_stable(missed, threshold, vinfo["jailed"], info["tombstoned"])
-        evaluate_uptime(cursor, db, sub, down, missed, stable)
+        down, signing_now = classify_uptime(
+            missed,
+            int(sub["last_missed"] or 0),
+            int(sub["miss_threshold"]),
+            vinfo["jailed"],
+            info["tombstoned"],
+        )
+        evaluate_uptime(cursor, db, sub, down, missed, signing_now)
 
 
 def paid_alerts_available(cursor) -> bool:

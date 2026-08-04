@@ -182,6 +182,7 @@ CREATE TABLE uptime_subscriptions (
     last_missed INT UNSIGNED NOT NULL DEFAULT 0,
     last_down_state TINYINT(1) NOT NULL DEFAULT 0,
     last_alert_at DATETIME NULL,
+    stable_since DATETIME NULL COMMENT 'Start of the current no-new-missed-blocks streak while down; NULL = none',
     approved_by INT UNSIGNED NULL,
     created_at DATETIME NOT NULL,
     PRIMARY KEY (id),
@@ -462,11 +463,11 @@ CREATE TABLE device_tokens (
 ) ENGINE = InnoDB;
 
 -- This file is the FRESH-INSTALL snapshot and already contains every object
--- through migration 015, so a new database is stamped at 15 and no migration
+-- through migration 016, so a new database is stamped at 16 and no migration
 -- needs to be replayed against it.
 --
 -- NOTE for 012: login_attempts.kind is VARCHAR(20) below, which is what
 -- migration 012 exists to repair on databases where the table predated
 -- migration 004 and was created narrower. A fresh install from this file is
 -- already correct.
-INSERT INTO schema_version (version, applied_at) VALUES (15, NOW());
+INSERT INTO schema_version (version, applied_at) VALUES (16, NOW());
