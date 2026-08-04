@@ -101,6 +101,8 @@ export interface UptimeSubscription {
   frequency_minutes: number
   snooze_until: string | null
   last_missed: number
+  /** Misses within the watcher's current ~10-minute window - current health. */
+  recent_missed: number
   last_down_state: number
   last_alert_at: string | null
   created_at: string

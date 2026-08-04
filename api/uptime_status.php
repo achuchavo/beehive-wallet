@@ -6,10 +6,16 @@ $userId = require_user($db);
 
 $enabled = get_setting($db, 'uptime_alerts_enabled', '0') === '1';
 
+// recent_missed = misses within the watcher's current ~10-minute measuring
+// window (migration 017), which is what "how is my validator doing" means.
+// last_missed is the chain's lifetime sliding-window counter and stays high
+// for hours after an outage - it must never be presented as current health.
 $stmt = $db->prepare(
     'SELECT id, chain_key, validator_address, moniker, status, authorized_until,
             miss_threshold, frequency_minutes, snooze_until, last_missed, last_down_state,
-            last_alert_at, created_at
+            last_alert_at, created_at,
+            GREATEST(0, CAST(last_missed AS SIGNED)
+                - CAST(COALESCE(window_start_missed, last_missed) AS SIGNED)) AS recent_missed
      FROM uptime_subscriptions
      WHERE user_id = ?
      ORDER BY created_at DESC'
