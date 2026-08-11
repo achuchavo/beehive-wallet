@@ -8,6 +8,7 @@ import PasswordInput from '../components/PasswordInput'
 import CopyAddress from '../components/CopyAddress'
 import ChainPicker from '../components/ChainPicker'
 import HelpTip from '../components/HelpTip'
+import StorageWarning from '../components/StorageWarning'
 import OptionPicker from '../components/OptionPicker'
 import PageHeader from '../components/PageHeader'
 import RemoveWalletDialog from '../components/RemoveWalletDialog'
@@ -209,6 +210,9 @@ function WalletList({ onCreate, onImport }: { onCreate: () => void; onImport: ()
             />
           </div>
         )}
+        {/* Shown where the wallets are managed - the place a user looks when
+            one has gone missing, and where the recovery phrase lives. */}
+        <StorageWarning hasWallets={wallets.length > 0} />
         {wallets.length === 0 ? (
           <p className="text-sm text-slate-500">{t('settings.noWallets')}</p>
         ) : shown.length === 0 ? (

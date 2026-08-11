@@ -57,7 +57,7 @@ const DOCS: Record<Lang, Content> = {
       },
       {
         title: 'Staking',
-        body: 'Delegate to validators — free to the Beehive validator — and track your delegations and rewards.',
+        body: 'Delegate to validators and track your delegations and rewards.',
       },
       {
         title: 'Rewards',
@@ -88,7 +88,7 @@ const DOCS: Record<Lang, Content> = {
       },
       {
         q: 'Stake / delegate',
-        a: 'On Validators, pick a validator (Beehive is free), enter an amount, and sign. Undelegations unlock after the ~21-day unbonding period.',
+        a: 'On Validators, pick a validator, enter an amount, and sign. Any Beehive fee is shown on the form before you sign, alongside the network fee. Undelegations unlock after the ~21-day unbonding period.',
       },
       {
         q: 'Claim or restake rewards',
@@ -182,7 +182,7 @@ const DOCS: Record<Lang, Content> = {
       },
       {
         title: '스테이킹',
-        body: '밸리데이터에 위임하고(Beehive 밸리데이터는 무료) 위임 및 보상을 추적하세요.',
+        body: '밸리데이터에 위임하고 위임 및 보상을 추적하세요.',
       },
       {
         title: '보상',
@@ -213,7 +213,7 @@ const DOCS: Record<Lang, Content> = {
       },
       {
         q: '스테이킹 / 위임',
-        a: '밸리데이터 화면에서 밸리데이터를 선택하고(Beehive는 무료) 금액을 입력한 뒤 서명하세요. 위임 해제는 약 21일의 언본딩 기간 후에 잠금 해제됩니다.',
+        a: '밸리데이터 화면에서 밸리데이터를 선택하고 금액을 입력한 뒤 서명하세요. Beehive 수수료가 있는 경우 서명 전에 네트워크 수수료와 함께 화면에 표시됩니다. 위임 해제는 약 21일의 언본딩 기간 후에 잠금 해제됩니다.',
       },
       {
         q: '보상 수령 또는 재스테이킹',

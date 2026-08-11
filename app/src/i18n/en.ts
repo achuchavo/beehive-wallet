@@ -336,7 +336,7 @@ export const en: Record<string, string> = {
 
   // Staking / Validators
   'staking.title': 'Staking / Validators',
-  'staking.noWalletDesc': 'Add a wallet to stake to Beehive for free and earn rewards.',
+  'staking.noWalletDesc': 'Add a wallet to start staking and earning rewards.',
   'staking.stakingFrom': 'Staking from',
   'staking.totalStaked': 'Total staked',
   'staking.claimAll': 'Claim all rewards ({count} validators)',
@@ -353,6 +353,12 @@ export const en: Record<string, string> = {
   'staking.you': 'you: {amount}',
   'staking.stake': 'Stake',
   'staking.delegate': 'Delegate',
+  'storage.inAppTitle': 'Open this in your browser before creating a wallet',
+  'storage.inAppBody': 'You are inside another app’s built-in browser. Wallets created here are stored in that app’s temporary space — they can disappear when it closes, and they will not be there if you open the site in your normal browser. Use the menu to open this page in Chrome, Safari or Samsung Internet.',
+  'storage.evictableTitle': 'This browser may clear your wallets',
+  'storage.evictableBody': 'Your device has not granted this site permanent storage, so the browser is allowed to clear it if space runs low, and clearing browsing data will remove it.',
+  'storage.backupReminder': 'Your recovery phrase is the only way back.',
+  'help.storageBackup': 'Wallets live only in this browser, encrypted with your password — we hold no copy and cannot restore one. Your coins are on the blockchain and are never lost, but without the recovery phrase you cannot reach them from anywhere else. Write it on paper and keep it off this device.',
   'staking.notOffered': 'Not offered',
   'staking.notOfferedTitle': 'Staking here is not available',
   'staking.notOfferedBody': 'Beehive currently offers staking with a chosen set of validators on {chain}, and this one is not among them. Nothing is wrong with your wallet or your tokens.',

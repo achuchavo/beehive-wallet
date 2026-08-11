@@ -24,6 +24,7 @@ import {
   newWalletId,
   type StoredWallet,
 } from './storage'
+import { requestPersistentStorage } from './storagePersistence'
 
 function hdPath(chain: ChainInfo) {
   return stringToPath(`m/44'/${chain.coinType}'/0'/0/0`)
@@ -136,6 +137,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const persist = useCallback((next: StoredWallet[]) => {
     setWallets(next)
     saveWallets(next)
+    // Ask the browser to stop treating our storage as disposable, at the moment
+    // the user has just demonstrated they want a wallet kept - which is also
+    // when Chrome is most likely to grant it. Fire-and-forget: it must never be
+    // able to fail a wallet creation.
+    if (next.length > 0) void requestPersistentStorage()
   }, [])
 
   const setActive = useCallback((walletId: string) => {

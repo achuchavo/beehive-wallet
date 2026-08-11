@@ -328,7 +328,7 @@ export const ko: Record<string, string> = {
 
   // Staking / Validators
   'staking.title': '스테이킹 / 밸리데이터',
-  'staking.noWalletDesc': 'Beehive에 무료로 스테이킹하고 보상을 받으려면 지갑을 추가하세요.',
+  'staking.noWalletDesc': '스테이킹하고 보상을 받으려면 지갑을 추가하세요.',
   'staking.stakingFrom': '스테이킹 지갑',
   'staking.totalStaked': '총 스테이킹',
   'staking.claimAll': '모든 보상 수령 (밸리데이터 {count}명)',
@@ -345,6 +345,12 @@ export const ko: Record<string, string> = {
   'staking.you': '내 스테이킹: {amount}',
   'staking.stake': '스테이킹',
   'staking.delegate': '위임',
+  'storage.inAppTitle': '지갑을 만들기 전에 브라우저에서 열어 주세요',
+  'storage.inAppBody': '다른 앱에 내장된 브라우저에서 보고 계십니다. 여기서 만든 지갑은 그 앱의 임시 저장소에 보관되어 앱을 닫으면 사라질 수 있고, 평소 쓰는 브라우저에서는 보이지 않습니다. 메뉴에서 Chrome, Safari, 삼성 인터넷 등으로 이 페이지를 열어 주세요.',
+  'storage.evictableTitle': '이 브라우저가 지갑을 지울 수 있습니다',
+  'storage.evictableBody': '이 사이트에 영구 저장 권한이 부여되지 않아, 저장 공간이 부족하면 브라우저가 데이터를 지울 수 있고 인터넷 사용 기록을 삭제해도 함께 지워집니다.',
+  'storage.backupReminder': '복구 문구만이 되돌릴 수 있는 유일한 방법입니다.',
+  'help.storageBackup': '지갑은 이 브라우저에만 비밀번호로 암호화되어 저장되며, 저희는 사본을 갖고 있지 않아 복구해 드릴 수 없습니다. 코인은 블록체인에 있으므로 사라지지 않지만, 복구 문구가 없으면 다른 곳에서 접근할 수 없습니다. 종이에 적어 기기와 분리해 보관하세요.',
   'staking.notOffered': '제공 안 함',
   'staking.notOfferedTitle': '이 밸리데이터로는 스테이킹할 수 없습니다',
   'staking.notOfferedBody': 'Beehive는 현재 {chain}에서 선택된 밸리데이터로만 스테이킹을 제공하며, 이 밸리데이터는 포함되어 있지 않습니다. 지갑이나 보유 자산에 문제가 있는 것은 아닙니다.',
