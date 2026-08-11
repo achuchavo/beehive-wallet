@@ -350,6 +350,7 @@ export const ko: Record<string, string> = {
   'storage.evictableTitle': '이 브라우저가 지갑을 지울 수 있습니다',
   'storage.evictableBody': '이 사이트에 영구 저장 권한이 부여되지 않아, 저장 공간이 부족하면 브라우저가 데이터를 지울 수 있고 인터넷 사용 기록을 삭제해도 함께 지워집니다.',
   'storage.backupReminder': '복구 문구만이 되돌릴 수 있는 유일한 방법입니다.',
+  'storage.persistedOk': '이 브라우저가 영구 저장을 허용했습니다 — 지갑이 자동으로 삭제되지 않습니다.',
   'help.storageBackup': '지갑은 이 브라우저에만 비밀번호로 암호화되어 저장되며, 저희는 사본을 갖고 있지 않아 복구해 드릴 수 없습니다. 코인은 블록체인에 있으므로 사라지지 않지만, 복구 문구가 없으면 다른 곳에서 접근할 수 없습니다. 종이에 적어 기기와 분리해 보관하세요.',
   'staking.notOffered': '제공 안 함',
   'staking.notOfferedTitle': '이 밸리데이터로는 스테이킹할 수 없습니다',

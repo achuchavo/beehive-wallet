@@ -31,7 +31,18 @@ export default function StorageWarning({ hasWallets }: { hasWallets: boolean }) 
     }
   }, [hasWallets])
 
-  if (!hasWallets || !state || !storageAtRisk(state)) return null
+  // Always reported, even when healthy: when a user says "my wallet vanished",
+  // the first question is whether this browser was keeping it, and that has to
+  // be answerable from the screen rather than guessed at afterwards.
+  if (!hasWallets || !state) return null
+
+  if (!storageAtRisk(state)) {
+    return (
+      <p className="text-xs text-slate-400">
+        {t('storage.persistedOk')}
+      </p>
+    )
+  }
 
   const inApp = state.inAppBrowser
 

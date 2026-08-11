@@ -358,6 +358,7 @@ export const en: Record<string, string> = {
   'storage.evictableTitle': 'This browser may clear your wallets',
   'storage.evictableBody': 'Your device has not granted this site permanent storage, so the browser is allowed to clear it if space runs low, and clearing browsing data will remove it.',
   'storage.backupReminder': 'Your recovery phrase is the only way back.',
+  'storage.persistedOk': 'This browser has granted permanent storage — your wallets will not be cleared automatically.',
   'help.storageBackup': 'Wallets live only in this browser, encrypted with your password — we hold no copy and cannot restore one. Your coins are on the blockchain and are never lost, but without the recovery phrase you cannot reach them from anywhere else. Write it on paper and keep it off this device.',
   'staking.notOffered': 'Not offered',
   'staking.notOfferedTitle': 'Staking here is not available',

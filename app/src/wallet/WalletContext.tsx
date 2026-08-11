@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useMemo, useState, useEffect } from 'react'
 import {
   DirectSecp256k1HdWallet,
   DirectSecp256k1Wallet,
@@ -133,6 +133,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   // Identity is the wallet id, never the address: the same address can be a
   // different account on another chain. See storage.ts.
   const [activeId, setActiveId] = useState<string | null>(() => loadActiveWalletId(loadWallets()))
+
+  // Existing installs matter more than new ones here. Requesting persistence
+  // only when a wallet is SAVED would never reach somebody who imported months
+  // ago and has not touched the list since - exactly the person whose storage
+  // has had time to be evicted. Asked once on mount whenever wallets are
+  // present, which is idempotent and returns immediately if already granted.
+  useEffect(() => {
+    if (wallets.length > 0) void requestPersistentStorage()
+    // Deliberately once per mount, not per change: persist() is a permission
+    // check, and the save path below covers the newly-added case.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const persist = useCallback((next: StoredWallet[]) => {
     setWallets(next)
