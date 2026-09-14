@@ -146,36 +146,77 @@ def get_chain(chains: list, key: str):
 MAX_PAGES = 10
 
 
-def fetch_tx_page(chain: dict, address: str, event_tpl: str, offset: int) -> list:
-    """One newest-first page of raw tx_responses for an address/event filter,
-    trying each LCD endpoint in order until one answers (failover)."""
-    # order_by=2 is ORDER_BY_DESC as a numeric enum - the panacea LCD rejects the
-    # string form. pagination.offset walks older pages.
-    params = {
-        "events": event_tpl.format(a=address),
+# The LCD tx-search filter parameter differs by Cosmos SDK version, and so
+# does paging (verified against the live nodes, 2026-09-14):
+#
+#   SDK <= 0.4x   events=<filter>   pagination.limit / pagination.offset
+#                 (query= is rejected with a 400)
+#   SDK >= 0.50   query=<filter>    page / limit, 1-based
+#                 (events= is rejected with a 500, and the legacy
+#                 pagination.* params are silently IGNORED - sending them
+#                 returns the ENTIRE matching history in one response)
+#
+# Chains upgrade underneath us: Medibloc moved to v0.50.15 around 2026-08-20
+# and every poll 500ed for weeks before anyone noticed, because the watcher
+# only spoke the old spelling. So the spelling is probed per chain and
+# remembered, exactly like the frontend's txsearch.ts. query= is probed
+# first: an old SDK rejects it with a cheap 400, while a new SDK rejects
+# events= with a 500 - the cheap failure, never the expensive one.
+TX_PARAM_ORDER = ("query", "events")
+_tx_param_learned: dict = {}  # chain key -> the spelling that worked
+
+
+def _tx_search_params(param: str, filt: str, offset: int) -> dict:
+    # order_by=2 is ORDER_BY_DESC as a numeric enum - string forms are
+    # rejected by some LCDs. Both spellings accept it.
+    if param == "query":
+        # The cursor walk stays offset-based; v0.50 pages are 1-based. Every
+        # call that can reach a further page advances by a full PAGE_LIMIT (a
+        # short page ends the walk), so the floor division is exact in
+        # practice - and a rounded-down overlap would only re-serve txs that
+        # collect_new and the stuck-page guard already absorb.
+        return {
+            "query": filt,
+            "order_by": "2",
+            "limit": str(PAGE_LIMIT),
+            "page": str(offset // PAGE_LIMIT + 1),
+        }
+    return {
+        "events": filt,
         "order_by": "2",
         "pagination.limit": str(PAGE_LIMIT),
         "pagination.offset": str(offset),
     }
+
+
+def fetch_tx_page(chain: dict, address: str, event_tpl: str, offset: int) -> list:
+    """One newest-first page of raw tx_responses for an address/event filter,
+    failing over across LCD endpoints AND filter spellings (see above)."""
+    filt = event_tpl.format(a=address)
     endpoints = chain.get("lcd_endpoints") or []
     if not endpoints:
         raise RuntimeError(f"no LCD endpoints for chain {chain['key']}")
 
-    data = None
+    known = _tx_param_learned.get(chain["key"])
+    order = ((known,) + tuple(p for p in TX_PARAM_ORDER if p != known)) if known else TX_PARAM_ORDER
+
     last_error = None
     for base in endpoints:
-        try:
-            r = requests.get(f"{base.rstrip('/')}/cosmos/tx/v1beta1/txs", params=params, timeout=60)
-            r.raise_for_status()
-            data = r.json()
-            break
-        except Exception as e:
-            last_error = e
-            continue
-    if data is None:
-        raise RuntimeError(f"all LCD endpoints failed: {last_error}")
-
-    return data.get("tx_responses", [])
+        for param in order:
+            try:
+                r = requests.get(
+                    f"{base.rstrip('/')}/cosmos/tx/v1beta1/txs",
+                    params=_tx_search_params(param, filt, offset),
+                    timeout=60,
+                )
+                r.raise_for_status()
+                data = r.json()
+            except Exception as e:
+                last_error = e
+                continue
+            _tx_param_learned[chain["key"]] = param
+            return data.get("tx_responses", [])
+    raise RuntimeError(f"all LCD endpoints failed: {last_error}")
 
 
 def collect_new(pairs: list, last_seen: str):

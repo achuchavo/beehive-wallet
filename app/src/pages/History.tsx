@@ -139,8 +139,8 @@ async function fetchTxs(address: string, t: Translate, chain: ChainInfo): Promis
 
   const results = await Promise.allSettled(
     queries.map(async (q) => {
-      // Parameter name differs by SDK version - see txsearch.ts.
-      const data = await fetchTxSearch(chain, q.events, '&order_by=2')
+      // Parameter name and paging differ by SDK version - see txsearch.ts.
+      const data = await fetchTxSearch(chain, q.events)
       if (!data) throw new Error('LCD tx search failed')
       return ((data.tx_responses ?? []) as LcdTxResponse[])
         .slice(0, MAX_ROWS)

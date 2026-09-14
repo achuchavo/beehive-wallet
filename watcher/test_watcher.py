@@ -516,5 +516,104 @@ class UptimeRecentWindow(unittest.TestCase):
         self.assertEqual(self.pushes, [])
 
 
+class TxSearchCompat(unittest.TestCase):
+    """The LCD filter spelling and paging differ by SDK version, and chains
+    upgrade underneath us - Medibloc's move to v0.50 silently killed every
+    poll for weeks. fetch_tx_page must probe query= first, fall back to
+    events=, remember what worked per chain, and use the RIGHT paging params
+    for each spelling (v0.50 ignores pagination.* silently)."""
+
+    def setUp(self):
+        watcher._tx_param_learned.clear()
+        self._get = watcher.requests.get
+        self.calls = []
+
+    def tearDown(self):
+        watcher.requests.get = self._get
+
+    class _Resp:
+        def __init__(self, status, body=None):
+            self.status_code = status
+            self._body = body or {}
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise RuntimeError(f"{self.status_code} error")
+
+        def json(self):
+            return self._body
+
+    def _serve(self, accepted):
+        """Fake LCD accepting only one spelling; the other fails like the
+        real nodes do (400 for query= on old SDK, 500 for events= on new)."""
+        reject_status = 400 if accepted == "events" else 500
+
+        def fake(url, params=None, timeout=None):
+            self.calls.append(params)
+            if accepted in params:
+                return self._Resp(200, {"tx_responses": [{"txhash": "AA"}]})
+            return self._Resp(reject_status)
+
+        watcher.requests.get = fake
+
+    @staticmethod
+    def chain(key="medibloc", endpoints=("https://lcd.test",)):
+        return {"key": key, "lcd_endpoints": list(endpoints)}
+
+    def test_new_sdk_answers_the_first_probe(self):
+        self._serve("query")
+        page = watcher.fetch_tx_page(self.chain(), "addr", "message.sender='{a}'", 0)
+        self.assertEqual(page, [{"txhash": "AA"}])
+        self.assertEqual(len(self.calls), 1)
+        self.assertIn("query", self.calls[0])
+
+    def test_old_sdk_falls_back_to_events_and_is_remembered(self):
+        self._serve("events")
+        watcher.fetch_tx_page(self.chain(), "addr", "message.sender='{a}'", 0)
+        self.assertEqual([("query" in c, "events" in c) for c in self.calls],
+                         [(True, False), (False, True)])
+        self.calls.clear()
+        # Second call goes straight to the learned spelling.
+        watcher.fetch_tx_page(self.chain(), "addr", "message.sender='{a}'", 0)
+        self.assertEqual(len(self.calls), 1)
+        self.assertIn("events", self.calls[0])
+
+    def test_learned_spelling_is_per_chain(self):
+        self._serve("events")
+        watcher.fetch_tx_page(self.chain("medibloc"), "a", "x'{a}'", 0)
+        self.calls.clear()
+        self._serve("query")
+        watcher.fetch_tx_page(self.chain("chihuahua"), "a", "x'{a}'", 0)
+        # A different chain probes fresh - query first.
+        self.assertIn("query", self.calls[0])
+
+    def test_new_sdk_paging_uses_one_based_pages(self):
+        self._serve("query")
+        watcher.fetch_tx_page(self.chain(), "addr", "x'{a}'", watcher.PAGE_LIMIT * 2)
+        p = self.calls[0]
+        self.assertEqual(p["page"], "3")
+        self.assertEqual(p["limit"], str(watcher.PAGE_LIMIT))
+        self.assertNotIn("pagination.offset", p)
+
+    def test_old_sdk_paging_uses_offset(self):
+        self._serve("events")
+        watcher.fetch_tx_page(self.chain(), "addr", "x'{a}'", watcher.PAGE_LIMIT * 2)
+        p = self.calls[-1]
+        self.assertEqual(p["pagination.offset"], str(watcher.PAGE_LIMIT * 2))
+        self.assertNotIn("page", p)
+
+    def test_every_endpoint_and_spelling_failing_raises(self):
+        def fake(url, params=None, timeout=None):
+            self.calls.append(params)
+            return self._Resp(500)
+
+        watcher.requests.get = fake
+        with self.assertRaises(RuntimeError):
+            watcher.fetch_tx_page(
+                self.chain(endpoints=("https://a.test", "https://b.test")), "addr", "x'{a}'", 0
+            )
+        self.assertEqual(len(self.calls), 4)  # 2 endpoints x 2 spellings
+
+
 if __name__ == "__main__":
     unittest.main()

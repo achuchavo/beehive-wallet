@@ -112,12 +112,8 @@ export async function fetchClaimHistory(
   const perAddress = await Promise.all(
     addresses.map(async (address) => {
       try {
-        // Parameter name differs by SDK version - see txsearch.ts.
-        const data = await fetchTxSearch(
-          chain,
-          `message.sender='${address}'`,
-          '&order_by=2&pagination.limit=50',
-        )
+        // Parameter name and paging differ by SDK version - see txsearch.ts.
+        const data = await fetchTxSearch(chain, `message.sender='${address}'`, 50)
         if (!data) return []
         const out: ClaimRecord[] = []
         for (const tx of (data.tx_responses ?? []) as LcdClaimTx[]) {

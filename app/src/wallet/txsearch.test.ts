@@ -88,11 +88,21 @@ describe('fetchTxSearch', () => {
     expect(await fetchTxSearch(chain('offline'), "message.sender='x'")).toBeNull()
   })
 
-  it('encodes the filter and appends extra params verbatim', async () => {
+  // v0.50 silently IGNORES pagination.* - the limit must be spelled to match
+  // the filter param or a "limited" request comes back unbounded.
+  it('spells the limit as limit= for a query= chain', async () => {
     const calls = stubChain('query', 500)
-    await fetchTxSearch(chain('c'), "message.sender='abc'", '&order_by=2&pagination.limit=50')
+    await fetchTxSearch(chain('c'), "message.sender='abc'", 50)
     expect(calls[0]).toBe(
-      "https://lcd.test/cosmos/tx/v1beta1/txs?query=message.sender%3D'abc'&order_by=2&pagination.limit=50",
+      "https://lcd.test/cosmos/tx/v1beta1/txs?query=message.sender%3D'abc'&order_by=2&limit=50",
+    )
+  })
+
+  it('spells the limit as pagination.limit= for an events= chain', async () => {
+    const calls = stubChain('events', 400)
+    await fetchTxSearch(chain('c'), "message.sender='abc'", 50)
+    expect(calls[1]).toBe(
+      "https://lcd.test/cosmos/tx/v1beta1/txs?events=message.sender%3D'abc'&order_by=2&pagination.limit=50",
     )
   })
 })
