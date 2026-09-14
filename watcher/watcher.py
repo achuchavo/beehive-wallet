@@ -92,6 +92,19 @@ def m(key: str, n: int = 1) -> None:
     METRICS[key] = METRICS.get(key, 0) + n
 
 
+def heartbeat_payload() -> str:
+    """The last cycle's health, for the admin screen's watcher row. Alive is
+    not the same as working: these counts are what turn the row red when the
+    process runs happily while every chain query fails."""
+    return json.dumps(
+        {
+            "chain_errors": int(METRICS.get("chain_errors") or 0),
+            "cursor_gaps": int(METRICS.get("cursor_gaps") or 0),
+            "chain_ok": int(METRICS.get("chain_ok") or 0),
+        }
+    )
+
+
 def log(level: str, message: str) -> None:
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{now}] [{level}] {message}", flush=True)
@@ -963,6 +976,12 @@ def run_once() -> None:
     # where nobody is watching anything yet - so a healthy watcher reported
     # itself as stale.
     #
+    # The last cycle's error counts ride along (watcher_last_cycle): a live
+    # process that fails every chain query is NOT healthy, and for 25 days in
+    # Aug-Sep 2026 it looked exactly that way - the SDK v0.50 rename 500ed
+    # every poll while the heartbeat stayed green. The admin screen turns the
+    # row red on nonzero counts.
+    #
     # Own connection: run_once's has been closed by now, and a failure here must
     # never mask the cycle that already succeeded.
     try:
@@ -972,6 +991,12 @@ def run_once() -> None:
             "INSERT INTO app_settings (setting_key, setting_value, updated_at) "
             "VALUES ('watcher_last_run', NOW(), NOW()) "
             "ON DUPLICATE KEY UPDATE setting_value = NOW(), updated_at = NOW()"
+        )
+        cur.execute(
+            "INSERT INTO app_settings (setting_key, setting_value, updated_at) "
+            "VALUES ('watcher_last_cycle', %s, NOW()) "
+            "ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = NOW()",
+            (heartbeat_payload(),),
         )
         hb.commit()
         cur.close()

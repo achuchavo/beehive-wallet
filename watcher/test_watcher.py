@@ -5,6 +5,7 @@ No DB or network: fetch_tx_page is monkeypatched; classify functions are pure.
 """
 import contextlib
 import io
+import json
 import sys
 import unittest
 
@@ -514,6 +515,29 @@ class UptimeRecentWindow(unittest.TestCase):
         sql = self._run(self.sub(0, window_age_minutes=11, baseline=126), missed=127)
         self.assertNotIn("recovered", sql)
         self.assertEqual(self.pushes, [])
+
+
+class HeartbeatPayload(unittest.TestCase):
+    """The heartbeat carries the LAST cycle's error counts: a live process
+    that fails every chain query must not look healthy on the admin screen
+    (it did, for 25 days, during the SDK v0.50 breakage)."""
+
+    def setUp(self):
+        self._saved = dict(watcher.METRICS)
+        watcher.METRICS.clear()
+
+    def tearDown(self):
+        watcher.METRICS.clear()
+        watcher.METRICS.update(self._saved)
+
+    def test_reports_error_and_gap_counts(self):
+        watcher.METRICS.update({"chain_errors": 8, "cursor_gaps": 7, "chain_ok": 0})
+        payload = json.loads(watcher.heartbeat_payload())
+        self.assertEqual(payload, {"chain_errors": 8, "cursor_gaps": 7, "chain_ok": 0})
+
+    def test_missing_metrics_read_as_zero_not_a_crash(self):
+        payload = json.loads(watcher.heartbeat_payload())
+        self.assertEqual(payload, {"chain_errors": 0, "cursor_gaps": 0, "chain_ok": 0})
 
 
 class TxSearchCompat(unittest.TestCase):

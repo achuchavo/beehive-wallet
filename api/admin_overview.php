@@ -68,6 +68,22 @@ if ($can('wallet_alerts')) {
     // How many addresses it is actually responsible for, so "healthy but idle"
     // is distinguishable from "healthy and working" on the screen.
     $stats['watcher_watched'] = (int) $db->query('SELECT COUNT(*) FROM watched_addresses')->fetchColumn();
+
+    // The last cycle's error counts, written by the watcher alongside the
+    // heartbeat. Alive is not the same as working: when a chain upgrade broke
+    // every LCD query in Aug 2026, the process ran (green heartbeat) while
+    // alerts were silently dead for weeks. Null when the watcher predates
+    // this field.
+    $cycle = $db->query(
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'watcher_last_cycle'"
+    )->fetchColumn();
+    $decoded = $cycle ? json_decode((string) $cycle, true) : null;
+    $stats['watcher_chain_errors'] = is_array($decoded) && isset($decoded['chain_errors'])
+        ? (int) $decoded['chain_errors']
+        : null;
+    $stats['watcher_cursor_gaps'] = is_array($decoded) && isset($decoded['cursor_gaps'])
+        ? (int) $decoded['cursor_gaps']
+        : null;
 }
 $out['stats'] = $stats;
 

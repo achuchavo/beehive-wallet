@@ -226,6 +226,10 @@ export interface AdminOverview {
     /** How many addresses the watcher is responsible for, so "healthy but
      *  idle" is distinguishable from "healthy and working". */
     watcher_watched: number
+    /** Last cycle's failed chain queries / cursor gaps - alive is not the
+     *  same as working. Null when the watcher predates the field. */
+    watcher_chain_errors: number | null
+    watcher_cursor_gaps: number | null
   }>
   users?: {
     id: number

@@ -151,10 +151,23 @@ export default function Admin() {
   }
 
   const { stats } = data
-  const watcherHealthy =
+  const watcherAlive =
     stats.watcher_age_seconds !== null &&
     stats.watcher_age_seconds !== undefined &&
     stats.watcher_age_seconds < 300
+  // Alive is not the same as working. When a chain upgrade broke every LCD
+  // query (Aug 2026), the process ran and the heartbeat stayed green while
+  // alerts were silently dead for 25 days - failed queries and cursor gaps
+  // from the LAST CYCLE must make this row scream.
+  const watcherErrors = stats.watcher_chain_errors ?? 0
+  const watcherGaps = stats.watcher_cursor_gaps ?? 0
+  const watcherDegraded = watcherAlive && (watcherErrors > 0 || watcherGaps > 0)
+  const watcherHealthy = watcherAlive && !watcherDegraded
+  const degradedParts = [
+    watcherErrors > 0 &&
+      `${watcherErrors} failed chain quer${watcherErrors === 1 ? 'y' : 'ies'}`,
+    watcherGaps > 0 && `${watcherGaps} cursor gap${watcherGaps === 1 ? '' : 's'}`,
+  ].filter(Boolean)
 
   const allTabs: { id: Tab; label: string; show: boolean }[] = [
     { id: 'overview', label: 'Overview', show: true },
@@ -230,7 +243,12 @@ export default function Admin() {
               }`}
             >
               <span className="font-medium">
-                Watcher: {watcherHealthy ? 'healthy' : 'not running or stale'}
+                Watcher:{' '}
+                {watcherHealthy
+                  ? 'healthy'
+                  : watcherDegraded
+                    ? `running, but last cycle had ${degradedParts.join(' and ')}`
+                    : 'not running or stale'}
                 {/* Healthy with nothing to poll is a normal state for a new
                     deployment, and saying only "healthy" invites the question
                     "then why are there no alerts?". */}
