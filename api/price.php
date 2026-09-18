@@ -41,4 +41,28 @@ if ($data === null) {
 }
 
 $price = $data[$id][$currency] ?? null;
+
+// Operational markers for the admin overview. A proxy that serves null is a
+// working process degrading silently - the app just stops drawing fiat values
+// (exactly the missing-KRW report of 2026-09-18) - so nulls must be visible
+// somewhere an admin looks. Only ids configured on a chain count: a stray
+// curl with a junk id is not a product failure and must not paint the row.
+// The marker write must never break the price response itself.
+try {
+    $db = get_db();
+    $known = $db->prepare('SELECT COUNT(*) FROM chains WHERE coingecko_id = ?');
+    $known->execute([$id]);
+    if ((int) $known->fetchColumn() > 0) {
+        $key = $price === null ? 'price_last_null' : 'price_last_ok';
+        $stmt = $db->prepare(
+            'INSERT INTO app_settings (setting_key, setting_value, updated_at)
+             VALUES (?, NOW(), NOW())
+             ON DUPLICATE KEY UPDATE setting_value = NOW(), updated_at = NOW()'
+        );
+        $stmt->execute([$key]);
+    }
+} catch (Throwable $e) {
+    // Price first; the marker is best-effort.
+}
+
 json_out(['ok' => true, 'id' => $id, 'currency' => $currency, 'price' => $price]);

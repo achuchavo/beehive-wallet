@@ -230,6 +230,10 @@ export interface AdminOverview {
      *  same as working. Null when the watcher predates the field. */
     watcher_chain_errors: number | null
     watcher_cursor_gaps: number | null
+    /** Fiat-price proxy health: seconds since it last served a real price /
+     *  a null for a configured coin. Null = marker never written. */
+    price_ok_age_seconds: number | null
+    price_null_age_seconds: number | null
   }>
   users?: {
     id: number

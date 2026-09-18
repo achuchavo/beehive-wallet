@@ -84,6 +84,19 @@ if ($can('wallet_alerts')) {
     $stats['watcher_cursor_gaps'] = is_array($decoded) && isset($decoded['cursor_gaps'])
         ? (int) $decoded['cursor_gaps']
         : null;
+
+    // Fiat-price proxy health, from price.php's own markers. Serving null is
+    // how the missing-KRW outage looked: the process worked, users just got
+    // no fiat values. Null ages = the marker has never been written.
+    foreach (['price_last_ok' => 'price_ok_age_seconds', 'price_last_null' => 'price_null_age_seconds'] as $key => $field) {
+        $row = $db->prepare(
+            'SELECT TIMESTAMPDIFF(SECOND, setting_value, NOW()) AS age
+             FROM app_settings WHERE setting_key = ?'
+        );
+        $row->execute([$key]);
+        $age = $row->fetchColumn();
+        $stats[$field] = $age !== false && $age !== null ? (int) $age : null;
+    }
 }
 $out['stats'] = $stats;
 

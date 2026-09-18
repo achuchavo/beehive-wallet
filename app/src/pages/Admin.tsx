@@ -169,6 +169,14 @@ export default function Admin() {
     watcherGaps > 0 && `${watcherGaps} cursor gap${watcherGaps === 1 ? '' : 's'}`,
   ].filter(Boolean)
 
+  // Fiat prices: a proxy that serves null is a silent degradation - the app
+  // just stops drawing fiat values (the missing-KRW report). Red while a
+  // null was served within the last hour.
+  const priceNullAge = stats.price_null_age_seconds
+  const priceOkAge = stats.price_ok_age_seconds
+  const pricesFailing = priceNullAge !== null && priceNullAge !== undefined && priceNullAge < 3600
+  const ago = (s: number) => (s < 120 ? `${s}s` : s < 7200 ? `${Math.round(s / 60)}m` : `${Math.round(s / 3600)}h`)
+
   const allTabs: { id: Tab; label: string; show: boolean }[] = [
     { id: 'overview', label: 'Overview', show: true },
     { id: 'users', label: 'Users', show: can('users') },
@@ -262,6 +270,30 @@ export default function Admin() {
               </span>
             </div>
           )}
+
+          {/* Fiat-price proxy: same alive-vs-working distinction as the
+              watcher row. Nulls served to users are red for an hour. */}
+          <div
+            className={`flex items-center justify-between rounded-xl border px-4 py-3 text-sm ${
+              pricesFailing
+                ? 'border-red-200 bg-red-50 text-red-800'
+                : 'border-green-200 bg-green-50 text-green-800'
+            }`}
+          >
+            <span className="font-medium">
+              Fiat prices:{' '}
+              {pricesFailing
+                ? `served EMPTY values within the last hour (last ${ago(priceNullAge!)} ago) - users see no fiat amounts`
+                : priceOkAge !== null && priceOkAge !== undefined
+                  ? 'serving'
+                  : 'no requests recorded yet'}
+            </span>
+            <span>
+              {priceOkAge !== null && priceOkAge !== undefined
+                ? `Last price served ${ago(priceOkAge)} ago`
+                : ''}
+            </span>
+          </div>
 
           {/* Matches admin_setting_set.php's own guard, which is now the
               'settings' feature at write rather than super-admin only. */}
