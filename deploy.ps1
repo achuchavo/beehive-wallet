@@ -9,7 +9,11 @@ $subDest = "D:\WebServer\Apache24\beeweb\walletapp"
 
 function Deploy($dest) {
   robocopy "$PSScriptRoot\app\dist" $dest /MIR /XD api /NJH /NJS /NDL /NFL | Out-Null
-  robocopy "$PSScriptRoot\api" "$dest\api" /MIR /XF db_config.php.example /NJH /NJS /NDL /NFL | Out-Null
+  # /XD cache: api/cache is the price proxy's cache and its ONLY stale-price
+  # fallback. /MIR used to delete it on every deploy, so after each release the
+  # first CoinGecko hiccup left every user with no fiat values at all (the bug
+  # Jisu reported 2026-09-18: balances shown, Korean won missing).
+  robocopy "$PSScriptRoot\api" "$dest\api" /MIR /XD cache /XF db_config.php.example /NJH /NJS /NDL /NFL | Out-Null
   # config/chains.json is NOT deployed any more. It was a second source of
   # truth that had to be redeployed to match the `chains` table, and it drifted:
   # it listed Medibloc only, so every Chihuahua address link, watched address

@@ -35,6 +35,14 @@ cp -r "${WORK}/stage/dist/." "$REL/"
 cp -r "${WORK}/stage/api" "$REL/api"
 # The shared secret is linked in, never copied (rule 1 of the deploy doc).
 ln -s /var/www/beehive/shared/db_config.php "$REL/api/db_config.php"
+# The price cache persists ACROSS releases, same pattern as the secret. It is
+# the price proxy's only stale-fallback: when it shipped empty inside each
+# release, the first CoinGecko rate-limit after a deploy left every user with
+# no fiat values (reported 2026-09-18 - balances shown, Korean won missing).
+mkdir -p /var/www/beehive/shared/price-cache
+chown www-data:www-data /var/www/beehive/shared/price-cache
+rm -rf "$REL/api/cache"
+ln -s /var/www/beehive/shared/price-cache "$REL/api/cache"
 chown -R www-data:www-data "$REL"
 
 echo "== atomic swap + php reload"
